@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static-python",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "."],
+      "port": 8080
+    },
+    {
+      "name": "static-npx",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", ".", "--listen", "8081", "--no-clipboard"],
+      "port": 8081
+    }
+  ]
+}
