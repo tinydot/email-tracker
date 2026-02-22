@@ -3325,9 +3325,12 @@ async function showIssueDetail(issueId) {
       </div>
       
       <div style="border-top:1px solid var(--border); padding-top:20px;">
-        <h3 style="font-size:14px; margin:0 0 12px 0; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted);">Timeline</h3>
-        
-        ${emails.length === 0 
+        <div style="display:flex; align-items:center; margin-bottom:12px;">
+          <h3 style="font-size:14px; margin:0; flex:1; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted);">Timeline</h3>
+          <button class="btn" onclick="showLinkEmailModal('${issue.id}')" style="font-size:11px;">+ Link Email</button>
+        </div>
+
+        ${emails.length === 0
           ? '<div style="color:var(--muted); font-style:italic;">No emails linked yet</div>'
           : emails.map(email => {
             if (!email) return '';
@@ -3380,6 +3383,101 @@ async function showIssueDetail(issueId) {
     `;
     document.head.appendChild(style);
   }
+}
+
+async function showLinkEmailModal(issueId) {
+  const issue = await dbGet('issues', issueId);
+  if (!issue) return;
+
+  const allEmails = await dbGetAll('emails');
+  const linked = new Set(issue.linkedEmails || []);
+  const candidates = allEmails
+    .filter(e => !linked.has(e.id))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  // Remove any existing modal
+  const existing = document.getElementById('link-email-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'link-email-modal';
+  modal.style.cssText = `
+    position:fixed; inset:0; background:rgba(0,0,0,0.7);
+    display:flex; align-items:center; justify-content:center; z-index:1000;
+  `;
+
+  const renderRows = (filter) => {
+    const filtered = candidates.filter(e =>
+      !filter ||
+      (e.subject || '').toLowerCase().includes(filter) ||
+      (e.fromName || '').toLowerCase().includes(filter) ||
+      (e.fromAddr || '').toLowerCase().includes(filter)
+    );
+    if (filtered.length === 0) {
+      return '<div style="color:var(--muted); font-style:italic; padding:12px;">No emails match</div>';
+    }
+    return filtered.map(e => `
+      <div onclick="linkEmailFromModal('${issueId}', '${e.id}')" style="
+        padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border);
+      " onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        <div style="font-weight:500; font-size:13px;">${escHtml(e.subject || '(no subject)')}</div>
+        <div style="font-size:11px; color:var(--muted);">
+          ${escHtml(e.fromName || e.fromAddr)} &nbsp;·&nbsp; ${formatDate(e.date)}
+        </div>
+      </div>
+    `).join('');
+  };
+
+  modal.innerHTML = `
+    <div style="
+      background:var(--surface); border:1px solid var(--border2); border-radius:6px;
+      width:540px; max-height:70vh; display:flex; flex-direction:column;
+    ">
+      <div style="padding:16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px;">
+        <span style="font-weight:600; flex:1;">Link email to: ${escHtml(issue.title)}</span>
+        <button class="btn" onclick="document.getElementById('link-email-modal').remove()">✕</button>
+      </div>
+      <div style="padding:12px; border-bottom:1px solid var(--border);">
+        <input id="link-email-search" class="search-input" placeholder="Filter by subject or sender…" style="width:100%;">
+      </div>
+      <div id="link-email-rows" style="overflow-y:auto; flex:1;">
+        ${renderRows('')}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Wire up search after mount
+  modal.querySelector('#link-email-search').addEventListener('input', function() {
+    document.getElementById('link-email-rows').innerHTML = renderRows(this.value.toLowerCase());
+  });
+
+  // Close on backdrop click
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function linkEmailFromModal(issueId, emailId) {
+  const [issue, email] = await Promise.all([dbGet('issues', issueId), dbGet('emails', emailId)]);
+  if (!issue || !email) return;
+
+  if (!issue.linkedEmails) issue.linkedEmails = [];
+  if (!issue.linkedEmails.includes(emailId)) {
+    issue.linkedEmails.push(emailId);
+    await dbPut('issues', issue);
+  }
+
+  if (!email.linkedIssues) email.linkedIssues = [];
+  if (!email.linkedIssues.includes(issueId)) {
+    email.linkedIssues.push(issueId);
+    await dbPut('emails', email);
+  }
+
+  const modal = document.getElementById('link-email-modal');
+  if (modal) modal.remove();
+
+  toast('Email linked to issue', 'ok');
+  showIssueDetail(issueId);
 }
 
 async function updateIssueStatus(issueId, newStatus) {
