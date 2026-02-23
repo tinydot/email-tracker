@@ -2227,6 +2227,15 @@ function showSettings() {
         </div>
       </div>
       
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:8px;">Automated email detection</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
+          Re-runs the automated email filter across all emails in the library.
+          Useful if emails imported before this feature was enabled aren't showing up under Automated.
+        </div>
+        <button id="btn-rerun-detection" class="btn" onclick="rerunAutomatedDetection()">Re-run detection</button>
+      </div>
+
       <button class="btn" onclick="switchView('all')" style="margin-top:20px;">← Back</button>
     </div>
   `;
@@ -3184,12 +3193,25 @@ async function deleteEmail(id) {
 
 async function backfillSystemEmailFlag() {
   const toUpdate = allEmails.filter(e => e.isSystemEmail !== true);
-  if (!toUpdate.length) return;
+  if (!toUpdate.length) return 0;
+  let flagged = 0;
   for (const e of toUpdate) {
     // rawHeaders not persisted — use available stored fields only
     e.isSystemEmail = detectSystemEmail({}, e.fromAddr, e.subject, e.textBody);
+    if (e.isSystemEmail) flagged++;
     await dbPut('emails', e);
   }
+  return flagged;
+}
+
+async function rerunAutomatedDetection() {
+  const btn = document.getElementById('btn-rerun-detection');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  const flagged = await backfillSystemEmailFlag();
+  updateNavCounts();
+  applyFilters();
+  if (btn) { btn.disabled = false; btn.textContent = 'Re-run detection'; }
+  toast(`Detection complete — ${flagged} email${flagged === 1 ? '' : 's'} flagged as automated`, 'ok');
 }
 
 async function loadEmailList() {
