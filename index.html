@@ -582,8 +582,9 @@
   }
 
   #toast.show { display: flex; }
-  #toast.ok { border-color: var(--accent); }
-  #toast.err { border-color: var(--danger); }
+  #toast.ok   { border-color: var(--accent); }
+  #toast.err  { border-color: var(--danger); }
+  #toast.warn { border-color: var(--warn); }
 
   /* ── Search ── */
   .search-input {
@@ -1941,10 +1942,10 @@ async function saveAttachmentToDisk(attachment, senderEmail) {
 }
 
 async function findAttachmentByHash(hash) {
-  // Query IndexedDB for existing attachment with this hash
+  // Use the hash index instead of a full table scan
   try {
-    const atts = await dbGetAll('attachments');
-    return atts.find(a => a.hash === hash && a.storedPath);
+    const atts = await dbGetByIndex('attachments', 'hash', hash);
+    return atts.find(a => a.storedPath) || null;
   } catch (err) {
     console.error('Error checking for duplicate attachment:', err);
     return null;
@@ -2083,20 +2084,26 @@ function getThreadEmails(rootEmail) {
   return results.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 }
 
+// Maps root email ID → count of non-root members in that thread.
+// Rebuilt once per allEmails load via buildThreadCache().
+let threadReplyCountCache = new Map();
+
+function buildThreadCache() {
+  threadReplyCountCache = new Map();
+  for (const e of allEmails) {
+    const rootId = getThreadRoot(e).id;
+    if (e.id !== rootId) {
+      threadReplyCountCache.set(rootId, (threadReplyCountCache.get(rootId) || 0) + 1);
+    }
+  }
+}
+
 function hasReplies(email) {
-  const root = getThreadRoot(email);
-  return allEmails.some(e => {
-    if (e.id === root.id) return false;
-    return getThreadRoot(e).id === root.id;
-  });
+  return (threadReplyCountCache.get(getThreadRoot(email).id) || 0) > 0;
 }
 
 function countThreadReplies(email) {
-  const root = getThreadRoot(email);
-  return allEmails.filter(e => {
-    if (e.id === root.id) return false;
-    return getThreadRoot(e).id === root.id;
-  }).length;
+  return threadReplyCountCache.get(getThreadRoot(email).id) || 0;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2302,8 +2309,8 @@ function renderEmailList() {
       dot = `<span class="thread-dot no-thread"></span>`;
     }
 
-    // Thread indentation for non-threaded views (show reply depth)
-    const indent = (currentView === 'threads' || threadDepth === 0) ? '' : (threadDepth * 12) + 'px';
+    // Thread indentation — only in Threads view to show reply hierarchy
+    const indent = (currentView === 'threads' && threadDepth > 0) ? (threadDepth * 12) + 'px' : '';
 
     // Overdue flag for awaiting view
     const overdueFlag = email._overdue ? `<span style="color:var(--danger);margin-left:4px" title="Overdue">🔴</span>` : '';
@@ -2311,7 +2318,7 @@ function renderEmailList() {
     return `
       <div class="email-row ${unread} ${selected}" onclick="selectEmail('${email.id}')">
         <div class="col-flag">${dot}</div>
-        <div class="col-from" title="${email.fromAddr}">${escHtml(truncate(from, 26))}</div>
+        <div class="col-from" title="${escHtml(email.fromAddr)}">${escHtml(truncate(from, 26))}</div>
         <div class="col-subject" title="${escHtml(email.subject)}">
           <span style="${indent ? `margin-left:${indent}` : ''}">${escHtml(truncate(email.subject, 60))}${overdueFlag}</span>
         </div>
@@ -2345,10 +2352,9 @@ async function selectEmail(id) {
     email.status = 'read';
     await dbPut('emails', email);
     await updateHeaderStats();
-    renderEmailList();
   }
 
-  renderEmailList(); // re-render to show selection
+  renderEmailList(); // re-render to show selection highlight and any status change
   openDetail(email);
 }
 
@@ -2436,7 +2442,7 @@ async function openDetail(email) {
                 <label style="color:var(--muted); padding-top:4px;">Source Party:</label>
                 <div style="display:flex; gap:4px;">
                   <input type="text" id="party-${a.id}" class="search-input" value="${escHtml(a.sourceParty || '')}" onchange="updateAttachment('${a.id}', 'sourceParty', this.value)" style="flex:1;" placeholder="e.g., RCY, CAG, LTA">
-                  <button class="btn" onclick="autoFillParty('${a.id}', '${email.fromAddr}')" style="padding:4px 8px; font-size:11px;" title="Auto-suggest from sender">✨</button>
+                  <button class="btn" onclick="autoFillParty('${a.id}', '${escHtml(email.fromAddr)}')" style="padding:4px 8px; font-size:11px;" title="Auto-suggest from sender">✨</button>
                 </div>
                 
                 <label style="color:var(--muted); padding-top:4px;">Document Type:</label>
@@ -3117,12 +3123,14 @@ async function deleteEmail(id) {
 
 async function loadEmailList() {
   allEmails = await dbGetAll('emails');
+  buildThreadCache();
   applyFilters();
   updateNavCounts();
 }
 
 async function updateHeaderStats() {
   allEmails = await dbGetAll('emails');
+  buildThreadCache();
   const atts = await dbGetAll('attachments');
 
   document.getElementById('h-total').textContent      = allEmails.length;
@@ -3207,6 +3215,21 @@ async function exportData() {
 }
 
 async function clearDB() {
+  if (!confirm('Clear all data? This cannot be undone.')) return;
+  await dbClear('emails');
+  await dbClear('attachments');
+  await dbClear('msgIndex');
+  await dbClear('tags');
+  await dbClear('issues');
+  allEmails = [];
+  filteredEmails = [];
+  selectedEmail = null;
+  closeDetail();
+  await updateHeaderStats();
+  showPanel('import');
+  toast('Database cleared', 'ok');
+}
+
 // ═══════════════════════════════════════════════════════
 //  ISSUE MANAGEMENT
 // ═══════════════════════════════════════════════════════
@@ -3270,19 +3293,36 @@ async function showIssuesList() {
   `;
 }
 
-async function createNewIssue() {
-  const title = prompt('Issue title:');
-  if (!title || !title.trim()) return;
-  
+function createNewIssue() {
+  const container = document.getElementById('email-list');
+  container.innerHTML = `
+    <div style="padding:20px; max-width:480px;">
+      <h2 style="margin:0 0 16px 0; font-size:16px;">New Issue</h2>
+      <input id="new-issue-title" type="text" class="search-input" placeholder="Issue title…"
+             style="width:100%; margin-bottom:12px; padding:8px 10px; font-size:14px;"
+             onkeydown="if(event.key==='Enter') submitNewIssue(); if(event.key==='Escape') switchView('issues');">
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="submitNewIssue()">Create</button>
+        <button class="btn" onclick="switchView('issues')">Cancel</button>
+      </div>
+    </div>`;
+  document.getElementById('new-issue-title').focus();
+}
+
+async function submitNewIssue() {
+  const input = document.getElementById('new-issue-title');
+  const title = input ? input.value.trim() : '';
+  if (!title) { input && input.focus(); return; }
+
   const issue = {
     id: 'issue-' + Date.now(),
-    title: title.trim(),
+    title,
     status: 'open',
     createdDate: new Date().toISOString(),
     resolvedDate: null,
     linkedEmails: []
   };
-  
+
   await dbPut('issues', issue);
   toast('Issue created', 'ok');
   updateNavCounts();
@@ -3334,8 +3374,10 @@ async function showIssueDetail(issueId) {
           ? '<div style="color:var(--muted); font-style:italic;">No emails linked yet</div>'
           : emails.map(email => {
             if (!email) return '';
-            const typeLabel = email.emailType 
-              ? `<span class="email-type-badge ${email.emailType}">${email.emailType}</span>` 
+            const ALLOWED_TYPES = new Set(['query', 'decision', 'risk', 'action']);
+            const safeType = ALLOWED_TYPES.has(email.emailType) ? email.emailType : '';
+            const typeLabel = safeType
+              ? `<span class="email-type-badge ${safeType}">${safeType}</span>`
               : '';
             const attachIcon = email.attachmentCount > 0 ? ` 📎 ${email.attachmentCount}` : '';
             
@@ -3540,7 +3582,7 @@ async function selectEmailFromIssue(emailId) {
   // Switch to all emails view and select this email
   currentView = 'all';
   await selectEmail(emailId);
-  showPanel('main');
+  showPanel('list');
   applyFilters();
 }
 
@@ -3555,19 +3597,6 @@ function formatTimeAgo(date) {
   if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
   if (days < 365) return `${Math.floor(days / 30)} months ago`;
   return `${Math.floor(days / 365)} years ago`;
-}
-  if (!confirm('Clear all data? This cannot be undone.')) return;
-  await dbClear('emails');
-  await dbClear('attachments');
-  await dbClear('msgIndex');
-  await dbClear('tags');
-  allEmails = [];
-  filteredEmails = [];
-  selectedEmail = null;
-  closeDetail();
-  await updateHeaderStats();
-  showPanel('import');
-  toast('Database cleared', 'ok');
 }
 
 // ═══════════════════════════════════════════════════════
