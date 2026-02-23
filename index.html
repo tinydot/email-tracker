@@ -2288,6 +2288,11 @@ function applyFilters() {
   // Rebuild message ID index for thread queries
   rebuildMsgIdIndex();
 
+  // Exclude automated emails from all views except the dedicated 'automated' view
+  if (currentView !== 'automated') {
+    list = list.filter(e => !e.isSystemEmail);
+  }
+
   // View filter
   switch (currentView) {
     case 'unread':      list = list.filter(e => e.status === 'unread'); break;
