@@ -446,6 +446,48 @@
     flex-shrink: 0;
   }
 
+  .modal-nav {
+    position: absolute;
+    top: 14px;
+    right: 50px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .modal-nav-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s;
+  }
+
+  .modal-nav-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .modal-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .modal-nav-counter {
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 44px;
+    text-align: center;
+  }
+
   .modal-close {
     position: absolute;
     top: 14px;
@@ -820,6 +862,11 @@
   <div id="detail-panel">
     <div class="detail-header">
       <button class="modal-close" onclick="closeDetail()" title="Close (Esc)">×</button>
+      <div class="modal-nav">
+        <button class="modal-nav-btn" id="nav-prev" onclick="navigateEmail(-1)" title="Previous email (k)">‹</button>
+        <span class="modal-nav-counter" id="nav-counter"></span>
+        <button class="modal-nav-btn" id="nav-next" onclick="navigateEmail(1)" title="Next email (j)">›</button>
+      </div>
       <div class="detail-subject" id="det-subject">—</div>
       <div class="detail-meta" id="det-meta"></div>
     </div>
@@ -2123,11 +2170,14 @@ async function linkThreads() {
 
 // Build message ID index for fast lookups
 let msgIdIndex = new Map(); // messageId → email
+let emailIdIndex = new Map(); // id → email (O(1) lookup)
 
 function rebuildMsgIdIndex() {
   msgIdIndex.clear();
+  emailIdIndex.clear();
   for (const e of allEmails) {
     if (e.messageId) msgIdIndex.set(e.messageId, e);
+    emailIdIndex.set(e.id, e);
   }
 }
 
@@ -2206,6 +2256,7 @@ let currentView    = 'all';
 let currentSort    = 'date-desc';
 let searchTerm     = '';
 let selectedEmail  = null;
+let selectedEmailIdx = -1; // index in filteredEmails for navigation
 
 const VIEW_LABELS = {
   all:          'All Emails',
@@ -2390,6 +2441,8 @@ function applyFilters() {
   });
 
   filteredEmails = list;
+  // Keep selectedEmailIdx in sync after filter/sort changes
+  selectedEmailIdx = selectedEmail ? filteredEmails.findIndex(e => e.id === selectedEmail.id) : -1;
   renderEmailList();
 }
 
@@ -2469,25 +2522,36 @@ function renderBadge(email) {
   }
 }
 
-async function selectEmail(id) {
-  const email = allEmails.find(e => e.id === id);
+function selectEmail(id) {
+  const email = emailIdIndex.get(id);
   if (!email) return;
-  selectedEmail = email;
 
-  // Mark as read
+  // Update selection highlight in DOM without full list re-render
+  const prevIdx = selectedEmailIdx;
+  const newIdx = filteredEmails.findIndex(e => e.id === id);
+  selectedEmail = email;
+  selectedEmailIdx = newIdx;
+
+  const rows = document.querySelectorAll('#email-list .email-row');
+  if (prevIdx >= 0 && rows[prevIdx]) rows[prevIdx].classList.remove('selected');
+  if (newIdx >= 0 && rows[newIdx]) rows[newIdx].classList.add('selected');
+
+  // Open modal immediately — no awaiting anything
+  openDetail(email);
+
+  // Mark as read in background (fire-and-forget)
   if (email.status === 'unread') {
     email.status = 'read';
-    await dbPut('emails', email);
-    await updateHeaderStats();
+    if (newIdx >= 0 && rows[newIdx]) rows[newIdx].classList.remove('unread');
+    dbPut('emails', email);
+    updateHeaderStatsFast();
   }
-
-  renderEmailList(); // re-render to show selection highlight and any status change
-  openDetail(email);
 }
 
-async function openDetail(email) {
+function openDetail(email) {
   document.getElementById('email-modal-overlay').classList.add('open');
   document.getElementById('email-modal-overlay').scrollTop = 0;
+  updateModalNavButtons();
 
   // Subject
   document.getElementById('det-subject').textContent = email.subject || '(no subject)';
@@ -2541,61 +2605,66 @@ async function openDetail(email) {
   const bodyText = document.createTextNode(email.textBody || '(no plain text body)');
   bodyEl.appendChild(bodyText);
 
-  // Attachments
+  // Attachments — show placeholder immediately, load in background
   const attPanel = document.getElementById('det-attachments');
   if (email.hasAttachments) {
-    const atts = await dbGetByIndex('attachments', 'emailId', email.id);
     attPanel.style.display = '';
-    attPanel.innerHTML = `
-      <div class="detail-attach-title">Attachments (${atts.length})</div>
-      <div style="margin-bottom: 12px;">
-        ${atts.map(a => {
-          const hasFile = !!a.storedPath;
-          const action = hasFile 
-            ? `onclick="openAttachmentFromDisk('${a.storedPath}')" style="cursor:pointer" title="Click to open"` 
-            : 'title="File not stored on disk"';
-          const icon = hasFile ? '📎' : '📋';
-          return `
-            <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px; background:var(--surface2);">
-              <div class="attach-chip" ${action} style="flex:1; margin:0;">
-                ${icon} ${escHtml(a.filename)}
-                <span class="attach-size">${formatSize(a.size)}</span>
-                ${hasFile ? '<span style="color:var(--accent);margin-left:4px">●</span>' : ''}
-              </div>
-              <button class="btn" onclick="editAttachmentMetadata('${a.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
-            </div>
-            <div id="att-meta-${a.id}" style="display:none; padding:8px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin:-4px 0 8px 0;">
-              <div style="display:grid; grid-template-columns:120px 1fr; gap:8px; font-size:12px;">
-                <label style="color:var(--muted); padding-top:4px;">Transmittal Ref:</label>
-                <input type="text" class="search-input" value="${escHtml(a.transmittalRef || '')}" onchange="updateAttachment('${a.id}', 'transmittalRef', this.value)" style="width:100%;" placeholder="e.g., T-2024-001">
-                
-                <label style="color:var(--muted); padding-top:4px;">Source Party:</label>
-                <div style="display:flex; gap:4px;">
-                  <input type="text" id="party-${a.id}" class="search-input" value="${escHtml(a.sourceParty || '')}" onchange="updateAttachment('${a.id}', 'sourceParty', this.value)" style="flex:1;" placeholder="e.g., RCY, CAG, LTA">
-                  <button class="btn" onclick="autoFillParty('${a.id}', '${escHtml(email.fromAddr)}')" style="padding:4px 8px; font-size:11px;" title="Auto-suggest from sender">✨</button>
+    attPanel.innerHTML = `<div class="detail-attach-title">Attachments (loading…)</div>`;
+    const emailIdAtLoad = email.id;
+    dbGetByIndex('attachments', 'emailId', email.id).then(atts => {
+      // Only update if the same email is still open
+      if (!selectedEmail || selectedEmail.id !== emailIdAtLoad) return;
+      attPanel.innerHTML = `
+        <div class="detail-attach-title">Attachments (${atts.length})</div>
+        <div style="margin-bottom: 12px;">
+          ${atts.map(a => {
+            const hasFile = !!a.storedPath;
+            const action = hasFile
+              ? `onclick="openAttachmentFromDisk('${a.storedPath}')" style="cursor:pointer" title="Click to open"`
+              : 'title="File not stored on disk"';
+            const icon = hasFile ? '📎' : '📋';
+            return `
+              <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px; background:var(--surface2);">
+                <div class="attach-chip" ${action} style="flex:1; margin:0;">
+                  ${icon} ${escHtml(a.filename)}
+                  <span class="attach-size">${formatSize(a.size)}</span>
+                  ${hasFile ? '<span style="color:var(--accent);margin-left:4px">●</span>' : ''}
                 </div>
-                
-                <label style="color:var(--muted); padding-top:4px;">Document Type:</label>
-                <select class="btn" onchange="updateAttachment('${a.id}', 'documentType', this.value)" style="width:100%;">
-                  <option value="">—</option>
-                  <option value="Drawing" ${a.documentType === 'Drawing' ? 'selected' : ''}>Drawing</option>
-                  <option value="Specification" ${a.documentType === 'Specification' ? 'selected' : ''}>Specification</option>
-                  <option value="Report" ${a.documentType === 'Report' ? 'selected' : ''}>Report</option>
-                  <option value="Minutes" ${a.documentType === 'Minutes' ? 'selected' : ''}>Minutes</option>
-                  <option value="RFI" ${a.documentType === 'RFI' ? 'selected' : ''}>RFI</option>
-                  <option value="Submittal" ${a.documentType === 'Submittal' ? 'selected' : ''}>Submittal</option>
-                  <option value="Certificate" ${a.documentType === 'Certificate' ? 'selected' : ''}>Certificate</option>
-                  <option value="Other" ${a.documentType === 'Other' ? 'selected' : ''}>Other</option>
-                </select>
-                
-                <label style="color:var(--muted); padding-top:4px;">Hash:</label>
-                <span style="font-family:var(--mono); font-size:10px; color:var(--muted); padding-top:4px;">${a.hash}</span>
+                <button class="btn" onclick="editAttachmentMetadata('${a.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
               </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
+              <div id="att-meta-${a.id}" style="display:none; padding:8px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin:-4px 0 8px 0;">
+                <div style="display:grid; grid-template-columns:120px 1fr; gap:8px; font-size:12px;">
+                  <label style="color:var(--muted); padding-top:4px;">Transmittal Ref:</label>
+                  <input type="text" class="search-input" value="${escHtml(a.transmittalRef || '')}" onchange="updateAttachment('${a.id}', 'transmittalRef', this.value)" style="width:100%;" placeholder="e.g., T-2024-001">
+
+                  <label style="color:var(--muted); padding-top:4px;">Source Party:</label>
+                  <div style="display:flex; gap:4px;">
+                    <input type="text" id="party-${a.id}" class="search-input" value="${escHtml(a.sourceParty || '')}" onchange="updateAttachment('${a.id}', 'sourceParty', this.value)" style="flex:1;" placeholder="e.g., RCY, CAG, LTA">
+                    <button class="btn" onclick="autoFillParty('${a.id}', '${escHtml(email.fromAddr)}')" style="padding:4px 8px; font-size:11px;" title="Auto-suggest from sender">✨</button>
+                  </div>
+
+                  <label style="color:var(--muted); padding-top:4px;">Document Type:</label>
+                  <select class="btn" onchange="updateAttachment('${a.id}', 'documentType', this.value)" style="width:100%;">
+                    <option value="">—</option>
+                    <option value="Drawing" ${a.documentType === 'Drawing' ? 'selected' : ''}>Drawing</option>
+                    <option value="Specification" ${a.documentType === 'Specification' ? 'selected' : ''}>Specification</option>
+                    <option value="Report" ${a.documentType === 'Report' ? 'selected' : ''}>Report</option>
+                    <option value="Minutes" ${a.documentType === 'Minutes' ? 'selected' : ''}>Minutes</option>
+                    <option value="RFI" ${a.documentType === 'RFI' ? 'selected' : ''}>RFI</option>
+                    <option value="Submittal" ${a.documentType === 'Submittal' ? 'selected' : ''}>Submittal</option>
+                    <option value="Certificate" ${a.documentType === 'Certificate' ? 'selected' : ''}>Certificate</option>
+                    <option value="Other" ${a.documentType === 'Other' ? 'selected' : ''}>Other</option>
+                  </select>
+
+                  <label style="color:var(--muted); padding-top:4px;">Hash:</label>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--muted); padding-top:4px;">${a.hash}</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    });
   } else {
     attPanel.style.display = 'none';
   }
@@ -2779,11 +2848,33 @@ function renderDetailTags(email) {
 
 function closeDetail() {
   selectedEmail = null;
+  selectedEmailIdx = -1;
   document.getElementById('email-modal-overlay').classList.remove('open');
 }
 
 function handleModalOverlayClick(e) {
   if (e.target === document.getElementById('email-modal-overlay')) closeDetail();
+}
+
+function navigateEmail(dir) {
+  const newIdx = selectedEmailIdx + dir;
+  if (newIdx < 0 || newIdx >= filteredEmails.length) return;
+  selectEmail(filteredEmails[newIdx].id);
+  // Scroll the newly selected row into view in the list
+  const rows = document.querySelectorAll('#email-list .email-row');
+  if (rows[newIdx]) rows[newIdx].scrollIntoView({ block: 'nearest' });
+}
+
+function updateModalNavButtons() {
+  const prevBtn = document.getElementById('nav-prev');
+  const nextBtn = document.getElementById('nav-next');
+  const counter = document.getElementById('nav-counter');
+  if (!prevBtn) return;
+  prevBtn.disabled = selectedEmailIdx <= 0;
+  nextBtn.disabled = selectedEmailIdx < 0 || selectedEmailIdx >= filteredEmails.length - 1;
+  counter.textContent = selectedEmailIdx >= 0
+    ? `${selectedEmailIdx + 1}/${filteredEmails.length}`
+    : '';
 }
 
 function editAttachmentMetadata(attId) {
@@ -3192,7 +3283,7 @@ async function bulkAutoFillMetadata(force = false) {
 // ═══════════════════════════════════════════════════════
 
 async function setStatus(id, status) {
-  const email = allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
   if (!email) return;
   email.status = status;
   
@@ -3211,7 +3302,7 @@ async function setStatus(id, status) {
 }
 
 async function toggleActionable(id) {
-  const email = allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
   if (!email) return;
   email.isActionable = !email.isActionable;
   await dbPut('emails', email);
@@ -3319,6 +3410,15 @@ async function updateHeaderStats() {
 
   updateNavCounts();
   await updateStorageIndicator(atts); // Pass attachments to avoid re-querying
+}
+
+// Fast in-memory stats update — no IndexedDB reads, used after single-email changes
+function updateHeaderStatsFast() {
+  document.getElementById('h-total').textContent      = allEmails.length;
+  document.getElementById('h-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
+  document.getElementById('h-awaiting').textContent   = allEmails.filter(e => e.status === 'awaiting').length;
+  document.getElementById('h-actionable').textContent = allEmails.filter(e => e.isActionable).length;
+  updateNavCounts();
 }
 
 async function updateStorageIndicator(atts = null) {
@@ -3851,7 +3951,14 @@ async function init() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeDetail();
+  if (e.key === 'Escape') { closeDetail(); return; }
+  const modalOpen = document.getElementById('email-modal-overlay').classList.contains('open');
+  if (!modalOpen) return;
+  // Don't intercept if user is typing in an input/select/textarea
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'j' || e.key === 'ArrowRight') { e.preventDefault(); navigateEmail(1); }
+  if (e.key === 'k' || e.key === 'ArrowLeft')  { e.preventDefault(); navigateEmail(-1); }
 });
 
 init();
