@@ -3182,8 +3182,19 @@ async function deleteEmail(id) {
 //  DATA LOAD
 // ═══════════════════════════════════════════════════════
 
+async function backfillSystemEmailFlag() {
+  const toUpdate = allEmails.filter(e => e.isSystemEmail === undefined);
+  if (!toUpdate.length) return;
+  for (const e of toUpdate) {
+    // rawHeaders not persisted — use available stored fields only
+    e.isSystemEmail = detectSystemEmail({}, e.fromAddr, e.subject, e.textBody);
+    await dbPut('emails', e);
+  }
+}
+
 async function loadEmailList() {
   allEmails = await dbGetAll('emails');
+  await backfillSystemEmailFlag();
   buildThreadCache();
   applyFilters();
   updateNavCounts();
