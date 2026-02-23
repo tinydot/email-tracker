@@ -3183,7 +3183,7 @@ async function deleteEmail(id) {
 // ═══════════════════════════════════════════════════════
 
 async function backfillSystemEmailFlag() {
-  const toUpdate = allEmails.filter(e => e.isSystemEmail === undefined);
+  const toUpdate = allEmails.filter(e => e.isSystemEmail !== true);
   if (!toUpdate.length) return;
   for (const e of toUpdate) {
     // rawHeaders not persisted — use available stored fields only
