@@ -741,9 +741,6 @@
         <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
         <button class="nav-item" onclick="showSettings()">⚙ Settings</button>
-        <button class="nav-item btn-danger" onclick="clearDB()" style="color: var(--danger); margin-top: 8px;">
-          ✕ Clear Database
-        </button>
       </div>
     </nav>
 
@@ -1441,28 +1438,6 @@ function simpleHash(str) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  ACTIONABLE KEYWORD DETECTION
-// ═══════════════════════════════════════════════════════
-
-const ACTION_KEYWORDS = [
-  /\bplease (?:advise|confirm|review|approve|revert|respond|reply|update|provide|check|coordinate)\b/i,
-  /\bfor your (?:action|approval|review|attention|information and action)\b/i,
-  /\bkindly (?:advise|confirm|review|arrange|ensure|provide)\b/i,
-  /\baction required\b/i,
-  /\bdeadline\b/i,
-  /\bby (?:eod|end of day|end of week|monday|tuesday|wednesday|thursday|friday)\b/i,
-  /\burgent\b/i,
-  /\bFYA\b/,
-  /\bneed.*by\b/i,
-  /\bresponse (?:required|needed|by)\b/i,
-];
-
-function detectActionable(subject, body) {
-  const text = (subject + ' ' + body).substring(0, 2000);
-  return ACTION_KEYWORDS.some(re => re.test(text));
-}
-
-// ═══════════════════════════════════════════════════════
 //  SYSTEM / AUTOMATED EMAIL DETECTION
 // ═══════════════════════════════════════════════════════
 
@@ -1839,8 +1814,8 @@ async function processFilesForImport(fileArr) {
         continue;
       }
 
-      // Detect actionable
-      const isActionable = detectActionable(parsed.subject, parsed.textBody);
+      // isActionable defaults to false; user can mark manually
+      const isActionable = false;
 
       // Detect system/automated email
       const isSystemEmail = detectSystemEmail(parsed.rawHeaders, parsed.from.email, parsed.subject, parsed.textBody);
@@ -2290,6 +2265,27 @@ function showSettings() {
           Useful if emails imported before this feature was enabled aren't showing up under Automated.
         </div>
         <button id="btn-rerun-detection" class="btn" onclick="rerunAutomatedDetection()">Re-run detection</button>
+      </div>
+
+      <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
+        <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
+
+        <div style="margin-bottom:16px;">
+          <div style="font-weight:500; margin-bottom:4px;">Unmark all actionable emails</div>
+          <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
+            Removes the ⚡ actionable flag from every email in the library. This cannot be undone.
+          </div>
+          <button class="btn btn-danger" onclick="bulkUnmarkActionable()">⚡ Unmark All Actionable</button>
+        </div>
+
+        <div>
+          <div style="font-weight:500; margin-bottom:4px;">Clear database</div>
+          <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
+            Permanently deletes all emails, attachments, tags, and issues from the local database.
+          </div>
+          <button class="btn btn-danger" onclick="clearDB()">✕ Clear Database</button>
+        </div>
       </div>
 
       <button class="btn" onclick="switchView('all')" style="margin-top:20px;">← Back</button>
@@ -3222,6 +3218,22 @@ async function toggleActionable(id) {
   openDetail(email);
   renderEmailList();
   toast(email.isActionable ? 'Marked actionable' : 'Removed action flag', 'ok');
+}
+
+async function bulkUnmarkActionable() {
+  const flagged = allEmails.filter(e => e.isActionable);
+  if (flagged.length === 0) {
+    toast('No actionable emails to unmark', 'ok');
+    return;
+  }
+  if (!confirm(`Remove the ⚡ actionable flag from ${flagged.length} email${flagged.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+  for (const email of flagged) {
+    email.isActionable = false;
+    await dbPut('emails', email);
+  }
+  await updateHeaderStats();
+  renderEmailList();
+  toast(`Unmarked ${flagged.length} email${flagged.length !== 1 ? 's' : ''}`, 'ok');
 }
 
 async function addTag(id) {
