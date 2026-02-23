@@ -2,15 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Python static server",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "python -m http.server 8000"],
-      "port": 8000
-    },
-    {
-      "name": "npx serve",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "npx serve -l 3000"],
+      "name": "Email Tracker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/serve.js"],
       "port": 3000
     }
   ]
