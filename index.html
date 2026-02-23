@@ -676,6 +676,9 @@
         <button class="nav-item" data-view="attachments" onclick="switchView('attachments')">
           📎 Has Attachments <span class="nav-count" id="n-attach">0</span>
         </button>
+        <button class="nav-item" data-view="automated" onclick="switchView('automated')">
+          🤖 Automated <span class="nav-count" id="n-automated">0</span>
+        </button>
         <button class="nav-item" data-view="issues" onclick="switchView('issues')">
           📋 Issues <span class="nav-count" id="n-issues">0</span>
         </button>
@@ -1404,6 +1407,58 @@ function detectActionable(subject, body) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  SYSTEM / AUTOMATED EMAIL DETECTION
+// ═══════════════════════════════════════════════════════
+
+const SYSTEM_SENDER_PATTERNS = [
+  /^(noreply|no-reply|no\.reply|donotreply|do-not-reply|do\.not\.reply)@/i,
+  /^(mailer-daemon|postmaster|bounce|bounces|daemon|notifications?|alerts?|automailer|auto-mailer|automated?)@/i,
+];
+
+const SYSTEM_SUBJECT_PATTERNS = [
+  /^(auto-?reply|automatic reply|out of office|undeliverable)/i,
+  /^delivery (status notification|failure|failed)/i,
+  /^(mail delivery (failed|failure)|returned mail|non-delivery report)/i,
+  /^\[?(automated|auto-generated|do not reply)\]?:/i,
+];
+
+const SYSTEM_BODY_PATTERNS = [
+  /this (is an |message (was |is ))?(automated|automatically (generated|sent))/i,
+  /do not (reply to|respond to) this (email|message)/i,
+  /this email (was sent automatically|is automatically generated)/i,
+  /you('re| are) receiving this (email|message|notification) because/i,
+  /to (unsubscribe|manage your (notification|email) preferences)/i,
+];
+
+function detectSystemEmail(rawHeaders, fromAddr, subject, body) {
+  // 1. Authoritative automation headers
+  const autoSubmitted = rawHeaders['auto-submitted'] || '';
+  if (autoSubmitted && autoSubmitted.toLowerCase() !== 'no') return true;
+
+  const precedence = (rawHeaders['precedence'] || '').toLowerCase();
+  if (precedence === 'bulk' || precedence === 'list' || precedence === 'junk') return true;
+
+  if (rawHeaders['list-id']) return true;
+  if (rawHeaders['list-unsubscribe']) return true;
+  if (rawHeaders['x-auto-response-suppress']) return true;
+  if (rawHeaders['feedback-id']) return true;
+  if (rawHeaders['x-campaign-id'] || rawHeaders['x-campaignid']) return true;
+
+  // 2. Sender address patterns
+  const addr = (fromAddr || '').toLowerCase();
+  if (SYSTEM_SENDER_PATTERNS.some(re => re.test(addr))) return true;
+
+  // 3. Subject patterns
+  if (SYSTEM_SUBJECT_PATTERNS.some(re => re.test(subject || ''))) return true;
+
+  // 4. Body snippet patterns (first 1000 chars)
+  const bodySnippet = (body || '').substring(0, 1000);
+  if (SYSTEM_BODY_PATTERNS.some(re => re.test(bodySnippet))) return true;
+
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════
 //  IMPORT PIPELINE
 // ═══════════════════════════════════════════════════════
 
@@ -1731,6 +1786,9 @@ async function processFilesForImport(fileArr) {
       // Detect actionable
       const isActionable = detectActionable(parsed.subject, parsed.textBody);
 
+      // Detect system/automated email
+      const isSystemEmail = detectSystemEmail(parsed.rawHeaders, parsed.from.email, parsed.subject, parsed.textBody);
+
       const emailRecord = {
         id,
         messageId:    parsed.messageId,
@@ -1744,6 +1802,7 @@ async function processFilesForImport(fileArr) {
         date:         parsed.date,
         textBody:     parsed.textBody,
         isActionable,
+        isSystemEmail,
         status:       'unread',
         tags:         [],
         linkedIssues: [], // For issue tracking
@@ -2124,6 +2183,7 @@ const VIEW_LABELS = {
   awaiting:     'Awaiting Reply',
   threads:      'Threads',
   attachments:  'Has Attachments',
+  automated:    'Automated / System',
   issues:       'Issues',
   transmittals: 'Transmittal Register',
 };
@@ -2239,6 +2299,7 @@ function applyFilters() {
       list = list.filter(e => !e.inReplyTo && hasReplies(e));
       break;
     case 'attachments': list = list.filter(e => e.hasAttachments); break;
+    case 'automated':   list = list.filter(e => e.isSystemEmail); break;
   }
 
   // Search
@@ -3187,7 +3248,8 @@ function updateNavCounts() {
   document.getElementById('n-awaiting').textContent   = allEmails.filter(e => e.status === 'awaiting').length;
   document.getElementById('n-threads').textContent    = threadRoots;
   document.getElementById('n-attach').textContent     = allEmails.filter(e => e.hasAttachments).length;
-  
+  document.getElementById('n-automated').textContent  = allEmails.filter(e => e.isSystemEmail).length;
+
   // Update issues and transmittals count asynchronously
   dbGetAll('issues').then(issues => {
     document.getElementById('n-issues').textContent = issues.filter(i => i.status !== 'resolved').length;
