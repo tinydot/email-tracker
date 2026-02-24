@@ -782,6 +782,8 @@
         <div class="sidebar-label">Actions</div>
         <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
+        <input type="file" id="json-import-input" accept=".json" style="display:none" onchange="importData(this)">
+        <button class="nav-item" onclick="document.getElementById('json-import-input').click()">⬆ Import JSON</button>
         <button class="nav-item" onclick="showSettings()">⚙ Settings</button>
       </div>
     </nav>
@@ -3491,6 +3493,60 @@ async function exportData() {
   a.download   = `email-tracker-${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+async function importData(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast('Invalid JSON file', 'err');
+    return;
+  }
+
+  const emails      = Array.isArray(data.emails)      ? data.emails      : [];
+  const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+
+  if (emails.length === 0 && attachments.length === 0) {
+    toast('Nothing to import', 'err');
+    return;
+  }
+
+  let emailsAdded = 0, emailsSkipped = 0;
+  let attsAdded   = 0, attsSkipped   = 0;
+
+  for (const email of emails) {
+    if (!email.id) continue;
+    const existing = await dbGet('emails', email.id);
+    if (existing) { emailsSkipped++; continue; }
+    await dbPut('emails', email);
+    if (email.messageId) {
+      await dbPut('msgIndex', { messageId: email.messageId, emailId: email.id });
+    }
+    emailsAdded++;
+  }
+
+  for (const att of attachments) {
+    if (!att.id) continue;
+    const existing = await dbGet('attachments', att.id);
+    if (existing) { attsSkipped++; continue; }
+    await dbPut('attachments', att);
+    attsAdded++;
+  }
+
+  await loadEmailList();
+  await updateHeaderStats();
+  showPanel('list');
+
+  const parts = [];
+  if (emailsAdded)   parts.push(`${emailsAdded} email${emailsAdded !== 1 ? 's' : ''} imported`);
+  if (emailsSkipped) parts.push(`${emailsSkipped} skipped`);
+  if (attsAdded)     parts.push(`${attsAdded} attachment${attsAdded !== 1 ? 's' : ''} imported`);
+  toast(parts.length ? parts.join(', ') : 'Nothing new to import', emailsAdded || attsAdded ? 'ok' : '');
 }
 
 async function clearDB() {
