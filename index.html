@@ -2374,8 +2374,8 @@ async function normalizeLineBreaks() {
   let fixed = 0;
 
   for (const email of emails) {
-    if (email.textBody && email.textBody.includes('\n\n \n\n')) {
-      email.textBody = email.textBody.replace(/\n\n \n\n/g, '\n');
+    if (email.textBody && /\n[ \t]*\n/.test(email.textBody)) {
+      email.textBody = email.textBody.replace(/(\n[ \t]*){2,}/g, '\n');
       await dbPut('emails', email);
       fixed++;
     }
@@ -3551,7 +3551,7 @@ async function importData(input) {
     if (!email.id) continue;
     const existing = await dbGet('emails', email.id);
     if (existing) { emailsSkipped++; continue; }
-    if (email.textBody) email.textBody = email.textBody.replace(/\n\n \n\n/g, '\n');
+    if (email.textBody) email.textBody = email.textBody.replace(/(\n[ \t]*){2,}/g, '\n');
     await dbPut('emails', email);
     if (email.messageId) {
       await dbPut('msgIndex', { messageId: email.messageId, emailId: email.id });
