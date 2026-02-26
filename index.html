@@ -655,6 +655,83 @@
   }
   .tag-add:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* ── Bulk Tag Bar ── */
+  #bulk-tag-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    min-height: 36px;
+  }
+
+  .bulk-tag-label {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  #bulk-tag-input {
+    height: 26px;
+    width: 130px;
+    padding: 0 8px;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: var(--sans);
+    background: var(--surface);
+  }
+
+  #bulk-tag-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .bulk-tag-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border2);
+    flex-shrink: 0;
+  }
+
+  .bulk-view-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 2px 4px 2px 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .bulk-view-tag-chip .chip-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 0 2px;
+    line-height: 1;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bulk-view-tag-chip .chip-remove:hover {
+    color: var(--danger);
+    background: var(--danger-dim);
+  }
+
   /* ── Toast ── */
   #toast {
     position: fixed;
@@ -1028,6 +1105,7 @@
           </select>
           <button class="btn btn-primary" onclick="showImport()">+ Import</button>
         </div>
+        <div id="bulk-tag-bar" style="display:none"></div>
         <div class="email-list-header">
           <div class="col-flag"></div>
           <div class="col-from">From</div>
@@ -2537,12 +2615,17 @@ function getOperatorOptions(field, selected) {
     ['not_equals',   'does not equal'],
     ['starts_with',  'starts with'],
     ['ends_with',    'ends with'],
+    ['is_empty',     'is empty'],
+    ['is_not_empty', 'is not empty'],
   ];
   return ops.map(([v, l]) => `<option value="${v}" ${selected === v ? 'selected' : ''}>${l}</option>`).join('');
 }
 
-function getValueInputHTML(field, value) {
+function getValueInputHTML(field, value, operator) {
   if (BOOL_FIELDS.has(field)) return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  if (operator === 'is_empty' || operator === 'is_not_empty') {
+    return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  }
   if (field === 'status') {
     const statuses = ['unread','read','replied','awaiting','actioned'];
     return `<select>${statuses.map(s => `<option value="${s}" ${value === s ? 'selected' : ''}>${s}</option>`).join('')}</select>`;
@@ -2559,10 +2642,10 @@ function buildRuleRowHTML(rule = {}) {
       <select class="rule-field" onchange="onRuleFieldChange(this)">
         ${RULE_FIELDS.map(f => `<option value="${f.value}" ${field === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
       </select>
-      <select class="rule-operator">
+      <select class="rule-operator" onchange="onRuleOperatorChange(this)">
         ${getOperatorOptions(field, operator)}
       </select>
-      <div class="rule-value-container" style="min-width:0;">${getValueInputHTML(field, value)}</div>
+      <div class="rule-value-container" style="min-width:0;">${getValueInputHTML(field, value, operator)}</div>
       <button class="rule-remove" onclick="this.closest('.rule-row').remove()" title="Remove rule">×</button>
     </div>`;
 }
@@ -2571,7 +2654,14 @@ function onRuleFieldChange(select) {
   const row = select.closest('.rule-row');
   const field = select.value;
   row.querySelector('.rule-operator').innerHTML = getOperatorOptions(field, 'contains');
-  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '');
+  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', 'contains');
+}
+
+function onRuleOperatorChange(select) {
+  const row = select.closest('.rule-row');
+  const field = row.querySelector('.rule-field').value;
+  const operator = select.value;
+  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', operator);
 }
 
 function addRuleRow() {
@@ -2740,6 +2830,8 @@ function evaluateRule(email, rule) {
     case 'not_equals':   return fv !== val;
     case 'starts_with':  return fv.startsWith(val);
     case 'ends_with':    return fv.endsWith(val);
+    case 'is_empty':     return fv === '';
+    case 'is_not_empty': return fv !== '';
     default: return false;
   }
 }
@@ -2987,9 +3079,11 @@ function switchView(view) {
     applyFilters();
   } else if (view === 'transmittals') {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    refreshBulkTagBar();
     showTransmittalRegister();
   } else if (view === 'issues') {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    refreshBulkTagBar();
     showIssuesList();
   } else {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
@@ -3137,6 +3231,8 @@ function renderEmailList() {
         <div class="col-attach">${attach}</div>
       </div>`;
   }).join('');
+
+  refreshBulkTagBar();
 }
 
 
@@ -3955,6 +4051,92 @@ async function bulkUnmarkActionable() {
   await updateHeaderStats();
   renderEmailList();
   toast(`Unmarked ${flagged.length} email${flagged.length !== 1 ? 's' : ''}`, 'ok');
+}
+
+// ═══════════════════════════════════════════════════════
+//  BULK TAGGING
+// ═══════════════════════════════════════════════════════
+
+function refreshBulkTagBar() {
+  const bar = document.getElementById('bulk-tag-bar');
+  if (!bar) return;
+
+  // Hide in non-email-list views
+  if (currentView === 'transmittals' || currentView === 'issues') {
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  const count = filteredEmails.length;
+
+  // Gather unique tags across all currently filtered emails
+  const tagSet = new Set();
+  for (const email of filteredEmails) {
+    for (const t of (email.tags || [])) tagSet.add(t);
+  }
+  const uniqueTags = [...tagSet].sort();
+
+  const tagsHTML = uniqueTags.length > 0
+    ? uniqueTags.map(t => `
+        <span class="bulk-view-tag-chip">
+          #${escHtml(t)}
+          <button class="chip-remove" onclick="bulkRemoveTagFromView('${escHtml(t)}')" title="Remove tag from all ${count} filtered email${count !== 1 ? 's' : ''}">×</button>
+        </span>`).join('')
+    : `<span style="color:var(--muted);font-size:11px;font-style:italic;">none</span>`;
+
+  bar.innerHTML = `
+    <span class="bulk-tag-label">Bulk tag ${count} email${count !== 1 ? 's' : ''}:</span>
+    <input type="text" id="bulk-tag-input" placeholder="tag name…"
+           onkeydown="if(event.key==='Enter')bulkAddTagToView()">
+    <button class="btn btn-primary" style="height:26px;padding:0 10px;font-size:11px;"
+            onclick="bulkAddTagToView()">+ Add to all</button>
+    <div class="bulk-tag-sep"></div>
+    <span class="bulk-tag-label">Tags in view:</span>
+    ${tagsHTML}
+  `;
+}
+
+async function bulkAddTagToView() {
+  const input = document.getElementById('bulk-tag-input');
+  if (!input) return;
+  const tag = input.value.trim().toLowerCase();
+  if (!tag) { toast('Enter a tag name', 'err'); return; }
+
+  const targets = filteredEmails.filter(e => !(e.tags || []).includes(tag));
+  if (targets.length === 0) {
+    toast(`Tag "${tag}" already on all ${filteredEmails.length} email${filteredEmails.length !== 1 ? 's' : ''}`, 'ok');
+    return;
+  }
+
+  for (const email of targets) {
+    if (!email.tags) email.tags = [];
+    email.tags.push(tag);
+    await dbPut('emails', email);
+  }
+
+  input.value = '';
+  refreshBulkTagBar();
+  toast(`Added tag "${tag}" to ${targets.length} email${targets.length !== 1 ? 's' : ''}`, 'ok');
+}
+
+async function bulkRemoveTagFromView(tag) {
+  const targets = filteredEmails.filter(e => (e.tags || []).includes(tag));
+  if (targets.length === 0) {
+    toast(`Tag "${tag}" not found in current view`, 'ok');
+    return;
+  }
+  if (!confirm(`Remove tag "${tag}" from ${targets.length} email${targets.length !== 1 ? 's' : ''}?`)) return;
+
+  for (const email of targets) {
+    email.tags = email.tags.filter(t => t !== tag);
+    await dbPut('emails', email);
+  }
+
+  refreshBulkTagBar();
+  // Re-filter in case the active smart view rules depend on this tag
+  if (currentView.startsWith('sv-')) applyFilters();
+  toast(`Removed tag "${tag}" from ${targets.length} email${targets.length !== 1 ? 's' : ''}`, 'ok');
 }
 
 async function addTag(id) {
