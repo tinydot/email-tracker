@@ -2835,6 +2835,29 @@ function showSmartViewEditor(svId = null) {
   const nsv = sv ? normalizeSmartView(sv) : null;
   const groups = nsv?.groups?.length ? nsv.groups : [{ operator: 'AND', rules: [{ field: 'fromAddr', operator: 'contains', value: '' }] }];
   const groupOp = nsv?.groupOperator || 'AND';
+  const requiredTags = sv?.requiredTags || [];
+
+  // Gather all known tags from loaded emails for the picker
+  const availableTags = [...new Set(allEmails.flatMap(e => e.tags || []))].sort();
+
+  const requiredTagsChipsHTML = () => requiredTags.length > 0
+    ? requiredTags.map(t => `
+        <span class="tag-chip active req-tag-chip" data-tag="${escHtml(t)}" style="cursor:default; user-select:none;">
+          # ${escHtml(t)}
+          <button onclick="removeSvRequiredTag('${escHtml(t)}')"
+                  style="background:none;border:none;cursor:pointer;color:inherit;padding:0 0 0 2px;font-size:14px;line-height:1;" title="Remove">×</button>
+        </span>`).join('')
+    : `<span id="sv-req-tags-empty" style="color:var(--muted);font-size:12px;font-style:italic;">None — add tags below</span>`;
+
+  const tagPickerHTML = availableTags.length > 0
+    ? `<div style="display:flex; gap:6px; margin-top:8px;">
+        <select id="sv-tag-select" class="sv-input" style="flex:1; font-size:12px;">
+          <option value="">— pick a tag —</option>
+          ${availableTags.map(t => `<option value="${escHtml(t)}"${requiredTags.includes(t) ? ' disabled' : ''}>${escHtml(t)}</option>`).join('')}
+        </select>
+        <button class="btn" onclick="addSvRequiredTag()" style="flex:0 0 auto; font-size:12px; padding:4px 10px;">+ Add</button>
+      </div>`
+    : `<p style="color:var(--muted);font-size:12px;margin-top:8px;font-style:italic;">No tags in library yet — tag some emails first.</p>`;
 
   document.getElementById('sv-modal').innerHTML = `
     <div class="sv-modal-header">
@@ -2870,6 +2893,14 @@ function showSmartViewEditor(svId = null) {
       </div>
       <button class="btn" onclick="addSvGroup()" style="margin-bottom:16px; font-size:12px;">+ Add Group</button>
 
+      <div style="border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:16px; background:var(--surface2);">
+        <div class="sv-field-label" style="margin-bottom:8px;">Required Tags <span style="font-weight:400; color:var(--muted);">(email must have ALL of these)</span></div>
+        <div id="sv-required-tags" style="display:flex; flex-wrap:wrap; gap:6px; min-height:26px; align-items:center;">
+          ${requiredTagsChipsHTML()}
+        </div>
+        ${tagPickerHTML}
+      </div>
+
       <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px; font-size:13px; cursor:pointer;">
         <input type="checkbox" id="sv-exclude-automated" ${sv?.excludeAutomated !== false ? 'checked' : ''}>
         Exclude automated / system emails
@@ -2904,6 +2935,47 @@ function collectGroupsFromDOM() {
   return groups;
 }
 
+// --- Required Tags helpers (used by the smart view editor) ---
+function addSvRequiredTag() {
+  const sel = document.getElementById('sv-tag-select');
+  const tag = sel?.value;
+  if (!tag) return;
+  const existing = [...document.querySelectorAll('#sv-required-tags .req-tag-chip')].map(c => c.dataset.tag);
+  if (existing.includes(tag)) return;
+  renderSvRequiredTags([...existing, tag]);
+  sel.value = '';
+  // Disable the option so it can't be added twice
+  const opt = sel.querySelector(`option[value="${tag.replace(/"/g, '\\"')}"]`);
+  if (opt) opt.disabled = true;
+}
+
+function removeSvRequiredTag(tag) {
+  const remaining = [...document.querySelectorAll('#sv-required-tags .req-tag-chip')]
+    .map(c => c.dataset.tag).filter(t => t !== tag);
+  renderSvRequiredTags(remaining);
+  // Re-enable the option in the picker
+  const sel = document.getElementById('sv-tag-select');
+  if (sel) {
+    const opt = sel.querySelector(`option[value="${tag.replace(/"/g, '\\"')}"]`);
+    if (opt) opt.disabled = false;
+  }
+}
+
+function renderSvRequiredTags(tags) {
+  const container = document.getElementById('sv-required-tags');
+  if (!container) return;
+  if (tags.length === 0) {
+    container.innerHTML = `<span id="sv-req-tags-empty" style="color:var(--muted);font-size:12px;font-style:italic;">None — add tags below</span>`;
+  } else {
+    container.innerHTML = tags.map(t => `
+      <span class="tag-chip active req-tag-chip" data-tag="${escHtml(t)}" style="cursor:default; user-select:none;">
+        # ${escHtml(t)}
+        <button onclick="removeSvRequiredTag('${escHtml(t)}')"
+                style="background:none;border:none;cursor:pointer;color:inherit;padding:0 0 0 2px;font-size:14px;line-height:1;" title="Remove">×</button>
+      </span>`).join('');
+  }
+}
+
 async function saveSmartView() {
   const id   = document.getElementById('sv-edit-id').value;
   const name = document.getElementById('sv-name').value.trim();
@@ -2917,11 +2989,14 @@ async function saveSmartView() {
   }
 
   const groups = collectGroupsFromDOM();
+  const requiredTags = [...document.querySelectorAll('#sv-required-tags .req-tag-chip')]
+    .map(chip => chip.dataset.tag).filter(Boolean);
 
   const existing = id ? smartViews.find(s => s.id === id) : null;
   const svRecord = {
     id: id || ('sv-' + Date.now()),
     name, icon, groupOperator, groups,
+    requiredTags,
     excludeAutomated: document.getElementById('sv-exclude-automated').checked,
     createdAt: existing?.createdAt || new Date().toISOString(),
   };
@@ -3016,6 +3091,13 @@ function normalizeSmartView(sv) {
 }
 
 function applySmartViewRules(email, sv) {
+  // Required tags are always AND-combined (email must have ALL of them)
+  const requiredTags = sv.requiredTags || [];
+  if (requiredTags.length > 0) {
+    const emailTags = email.tags || [];
+    if (!requiredTags.every(t => emailTags.includes(t))) return false;
+  }
+
   const nsv = normalizeSmartView(sv);
   const { groupOperator = 'AND', groups = [] } = nsv;
   if (!groups.length) return true;
