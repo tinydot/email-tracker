@@ -1633,8 +1633,24 @@ function parseAddress(str) {
 
 function parseAddressList(str) {
   if (!str) return [];
-  // Split on commas not inside angle brackets or quotes
-  const parts = str.split(/,(?![^<]*>)(?![^"]*")/);
+  // Statefully split on commas not inside angle brackets or double-quoted strings
+  const parts = [];
+  let current = '';
+  let inAngle = false;
+  let inQuote = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '"' && !inAngle) inQuote = !inQuote;
+    else if (ch === '<' && !inQuote) inAngle = true;
+    else if (ch === '>' && !inQuote) inAngle = false;
+    if (ch === ',' && !inAngle && !inQuote) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
   return parts.map(p => parseAddress(p.trim())).filter(a => a.email || a.name);
 }
 
@@ -2140,7 +2156,7 @@ async function processFilesForImport(fileArr) {
     appendLog(`Attachment storage: not configured (metadata only)`, 'warn');
   }
 
-  let ok = 0, errs = 0;
+  let ok = 0, errs = 0, updated = 0;
 
   for (let i = 0; i < fileArr.length; i++) {
     const file = fileArr[i];
@@ -2162,10 +2178,21 @@ async function processFilesForImport(fileArr) {
       // Generate stable ID
       const id = parsed.messageId || `${file.name}-${parsed.date || Date.now()}`;
 
-      // Check for existing - skip if already imported
+      // Check for existing
       const existing = await dbGet('emails', id);
       if (existing) {
-        appendLog(`⊘ ${file.name}: already imported (skipped)`, 'warn');
+        // Re-parse recipients in case the email was imported with the old buggy parser
+        const toAddrs = parsed.to.map(a => a.email);
+        const ccAddrs = parsed.cc.map(a => a.email);
+        const toChanged = toAddrs.length !== (existing.toAddrs || []).length;
+        const ccChanged = ccAddrs.length !== (existing.ccAddrs || []).length;
+        if (toChanged || ccChanged) {
+          await dbPut('emails', { ...existing, toAddrs, ccAddrs });
+          appendLog(`↻ ${file.name}: recipients updated (To: ${toAddrs.length}, CC: ${ccAddrs.length})`, 'ok');
+          updated++;
+        } else {
+          appendLog(`⊘ ${file.name}: already imported (skipped)`, 'warn');
+        }
         continue;
       }
 
@@ -2313,8 +2340,8 @@ async function processFilesForImport(fileArr) {
   }
 
   pct.textContent   = '100%';
-  const skipped = fileArr.length - ok - errs;
-  appendLog(`Done — ${ok} imported${skipped > 0 ? `, ${skipped} skipped (duplicates)` : ''}, ${errs} errors.`, ok > 0 ? 'ok' : 'err');
+  const skipped = fileArr.length - ok - errs - updated;
+  appendLog(`Done — ${ok} imported${updated > 0 ? `, ${updated} recipients updated` : ''}${skipped > 0 ? `, ${skipped} skipped (duplicates)` : ''}, ${errs} errors.`, ok > 0 || updated > 0 ? 'ok' : 'err');
 
   importedEmails += ok;
 
