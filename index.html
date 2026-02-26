@@ -2575,10 +2575,11 @@ function openDetail(email) {
   // Meta
   const toStr = email.toAddrs?.join(', ') || '—';
   const ccStr = email.ccAddrs?.join(', ') || '';
+  const uid = email.id.replace(/[^a-z0-9]/gi, '');
   document.getElementById('det-meta').innerHTML = `
     <span><b>From:</b> ${escHtml(email.fromName ? `${email.fromName} <${email.fromAddr}>` : email.fromAddr)}</span>
-    <span><b>To:</b> ${escHtml(truncate(toStr, 80))}</span>
-    ${ccStr ? `<span><b>CC:</b> ${escHtml(truncate(ccStr, 80))}</span>` : ''}
+    ${recipientSpan('To', toStr, 80, uid)}
+    ${ccStr ? recipientSpan('CC', ccStr, 80, uid) : ''}
     <span><b>Date:</b> ${email.date ? new Date(email.date).toLocaleString() : '—'}</span>
     ${threadInfo}
     <span><b>File:</b> <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${escHtml(email.fileName || '')}</span></span>
@@ -3969,6 +3970,14 @@ function formatSize(bytes) {
 function truncate(str, n) {
   if (!str) return '';
   return str.length > n ? str.substring(0, n) + '…' : str;
+}
+
+function recipientSpan(label, fullStr, maxLen, uid) {
+  if (!fullStr || fullStr.length <= maxLen) {
+    return `<span><b>${label}:</b> ${escHtml(fullStr || '—')}</span>`;
+  }
+  const s = `recip-${uid}-${label.toLowerCase()}`;
+  return `<span><b>${label}:</b> <span id="${s}-short">${escHtml(truncate(fullStr, maxLen))} <a href="#" onclick="document.getElementById('${s}-short').style.display='none';document.getElementById('${s}-full').style.display='';return false;" style="color:var(--accent);text-decoration:none">show&nbsp;more</a></span><span id="${s}-full" style="display:none">${escHtml(fullStr)} <a href="#" onclick="document.getElementById('${s}-full').style.display='none';document.getElementById('${s}-short').style.display='';return false;" style="color:var(--accent);text-decoration:none">show&nbsp;less</a></span></span>`;
 }
 
 function escHtml(str) {
