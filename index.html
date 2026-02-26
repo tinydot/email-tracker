@@ -950,6 +950,34 @@
   }
   .rule-remove:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-dim); }
 
+  /* ── Smart view rule groups ── */
+  .sv-group {
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .sv-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .sv-group-rules { padding: 8px 10px 4px; background: var(--surface2); }
+  .sv-group-footer { padding: 4px 10px 8px; background: var(--surface2); }
+  .sv-top-op {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
   /* ── Pattern chips in settings ── */
   .pattern-chip {
     display: inline-flex;
@@ -2715,11 +2743,50 @@ function onRuleOperatorChange(select) {
   row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', operator);
 }
 
-function addRuleRow() {
-  const container = document.getElementById('sv-rules-list');
+function addRuleToGroup(btn) {
+  const rulesContainer = btn.closest('.sv-group').querySelector('.sv-group-rules');
   const tmp = document.createElement('div');
   tmp.innerHTML = buildRuleRowHTML();
+  rulesContainer.appendChild(tmp.firstElementChild);
+}
+
+function setSvGroupOp(btn, op) {
+  const group = btn.closest('.sv-group');
+  group.dataset.operator = op;
+  group.querySelectorAll('.sv-group-header .sv-operator-btn').forEach(b => {
+    const btnOp = b.getAttribute('onclick').includes("'AND'") ? 'AND' : 'OR';
+    b.classList.toggle('active', btnOp === op);
+  });
+}
+
+function addSvGroup() {
+  const container = document.getElementById('sv-groups-container');
+  const groupCount = container.querySelectorAll('.sv-group').length + 1;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildGroupHTML({ operator: 'AND', rules: [] }, groupCount);
   container.appendChild(tmp.firstElementChild);
+  // Show top-level operator and enable all remove buttons
+  updateSvGroupUI();
+}
+
+function removeSvGroup(btn) {
+  btn.closest('.sv-group').remove();
+  updateSvGroupUI();
+}
+
+function updateSvGroupUI() {
+  const container = document.getElementById('sv-groups-container');
+  const groups = container.querySelectorAll('.sv-group');
+  const topOp = document.getElementById('sv-top-op');
+  if (topOp) topOp.style.display = groups.length > 1 ? '' : 'none';
+  groups.forEach(g => {
+    const removeBtn = g.querySelector('.sv-group-remove');
+    if (removeBtn) {
+      removeBtn.disabled = groups.length <= 1;
+      removeBtn.style.opacity = groups.length <= 1 ? '0.3' : '';
+      removeBtn.style.pointerEvents = groups.length <= 1 ? 'none' : '';
+    }
+  });
 }
 
 function setSvOperator(op) {
@@ -2736,11 +2803,38 @@ function closeSmartViewEditor() {
   document.getElementById('sv-modal-overlay').classList.remove('open');
 }
 
+function buildGroupHTML(group, groupCount) {
+  const op = group.operator || 'AND';
+  return `
+    <div class="sv-group" data-operator="${op}">
+      <div class="sv-group-header">
+        <span>where</span>
+        <div class="sv-operator-toggle" style="margin:0;">
+          <button class="sv-operator-btn${op === 'AND' ? ' active' : ''}"
+                  onclick="setSvGroupOp(this, 'AND')">ALL</button>
+          <button class="sv-operator-btn${op === 'OR'  ? ' active' : ''}"
+                  onclick="setSvGroupOp(this, 'OR')">ANY</button>
+        </div>
+        <span>of these rules match</span>
+        <button class="rule-remove sv-group-remove" onclick="removeSvGroup(this)"
+                title="Remove group" style="margin-left:auto;"
+                ${groupCount <= 1 ? 'disabled style="opacity:0.3;pointer-events:none;margin-left:auto;"' : 'style="margin-left:auto;"'}>×</button>
+      </div>
+      <div class="sv-group-rules">
+        ${(group.rules || [{ field: 'fromAddr', operator: 'contains', value: '' }]).map(r => buildRuleRowHTML(r)).join('')}
+      </div>
+      <div class="sv-group-footer">
+        <button class="btn" onclick="addRuleToGroup(this)" style="font-size:12px; padding:3px 10px;">+ Add Rule</button>
+      </div>
+    </div>`;
+}
+
 function showSmartViewEditor(svId = null) {
   const sv = svId ? smartViews.find(s => s.id === svId) : null;
   const isEdit = !!sv;
-  const rules = sv?.rules?.length ? sv.rules : [{ field: 'fromDomain', operator: 'contains', value: '' }];
-  const op = sv?.ruleOperator || 'AND';
+  const nsv = sv ? normalizeSmartView(sv) : null;
+  const groups = nsv?.groups?.length ? nsv.groups : [{ operator: 'AND', rules: [{ field: 'fromAddr', operator: 'contains', value: '' }] }];
+  const groupOp = nsv?.groupOperator || 'AND';
 
   document.getElementById('sv-modal').innerHTML = `
     <div class="sv-modal-header">
@@ -2762,20 +2856,19 @@ function showSmartViewEditor(svId = null) {
         </div>
       </div>
 
-      <div style="margin-bottom:14px;">
-        <div class="sv-field-label" style="margin-bottom:6px;">Match emails where</div>
+      <input type="hidden" id="sv-operator" value="${groupOp}">
+      <div class="sv-top-op" id="sv-top-op" style="${groups.length <= 1 ? 'display:none' : ''}">
+        <span>Match</span>
         <div class="sv-operator-toggle">
-          <button class="sv-operator-btn" id="op-btn-AND" onclick="setSvOperator('AND')">ALL rules match</button>
-          <button class="sv-operator-btn" id="op-btn-OR"  onclick="setSvOperator('OR')">ANY rule matches</button>
+          <button class="sv-operator-btn${groupOp === 'AND' ? ' active' : ''}" id="op-btn-AND" onclick="setSvOperator('AND')">ALL groups</button>
+          <button class="sv-operator-btn${groupOp === 'OR'  ? ' active' : ''}" id="op-btn-OR"  onclick="setSvOperator('OR')">ANY group</button>
         </div>
-        <input type="hidden" id="sv-operator" value="${op}">
       </div>
 
-      <div class="sv-field-label" style="margin-bottom:6px;">Rules</div>
-      <div id="sv-rules-list">
-        ${rules.map(r => buildRuleRowHTML(r)).join('')}
+      <div id="sv-groups-container">
+        ${groups.map(g => buildGroupHTML(g, groups.length)).join('')}
       </div>
-      <button class="btn" onclick="addRuleRow()" style="margin-top:4px; margin-bottom:16px;">+ Add Rule</button>
+      <button class="btn" onclick="addSvGroup()" style="margin-bottom:16px; font-size:12px;">+ Add Group</button>
 
       <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px; font-size:13px; cursor:pointer;">
         <input type="checkbox" id="sv-exclude-automated" ${sv?.excludeAutomated !== false ? 'checked' : ''}>
@@ -2790,28 +2883,32 @@ function showSmartViewEditor(svId = null) {
     </div>`;
 
   document.getElementById('sv-modal-overlay').classList.add('open');
-  setSvOperator(op);
   document.getElementById('sv-name').focus();
 }
 
-function collectRulesFromDOM() {
-  const rules = [];
-  document.querySelectorAll('#sv-rules-list .rule-row').forEach(row => {
-    const field    = row.querySelector('.rule-field')?.value;
-    const operator = row.querySelector('.rule-operator')?.value;
-    const textIn   = row.querySelector('.rule-value-container input[type=text]');
-    const selIn    = row.querySelector('.rule-value-container select');
-    const value    = textIn ? textIn.value : (selIn ? selIn.value : '');
-    if (field) rules.push({ field, operator: operator || 'contains', value: value || '' });
+function collectGroupsFromDOM() {
+  const groups = [];
+  document.querySelectorAll('#sv-groups-container .sv-group').forEach(groupEl => {
+    const operator = groupEl.dataset.operator || 'AND';
+    const rules = [];
+    groupEl.querySelectorAll('.rule-row').forEach(row => {
+      const field    = row.querySelector('.rule-field')?.value;
+      const operator = row.querySelector('.rule-operator')?.value;
+      const textIn   = row.querySelector('.rule-value-container input[type=text]');
+      const selIn    = row.querySelector('.rule-value-container select');
+      const value    = textIn ? textIn.value : (selIn ? selIn.value : '');
+      if (field) rules.push({ field, operator: operator || 'contains', value: value || '' });
+    });
+    groups.push({ operator, rules });
   });
-  return rules;
+  return groups;
 }
 
 async function saveSmartView() {
   const id   = document.getElementById('sv-edit-id').value;
   const name = document.getElementById('sv-name').value.trim();
   const icon = document.getElementById('sv-icon').value.trim() || '🔍';
-  const ruleOperator = document.getElementById('sv-operator').value || 'AND';
+  const groupOperator = document.getElementById('sv-operator').value || 'AND';
 
   if (!name) {
     document.getElementById('sv-name').focus();
@@ -2819,12 +2916,12 @@ async function saveSmartView() {
     return;
   }
 
-  const rules = collectRulesFromDOM();
+  const groups = collectGroupsFromDOM();
 
   const existing = id ? smartViews.find(s => s.id === id) : null;
   const svRecord = {
     id: id || ('sv-' + Date.now()),
-    name, icon, ruleOperator, rules,
+    name, icon, groupOperator, groups,
     excludeAutomated: document.getElementById('sv-exclude-automated').checked,
     createdAt: existing?.createdAt || new Date().toISOString(),
   };
@@ -2908,12 +3005,27 @@ function evaluateRule(email, rule) {
   }
 }
 
+// Converts old flat-rules format to grouped format for backward compat
+function normalizeSmartView(sv) {
+  if (sv.groups) return sv;
+  return {
+    ...sv,
+    groupOperator: sv.ruleOperator || 'AND',
+    groups: [{ operator: sv.ruleOperator || 'AND', rules: sv.rules || [] }],
+  };
+}
+
 function applySmartViewRules(email, sv) {
-  if (!sv.rules || sv.rules.length === 0) return true;
-  if (sv.ruleOperator === 'OR') {
-    return sv.rules.some(r => evaluateRule(email, r));
-  }
-  return sv.rules.every(r => evaluateRule(email, r));
+  const nsv = normalizeSmartView(sv);
+  const { groupOperator = 'AND', groups = [] } = nsv;
+  if (!groups.length) return true;
+  const evalGroup = g => {
+    if (!g.rules || !g.rules.length) return true;
+    return g.operator === 'OR'
+      ? g.rules.some(r => evaluateRule(email, r))
+      : g.rules.every(r => evaluateRule(email, r));
+  };
+  return groupOperator === 'OR' ? groups.some(evalGroup) : groups.every(evalGroup);
 }
 
 async function loadSmartViews() {
