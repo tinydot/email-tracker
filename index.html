@@ -1350,8 +1350,24 @@ function parseAddress(str) {
 
 function parseAddressList(str) {
   if (!str) return [];
-  // Split on commas not inside angle brackets or quotes
-  const parts = str.split(/,(?![^<]*>)(?![^"]*")/);
+  // Statefully split on commas not inside angle brackets or double-quoted strings
+  const parts = [];
+  let current = '';
+  let inAngle = false;
+  let inQuote = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '"' && !inAngle) inQuote = !inQuote;
+    else if (ch === '<' && !inQuote) inAngle = true;
+    else if (ch === '>' && !inQuote) inAngle = false;
+    if (ch === ',' && !inAngle && !inQuote) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
   return parts.map(p => parseAddress(p.trim())).filter(a => a.email || a.name);
 }
 
