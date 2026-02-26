@@ -216,6 +216,12 @@
     color: var(--danger);
   }
 
+  .btn-warn {
+    background: var(--warn-dim);
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+
   /* ── Import panel ── */
   #import-panel {
     flex: 1;
@@ -1072,6 +1078,9 @@
         </button>
         <button class="nav-item" data-view="automated" onclick="switchView('automated')">
           🤖 Automated <span class="nav-count" id="n-automated">0</span>
+        </button>
+        <button class="nav-item" data-view="lowvalue" onclick="switchView('lowvalue')">
+          ↓ Low Value <span class="nav-count" id="n-lowvalue">0</span>
         </button>
         <button class="nav-item" data-view="issues" onclick="switchView('issues')">
           📋 Issues <span class="nav-count" id="n-issues">0</span>
@@ -2654,6 +2663,7 @@ const VIEW_LABELS = {
   threads:      'Threads',
   attachments:  'Has Attachments',
   automated:    'Automated / System',
+  lowvalue:     'Low Value',
   issues:       'Issues',
   transmittals: 'Transmittal Register',
 };
@@ -3616,12 +3626,18 @@ function applyFilters() {
     const sv   = smartViews.find(s => s.id === svId);
     if (sv) {
       if (sv.excludeAutomated !== false) list = list.filter(e => !e.isSystemEmail);
+      list = list.filter(e => !e.isLowValue);
       list = list.filter(e => applySmartViewRules(e, sv));
     }
   } else {
     // Exclude automated emails from all built-in views except 'automated'
     if (currentView !== 'automated') {
       list = list.filter(e => !e.isSystemEmail);
+    }
+
+    // Exclude low value emails from all built-in views except 'lowvalue'
+    if (currentView !== 'lowvalue') {
+      list = list.filter(e => !e.isLowValue);
     }
 
     // View filter
@@ -3644,6 +3660,7 @@ function applyFilters() {
         break;
       case 'attachments': list = list.filter(e => e.hasAttachments); break;
       case 'automated':   list = list.filter(e => e.isSystemEmail);  break;
+      case 'lowvalue':    list = list.filter(e => e.isLowValue);     break;
     }
   }
 
@@ -3827,6 +3844,9 @@ function openDetail(email) {
     <button class="btn" onclick="setStatus('${email.id}','actioned')" title="Mark as actioned">✓ Actioned</button>
     <button class="btn" onclick="toggleActionable('${email.id}')" title="Toggle actionable flag">
       ${email.isActionable ? '⚡ Unmark Action' : '⚡ Mark Action'}
+    </button>
+    <button class="btn${email.isLowValue ? ' btn-warn' : ''}" onclick="toggleLowValue('${email.id}')" title="Toggle low value flag">
+      ${email.isLowValue ? '↓ Unmark Low Value' : '↓ Low Value'}
     </button>
     <button class="btn btn-danger" onclick="deleteEmail('${email.id}')">✕</button>
   `;
@@ -4546,6 +4566,17 @@ async function toggleActionable(id) {
   toast(email.isActionable ? 'Marked actionable' : 'Removed action flag', 'ok');
 }
 
+async function toggleLowValue(id) {
+  const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
+  if (!email) return;
+  email.isLowValue = !email.isLowValue;
+  await dbPut('emails', email);
+  openDetail(email);
+  renderEmailList();
+  updateNavCounts();
+  toast(email.isLowValue ? 'Marked as low value' : 'Removed low value flag', 'ok');
+}
+
 async function bulkUnmarkActionable() {
   const flagged = allEmails.filter(e => e.isActionable);
   if (flagged.length === 0) {
@@ -4787,6 +4818,7 @@ function updateNavCounts() {
   document.getElementById('n-threads').textContent    = threadRoots;
   document.getElementById('n-attach').textContent     = allEmails.filter(e => e.hasAttachments).length;
   document.getElementById('n-automated').textContent  = allEmails.filter(e => e.isSystemEmail).length;
+  document.getElementById('n-lowvalue').textContent   = allEmails.filter(e => e.isLowValue).length;
 
   // Update issues and transmittals count asynchronously
   dbGetAll('issues').then(issues => {
