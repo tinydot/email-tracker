@@ -1156,7 +1156,7 @@
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 3; // v3: smartViews + settings stores
+const DB_VERSION = 4; // v4: emailGroups store
 let db = null;
 
 function openDB() {
@@ -1209,6 +1209,11 @@ function openDB() {
       // Settings store (key-value, e.g. custom automation patterns)
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' });
+      }
+
+      // Email Groups store (named lists of email addresses for smart view rules)
+      if (!db.objectStoreNames.contains('emailGroups')) {
+        db.createObjectStore('emailGroups', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => res(e.target.result);
@@ -2561,6 +2566,7 @@ let searchTerm     = '';
 let selectedEmail  = null;
 let selectedEmailIdx = -1; // index in filteredEmails for navigation
 let smartViews     = []; // user-created smart views
+let emailGroups    = []; // user-created email groups for smart view rules
 
 const VIEW_LABELS = {
   all:          'All Emails',
@@ -2586,27 +2592,35 @@ function showPanel(name) {
 
 // --- Rule field definitions ---
 const RULE_FIELDS = [
-  { value: 'fromAddr',       label: 'Sender Email' },
-  { value: 'fromName',       label: 'Sender Name' },
-  { value: 'fromDomain',     label: 'Sender Domain' },
-  { value: 'toAddr',         label: 'Recipient Email' },
-  { value: 'toDomain',       label: 'Recipient Domain' },
-  { value: 'ccAddr',         label: 'CC Email' },
-  { value: 'ccDomain',       label: 'CC Domain' },
-  { value: 'subject',        label: 'Subject' },
-  { value: 'status',         label: 'Status' },
-  { value: 'tags',           label: 'Tags' },
-  { value: 'hasAttachments', label: 'Has Attachments' },
-  { value: 'isActionable',   label: 'Is Actionable' },
-  { value: 'isSystemEmail',  label: 'Is Automated' },
+  { value: 'fromAddr',          label: 'Sender Email' },
+  { value: 'fromName',          label: 'Sender Name' },
+  { value: 'fromDomain',        label: 'Sender Domain' },
+  { value: 'toAddr',            label: 'Recipient Email' },
+  { value: 'toDomain',          label: 'Recipient Domain' },
+  { value: 'ccAddr',            label: 'CC Email' },
+  { value: 'ccDomain',          label: 'CC Domain' },
+  { value: 'subject',           label: 'Subject' },
+  { value: 'status',            label: 'Status' },
+  { value: 'tags',              label: 'Tags' },
+  { value: 'hasAttachments',    label: 'Has Attachments' },
+  { value: 'isActionable',      label: 'Is Actionable' },
+  { value: 'isSystemEmail',     label: 'Is Automated' },
+  { value: 'fromInGroup',       label: 'Sender in Group' },
+  { value: 'recipientInGroup',  label: 'Recipient in Group' },
+  { value: 'participantInGroup',label: 'Any Participant in Group' },
 ];
 
-const BOOL_FIELDS = new Set(['hasAttachments', 'isActionable', 'isSystemEmail']);
+const BOOL_FIELDS  = new Set(['hasAttachments', 'isActionable', 'isSystemEmail']);
+const GROUP_FIELDS = new Set(['fromInGroup', 'recipientInGroup', 'participantInGroup']);
 
 function getOperatorOptions(field, selected) {
   if (BOOL_FIELDS.has(field)) {
     return `<option value="is_true" ${selected === 'is_true' ? 'selected' : ''}>is true</option>
             <option value="is_false" ${selected === 'is_false' ? 'selected' : ''}>is false</option>`;
+  }
+  if (GROUP_FIELDS.has(field)) {
+    return `<option value="in_group" ${selected === 'in_group' ? 'selected' : ''}>is in group</option>
+            <option value="not_in_group" ${selected === 'not_in_group' ? 'selected' : ''}>is not in group</option>`;
   }
   const ops = [
     ['contains',     'contains'],
@@ -2625,6 +2639,15 @@ function getValueInputHTML(field, value, operator) {
   if (BOOL_FIELDS.has(field)) return '<span style="color:var(--muted);font-size:11px;">—</span>';
   if (operator === 'is_empty' || operator === 'is_not_empty') {
     return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  }
+  if (GROUP_FIELDS.has(field)) {
+    if (!emailGroups.length) {
+      return '<span style="color:var(--muted);font-size:11px;">No groups yet — create one in Settings</span>';
+    }
+    const opts = emailGroups.map(g =>
+      `<option value="${escHtml(g.id)}" ${value === g.id ? 'selected' : ''}>${escHtml(g.name)}</option>`
+    ).join('');
+    return `<select>${opts}</select>`;
   }
   if (field === 'status') {
     const statuses = ['unread','read','replied','awaiting','actioned'];
@@ -2653,8 +2676,9 @@ function buildRuleRowHTML(rule = {}) {
 function onRuleFieldChange(select) {
   const row = select.closest('.rule-row');
   const field = select.value;
-  row.querySelector('.rule-operator').innerHTML = getOperatorOptions(field, 'contains');
-  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', 'contains');
+  const defaultOp = GROUP_FIELDS.has(field) ? 'in_group' : BOOL_FIELDS.has(field) ? 'is_true' : 'contains';
+  row.querySelector('.rule-operator').innerHTML = getOperatorOptions(field, defaultOp);
+  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', defaultOp);
 }
 
 function onRuleOperatorChange(select) {
@@ -2827,6 +2851,21 @@ function evaluateRule(email, rule) {
     const boolVal = email[field] === true;
     return operator === 'is_true' ? boolVal : !boolVal;
   }
+  if (GROUP_FIELDS.has(field)) {
+    const group = emailGroups.find(g => g.id === value);
+    if (!group) return false;
+    const members = (group.members || []).map(m => m.toLowerCase());
+    let addrs = [];
+    if (field === 'fromInGroup') {
+      addrs = [(email.fromAddr || '').toLowerCase()];
+    } else if (field === 'recipientInGroup') {
+      addrs = [...(email.toAddrs || []), ...(email.ccAddrs || [])].map(a => a.toLowerCase());
+    } else { // participantInGroup
+      addrs = [(email.fromAddr || ''), ...(email.toAddrs || []), ...(email.ccAddrs || [])].map(a => a.toLowerCase());
+    }
+    const match = addrs.some(a => members.includes(a));
+    return operator === 'in_group' ? match : !match;
+  }
   const fv  = getEmailFieldValue(email, field);
   const val = (value || '').toLowerCase();
   switch (operator) {
@@ -2853,6 +2892,59 @@ function applySmartViewRules(email, sv) {
 async function loadSmartViews() {
   smartViews = await dbGetAll('smartViews');
   renderSmartViewsSidebar();
+}
+
+async function loadEmailGroups() {
+  emailGroups = await dbGetAll('emailGroups');
+}
+
+async function createEmailGroup(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const group = { id: 'eg-' + Date.now(), name: trimmed, members: [], createdAt: new Date().toISOString() };
+  await dbPut('emailGroups', group);
+  emailGroups.push(group);
+  return group;
+}
+
+async function deleteEmailGroup(id) {
+  if (!confirm('Delete this group? Smart view rules using it will no longer match.')) return;
+  await dbDelete('emailGroups', id);
+  emailGroups = emailGroups.filter(g => g.id !== id);
+  toast('Group deleted', 'ok');
+  showSettings();
+}
+
+async function addGroupMember(groupId, email) {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return;
+  const group = emailGroups.find(g => g.id === groupId);
+  if (!group) return;
+  if (group.members.includes(addr)) { toast('Already in group', 'warn'); return; }
+  group.members.push(addr);
+  await dbPut('emailGroups', group);
+  toast(`Added ${addr}`, 'ok');
+  showSettings();
+}
+
+async function removeGroupMember(groupId, email) {
+  const group = emailGroups.find(g => g.id === groupId);
+  if (!group) return;
+  group.members = group.members.filter(m => m !== email);
+  await dbPut('emailGroups', group);
+  toast('Removed', 'ok');
+  showSettings();
+}
+
+async function renameEmailGroup(groupId) {
+  const group = emailGroups.find(g => g.id === groupId);
+  if (!group) return;
+  const name = prompt('New name for group:', group.name);
+  if (!name || !name.trim()) return;
+  group.name = name.trim();
+  await dbPut('emailGroups', group);
+  toast('Group renamed', 'ok');
+  showSettings();
 }
 
 function renderSmartViewsSidebar() {
@@ -2900,6 +2992,50 @@ function safeRegex(src) {
 async function saveCustomPatterns() {
   await dbPut('settings', { key: 'customAutomationPatterns', ...customPatterns });
   mergeCustomPatterns();
+}
+
+function renderEmailGroupsSection() {
+  const groupsHTML = emailGroups.map(g => {
+    const memberChips = g.members.map(m =>
+      `<span class="pattern-chip custom">
+         ${escHtml(m)}
+         <button class="del-pat" onclick="removeGroupMember('${escHtml(g.id)}', '${escHtml(m)}')" title="Remove">×</button>
+       </span>`
+    ).join('');
+    return `
+      <div style="padding:12px; background:var(--surface); border:1px solid var(--border2); border-radius:5px; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+          <span style="font-weight:500; flex:1;">${escHtml(g.name)}</span>
+          <button class="btn" style="padding:2px 8px; font-size:11px;" onclick="renameEmailGroup('${escHtml(g.id)}')">Rename</button>
+          <button class="btn btn-danger" style="padding:2px 8px; font-size:11px;" onclick="deleteEmailGroup('${escHtml(g.id)}')">Delete</button>
+        </div>
+        <div style="margin-bottom:8px; min-height:24px;">
+          ${memberChips || '<span style="color:var(--muted);font-size:12px;font-style:italic;">No members yet</span>'}
+        </div>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="new-member-${escHtml(g.id)}" class="search-input"
+                 placeholder="Add email address…" style="flex:1;"
+                 onkeydown="if(event.key==='Enter') addGroupMember('${escHtml(g.id)}', this.value)">
+          <button class="btn" onclick="addGroupMember('${escHtml(g.id)}', document.getElementById('new-member-${escHtml(g.id)}').value)">+ Add</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    ${groupsHTML}
+    <div style="display:flex; gap:6px; margin-top:${emailGroups.length ? '4px' : '0'};">
+      <input type="text" id="new-group-name" class="search-input" placeholder="New group name…" style="flex:1;"
+             onkeydown="if(event.key==='Enter') createGroupFromSettings()">
+      <button class="btn" onclick="createGroupFromSettings()">+ New Group</button>
+    </div>`;
+}
+
+async function createGroupFromSettings() {
+  const input = document.getElementById('new-group-name');
+  if (!input || !input.value.trim()) return;
+  await createEmailGroup(input.value.trim());
+  toast('Group created', 'ok');
+  showSettings();
 }
 
 function renderPatternSection(title, category, defaults, customs) {
@@ -3011,6 +3147,15 @@ function showSettings() {
           Run this once if you notice excessive spacing in email bodies imported from JSON.
         </div>
         <button id="btn-normalize-linebreaks" class="btn" onclick="normalizeLineBreaks()">Normalize line breaks</button>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Email Groups</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          Create named groups of email addresses to use in smart view rules.
+          For example, add your interface team members to a group, then filter by "Sender in Group" or "Any Participant in Group".
+        </div>
+        ${renderEmailGroupsSection()}
       </div>
 
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
@@ -4814,8 +4959,9 @@ async function init() {
   db = await openDB();
   setupDropZone();
 
-  // Load custom patterns and smart views before processing emails
+  // Load custom patterns, smart views, and email groups before processing emails
   await loadCustomPatterns();
+  await loadEmailGroups();
   await loadSmartViews();
 
   const emails = await dbGetAll('emails');
