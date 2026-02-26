@@ -91,6 +91,7 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    overflow-y: auto;
   }
 
   .sidebar-section {
@@ -655,6 +656,83 @@
   }
   .tag-add:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* ── Bulk Tag Bar ── */
+  #bulk-tag-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    min-height: 36px;
+  }
+
+  .bulk-tag-label {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  #bulk-tag-input {
+    height: 26px;
+    width: 130px;
+    padding: 0 8px;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: var(--sans);
+    background: var(--surface);
+  }
+
+  #bulk-tag-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .bulk-tag-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border2);
+    flex-shrink: 0;
+  }
+
+  .bulk-view-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 2px 4px 2px 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .bulk-view-tag-chip .chip-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 0 2px;
+    line-height: 1;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bulk-view-tag-chip .chip-remove:hover {
+    color: var(--danger);
+    background: var(--danger-dim);
+  }
+
   /* ── Toast ── */
   #toast {
     position: fixed;
@@ -726,6 +804,181 @@
     background-position: right 8px center;
     cursor: pointer;
   }
+
+  /* ── Sidebar Smart Views ── */
+  .sidebar-add-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 16px;
+    font-weight: 400;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 3px;
+    transition: all 0.12s;
+  }
+  .sidebar-add-btn:hover { color: var(--accent); background: var(--accent-dim); }
+
+  .sidebar-label-row {
+    display: flex;
+    align-items: center;
+    padding: 0 8px 8px;
+  }
+  .sidebar-label-row .sidebar-label {
+    padding: 0;
+    flex: 1;
+  }
+
+  /* ── Smart View Editor Modal ── */
+  #sv-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(0,0,0,0.5);
+    overflow-y: auto;
+    padding: 40px 20px 60px;
+    backdrop-filter: blur(2px);
+  }
+  #sv-modal-overlay.open { display: flex; align-items: flex-start; justify-content: center; }
+
+  #sv-modal {
+    width: 100%;
+    max-width: 620px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .sv-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .sv-modal-title { flex: 1; font-size: 14px; font-weight: 600; }
+
+  .sv-modal-body { padding: 20px; }
+
+  .sv-field-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+
+  .sv-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .sv-input:focus { border-color: var(--accent); }
+
+  .sv-operator-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .sv-operator-btn {
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.12s;
+    font-family: var(--sans);
+  }
+  .sv-operator-btn.active { background: var(--accent); color: #000; }
+
+  .rule-row {
+    display: grid;
+    grid-template-columns: 160px 160px 1fr 28px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .rule-row select, .rule-row input[type=text] {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 4px 7px;
+    font-size: 12px;
+    font-family: var(--sans);
+    color: var(--text);
+    width: 100%;
+    outline: none;
+  }
+  .rule-row select:focus, .rule-row input[type=text]:focus { border-color: var(--accent); }
+
+  .rule-remove {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    width: 28px;
+    height: 28px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s;
+    padding: 0;
+  }
+  .rule-remove:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-dim); }
+
+  /* ── Pattern chips in settings ── */
+  .pattern-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted);
+    margin: 2px 3px 2px 0;
+  }
+  .pattern-chip.custom {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .pattern-chip .del-pat {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    transition: color 0.1s;
+  }
+  .pattern-chip .del-pat:hover { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -779,12 +1032,13 @@
         </button>
       </div>
       <div class="sidebar-section">
-        <div class="sidebar-label" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>Smart Views</span>
-          <button onclick="showSmartViewDialog()" title="New smart view"
-                  style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 2px;">+</button>
+        <div class="sidebar-label-row">
+          <span class="sidebar-label">Smart Views</span>
+          <button class="sidebar-add-btn" onclick="showSmartViewEditor()" title="New Smart View">+</button>
         </div>
-        <div id="smart-views-nav"></div>
+        <div id="smart-views-nav">
+          <div style="padding:4px 8px; font-size:11px; color:var(--muted); font-style:italic;">No smart views yet</div>
+        </div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Actions</div>
@@ -851,6 +1105,7 @@
           </select>
           <button class="btn btn-primary" onclick="showImport()">+ Import</button>
         </div>
+        <div id="bulk-tag-bar" style="display:none"></div>
         <div class="email-list-header">
           <div class="col-flag"></div>
           <div class="col-from">From</div>
@@ -891,12 +1146,17 @@
 
 <div id="toast"></div>
 
+<!-- Smart View Editor Modal -->
+<div id="sv-modal-overlay" onclick="handleSvOverlayClick(event)">
+  <div id="sv-modal"></div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 3; // v3: Smart Views store
+const DB_VERSION = 4; // v4: emailGroups store
 let db = null;
 
 function openDB() {
@@ -941,9 +1201,19 @@ function openDB() {
         istore.createIndex('createdDate', 'createdDate', { unique: false });
       }
 
-      // Smart views store
+      // Smart Views store (user-defined filter views)
       if (!db.objectStoreNames.contains('smartViews')) {
         db.createObjectStore('smartViews', { keyPath: 'id' });
+      }
+
+      // Settings store (key-value, e.g. custom automation patterns)
+      if (!db.objectStoreNames.contains('settings')) {
+        db.createObjectStore('settings', { keyPath: 'key' });
+      }
+
+      // Email Groups store (named lists of email addresses for smart view rules)
+      if (!db.objectStoreNames.contains('emailGroups')) {
+        db.createObjectStore('emailGroups', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => res(e.target.result);
@@ -1363,8 +1633,24 @@ function parseAddress(str) {
 
 function parseAddressList(str) {
   if (!str) return [];
-  // Split on commas not inside angle brackets or quotes
-  const parts = str.split(/,(?![^<]*>)(?![^"]*")/);
+  // Statefully split on commas not inside angle brackets or double-quoted strings
+  const parts = [];
+  let current = '';
+  let inAngle = false;
+  let inQuote = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '"' && !inAngle) inQuote = !inQuote;
+    else if (ch === '<' && !inQuote) inAngle = true;
+    else if (ch === '>' && !inQuote) inAngle = false;
+    if (ch === ',' && !inAngle && !inQuote) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
   return parts.map(p => parseAddress(p.trim())).filter(a => a.email || a.name);
 }
 
@@ -1503,25 +1789,48 @@ function simpleHash(str) {
 //  SYSTEM / AUTOMATED EMAIL DETECTION
 // ═══════════════════════════════════════════════════════
 
-const SYSTEM_SENDER_PATTERNS = [
+// Built-in patterns (mutable so custom ones can be merged in at runtime)
+let SYSTEM_SENDER_PATTERNS = [
   /^(noreply|no-reply|no\.reply|donotreply|do-not-reply|do\.not\.reply)@/i,
   /^(mailer-daemon|postmaster|bounce|bounces|daemon|notifications?|alerts?|automailer|auto-mailer|automated?)@/i,
 ];
 
-const SYSTEM_SUBJECT_PATTERNS = [
+let SYSTEM_SUBJECT_PATTERNS = [
   /^(auto-?reply|automatic reply|out of office|undeliverable)/i,
   /^delivery (status notification|failure|failed)/i,
   /^(mail delivery (failed|failure)|returned mail|non-delivery report)/i,
   /^\[?(automated|auto-generated|do not reply)\]?:/i,
 ];
 
-const SYSTEM_BODY_PATTERNS = [
+let SYSTEM_BODY_PATTERNS = [
   /this (is an |message (was |is ))?(automated|automatically (generated|sent))/i,
   /do not (reply to|respond to) this (email|message)/i,
   /this email (was sent automatically|is automatically generated)/i,
   /you('re| are) receiving this (email|message|notification) because/i,
   /to (unsubscribe|manage your (notification|email) preferences)/i,
 ];
+
+// Default pattern sources (kept for reference / reset)
+const DEFAULT_SENDER_PATTERNS = [
+  /^(noreply|no-reply|no\.reply|donotreply|do-not-reply|do\.not\.reply)@/i,
+  /^(mailer-daemon|postmaster|bounce|bounces|daemon|notifications?|alerts?|automailer|auto-mailer|automated?)@/i,
+];
+const DEFAULT_SUBJECT_PATTERNS = [
+  /^(auto-?reply|automatic reply|out of office|undeliverable)/i,
+  /^delivery (status notification|failure|failed)/i,
+  /^(mail delivery (failed|failure)|returned mail|non-delivery report)/i,
+  /^\[?(automated|auto-generated|do not reply)\]?:/i,
+];
+const DEFAULT_BODY_PATTERNS = [
+  /this (is an |message (was |is ))?(automated|automatically (generated|sent))/i,
+  /do not (reply to|respond to) this (email|message)/i,
+  /this email (was sent automatically|is automatically generated)/i,
+  /you('re| are) receiving this (email|message|notification) because/i,
+  /to (unsubscribe|manage your (notification|email) preferences)/i,
+];
+
+// Custom patterns loaded from DB (stored as plain regex source strings)
+let customPatterns = { senders: [], subjects: [], body: [] };
 
 function detectSystemEmail(rawHeaders, fromAddr, subject, body) {
   // 1. Authoritative automation headers
@@ -1847,7 +2156,7 @@ async function processFilesForImport(fileArr) {
     appendLog(`Attachment storage: not configured (metadata only)`, 'warn');
   }
 
-  let ok = 0, errs = 0;
+  let ok = 0, errs = 0, updated = 0;
 
   for (let i = 0; i < fileArr.length; i++) {
     const file = fileArr[i];
@@ -1869,10 +2178,21 @@ async function processFilesForImport(fileArr) {
       // Generate stable ID
       const id = parsed.messageId || `${file.name}-${parsed.date || Date.now()}`;
 
-      // Check for existing - skip if already imported
+      // Check for existing
       const existing = await dbGet('emails', id);
       if (existing) {
-        appendLog(`⊘ ${file.name}: already imported (skipped)`, 'warn');
+        // Re-parse recipients in case the email was imported with the old buggy parser
+        const toAddrs = parsed.to.map(a => a.email);
+        const ccAddrs = parsed.cc.map(a => a.email);
+        const toChanged = toAddrs.length !== (existing.toAddrs || []).length;
+        const ccChanged = ccAddrs.length !== (existing.ccAddrs || []).length;
+        if (toChanged || ccChanged) {
+          await dbPut('emails', { ...existing, toAddrs, ccAddrs });
+          appendLog(`↻ ${file.name}: recipients updated (To: ${toAddrs.length}, CC: ${ccAddrs.length})`, 'ok');
+          updated++;
+        } else {
+          appendLog(`⊘ ${file.name}: already imported (skipped)`, 'warn');
+        }
         continue;
       }
 
@@ -2020,8 +2340,8 @@ async function processFilesForImport(fileArr) {
   }
 
   pct.textContent   = '100%';
-  const skipped = fileArr.length - ok - errs;
-  appendLog(`Done — ${ok} imported${skipped > 0 ? `, ${skipped} skipped (duplicates)` : ''}, ${errs} errors.`, ok > 0 ? 'ok' : 'err');
+  const skipped = fileArr.length - ok - errs - updated;
+  appendLog(`Done — ${ok} imported${updated > 0 ? `, ${updated} recipients updated` : ''}${skipped > 0 ? `, ${skipped} skipped (duplicates)` : ''}, ${errs} errors.`, ok > 0 || updated > 0 ? 'ok' : 'err');
 
   importedEmails += ok;
 
@@ -2272,7 +2592,8 @@ let currentSort    = 'date-desc';
 let searchTerm     = '';
 let selectedEmail  = null;
 let selectedEmailIdx = -1; // index in filteredEmails for navigation
-let smartViews     = [];
+let smartViews     = []; // user-created smart views
+let emailGroups    = []; // user-created email groups for smart view rules
 
 const VIEW_LABELS = {
   all:          'All Emails',
@@ -2290,6 +2611,506 @@ function showPanel(name) {
   document.getElementById('import-panel').style.display   = name === 'import'   ? '' : 'none';
   document.getElementById('progress-panel').className     = name === 'progress' ? 'active' : '';
   document.getElementById('email-list-panel').className   = name === 'list'     ? 'active' : '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  SMART VIEWS
+// ═══════════════════════════════════════════════════════
+
+// --- Rule field definitions ---
+const RULE_FIELDS = [
+  { value: 'fromAddr',          label: 'Sender Email' },
+  { value: 'fromName',          label: 'Sender Name' },
+  { value: 'fromDomain',        label: 'Sender Domain' },
+  { value: 'toAddr',            label: 'Recipient Email' },
+  { value: 'toDomain',          label: 'Recipient Domain' },
+  { value: 'ccAddr',            label: 'CC Email' },
+  { value: 'ccDomain',          label: 'CC Domain' },
+  { value: 'subject',           label: 'Subject' },
+  { value: 'status',            label: 'Status' },
+  { value: 'tags',              label: 'Tags' },
+  { value: 'hasAttachments',    label: 'Has Attachments' },
+  { value: 'isActionable',      label: 'Is Actionable' },
+  { value: 'isSystemEmail',     label: 'Is Automated' },
+  { value: 'fromInGroup',       label: 'Sender in Group' },
+  { value: 'recipientInGroup',  label: 'Recipient in Group' },
+  { value: 'participantInGroup',label: 'Any Participant in Group' },
+];
+
+const BOOL_FIELDS  = new Set(['hasAttachments', 'isActionable', 'isSystemEmail']);
+const GROUP_FIELDS = new Set(['fromInGroup', 'recipientInGroup', 'participantInGroup']);
+
+function getOperatorOptions(field, selected) {
+  if (BOOL_FIELDS.has(field)) {
+    return `<option value="is_true" ${selected === 'is_true' ? 'selected' : ''}>is true</option>
+            <option value="is_false" ${selected === 'is_false' ? 'selected' : ''}>is false</option>`;
+  }
+  if (GROUP_FIELDS.has(field)) {
+    return `<option value="in_group" ${selected === 'in_group' ? 'selected' : ''}>is in group</option>
+            <option value="not_in_group" ${selected === 'not_in_group' ? 'selected' : ''}>is not in group</option>`;
+  }
+  const ops = [
+    ['contains',     'contains'],
+    ['not_contains', 'does not contain'],
+    ['equals',       'equals'],
+    ['not_equals',   'does not equal'],
+    ['starts_with',  'starts with'],
+    ['ends_with',    'ends with'],
+    ['is_empty',     'is empty'],
+    ['is_not_empty', 'is not empty'],
+  ];
+  return ops.map(([v, l]) => `<option value="${v}" ${selected === v ? 'selected' : ''}>${l}</option>`).join('');
+}
+
+function getValueInputHTML(field, value, operator) {
+  if (BOOL_FIELDS.has(field)) return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  if (operator === 'is_empty' || operator === 'is_not_empty') {
+    return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  }
+  if (GROUP_FIELDS.has(field)) {
+    if (!emailGroups.length) {
+      return '<span style="color:var(--muted);font-size:11px;">No groups yet — create one in Settings</span>';
+    }
+    const opts = emailGroups.map(g =>
+      `<option value="${escHtml(g.id)}" ${value === g.id ? 'selected' : ''}>${escHtml(g.name)}</option>`
+    ).join('');
+    return `<select>${opts}</select>`;
+  }
+  if (field === 'status') {
+    const statuses = ['unread','read','replied','awaiting','actioned'];
+    return `<select>${statuses.map(s => `<option value="${s}" ${value === s ? 'selected' : ''}>${s}</option>`).join('')}</select>`;
+  }
+  return `<input type="text" value="${escHtml(value)}" placeholder="Value…">`;
+}
+
+function buildRuleRowHTML(rule = {}) {
+  const field    = rule.field    || 'fromAddr';
+  const operator = rule.operator || 'contains';
+  const value    = rule.value    || '';
+  return `
+    <div class="rule-row">
+      <select class="rule-field" onchange="onRuleFieldChange(this)">
+        ${RULE_FIELDS.map(f => `<option value="${f.value}" ${field === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
+      </select>
+      <select class="rule-operator" onchange="onRuleOperatorChange(this)">
+        ${getOperatorOptions(field, operator)}
+      </select>
+      <div class="rule-value-container" style="min-width:0;">${getValueInputHTML(field, value, operator)}</div>
+      <button class="rule-remove" onclick="this.closest('.rule-row').remove()" title="Remove rule">×</button>
+    </div>`;
+}
+
+function onRuleFieldChange(select) {
+  const row = select.closest('.rule-row');
+  const field = select.value;
+  const defaultOp = GROUP_FIELDS.has(field) ? 'in_group' : BOOL_FIELDS.has(field) ? 'is_true' : 'contains';
+  row.querySelector('.rule-operator').innerHTML = getOperatorOptions(field, defaultOp);
+  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', defaultOp);
+}
+
+function onRuleOperatorChange(select) {
+  const row = select.closest('.rule-row');
+  const field = row.querySelector('.rule-field').value;
+  const operator = select.value;
+  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', operator);
+}
+
+function addRuleRow() {
+  const container = document.getElementById('sv-rules-list');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildRuleRowHTML();
+  container.appendChild(tmp.firstElementChild);
+}
+
+function setSvOperator(op) {
+  document.getElementById('sv-operator').value = op;
+  document.getElementById('op-btn-AND').classList.toggle('active', op === 'AND');
+  document.getElementById('op-btn-OR').classList.toggle('active', op === 'OR');
+}
+
+function handleSvOverlayClick(e) {
+  if (e.target === document.getElementById('sv-modal-overlay')) closeSmartViewEditor();
+}
+
+function closeSmartViewEditor() {
+  document.getElementById('sv-modal-overlay').classList.remove('open');
+}
+
+function showSmartViewEditor(svId = null) {
+  const sv = svId ? smartViews.find(s => s.id === svId) : null;
+  const isEdit = !!sv;
+  const rules = sv?.rules?.length ? sv.rules : [{ field: 'fromDomain', operator: 'contains', value: '' }];
+  const op = sv?.ruleOperator || 'AND';
+
+  document.getElementById('sv-modal').innerHTML = `
+    <div class="sv-modal-header">
+      <span class="sv-modal-title">${isEdit ? 'Edit Smart View' : 'New Smart View'}</span>
+      <button class="btn" onclick="closeSmartViewEditor()">×</button>
+    </div>
+    <div class="sv-modal-body">
+      <input type="hidden" id="sv-edit-id" value="${isEdit ? escHtml(sv.id) : ''}">
+
+      <div style="display:flex; gap:10px; margin-bottom:16px;">
+        <div style="flex:0 0 auto;">
+          <div class="sv-field-label">Icon</div>
+          <input id="sv-icon" class="sv-input" value="${escHtml(sv?.icon || '🔍')}"
+                 style="width:52px; text-align:center; font-size:18px; padding:4px 6px;">
+        </div>
+        <div style="flex:1;">
+          <div class="sv-field-label">View Name</div>
+          <input id="sv-name" class="sv-input" placeholder="e.g. From Client" value="${escHtml(sv?.name || '')}">
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div class="sv-field-label" style="margin-bottom:6px;">Match emails where</div>
+        <div class="sv-operator-toggle">
+          <button class="sv-operator-btn" id="op-btn-AND" onclick="setSvOperator('AND')">ALL rules match</button>
+          <button class="sv-operator-btn" id="op-btn-OR"  onclick="setSvOperator('OR')">ANY rule matches</button>
+        </div>
+        <input type="hidden" id="sv-operator" value="${op}">
+      </div>
+
+      <div class="sv-field-label" style="margin-bottom:6px;">Rules</div>
+      <div id="sv-rules-list">
+        ${rules.map(r => buildRuleRowHTML(r)).join('')}
+      </div>
+      <button class="btn" onclick="addRuleRow()" style="margin-top:4px; margin-bottom:16px;">+ Add Rule</button>
+
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px; font-size:13px; cursor:pointer;">
+        <input type="checkbox" id="sv-exclude-automated" ${sv?.excludeAutomated !== false ? 'checked' : ''}>
+        Exclude automated / system emails
+      </label>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; border-top:1px solid var(--border); padding-top:16px;">
+        ${isEdit ? `<button class="btn btn-danger" onclick="deleteSmartView('${escHtml(sv.id)}')">Delete</button>` : ''}
+        <button class="btn" onclick="closeSmartViewEditor()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSmartView()">Save</button>
+      </div>
+    </div>`;
+
+  document.getElementById('sv-modal-overlay').classList.add('open');
+  setSvOperator(op);
+  document.getElementById('sv-name').focus();
+}
+
+function collectRulesFromDOM() {
+  const rules = [];
+  document.querySelectorAll('#sv-rules-list .rule-row').forEach(row => {
+    const field    = row.querySelector('.rule-field')?.value;
+    const operator = row.querySelector('.rule-operator')?.value;
+    const textIn   = row.querySelector('.rule-value-container input[type=text]');
+    const selIn    = row.querySelector('.rule-value-container select');
+    const value    = textIn ? textIn.value : (selIn ? selIn.value : '');
+    if (field) rules.push({ field, operator: operator || 'contains', value: value || '' });
+  });
+  return rules;
+}
+
+async function saveSmartView() {
+  const id   = document.getElementById('sv-edit-id').value;
+  const name = document.getElementById('sv-name').value.trim();
+  const icon = document.getElementById('sv-icon').value.trim() || '🔍';
+  const ruleOperator = document.getElementById('sv-operator').value || 'AND';
+
+  if (!name) {
+    document.getElementById('sv-name').focus();
+    toast('Please enter a view name', 'warn');
+    return;
+  }
+
+  const rules = collectRulesFromDOM();
+
+  const existing = id ? smartViews.find(s => s.id === id) : null;
+  const svRecord = {
+    id: id || ('sv-' + Date.now()),
+    name, icon, ruleOperator, rules,
+    excludeAutomated: document.getElementById('sv-exclude-automated').checked,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+  };
+
+  await dbPut('smartViews', svRecord);
+
+  const idx = smartViews.findIndex(s => s.id === svRecord.id);
+  if (idx >= 0) smartViews[idx] = svRecord;
+  else smartViews.push(svRecord);
+
+  closeSmartViewEditor();
+  renderSmartViewsSidebar();
+  updateNavCounts();
+  switchView('sv-' + svRecord.id);
+  toast(`Smart view "${name}" saved`, 'ok');
+}
+
+async function deleteSmartView(id) {
+  if (!confirm('Delete this smart view?')) return;
+  await dbDelete('smartViews', id);
+  smartViews = smartViews.filter(s => s.id !== id);
+  closeSmartViewEditor();
+  renderSmartViewsSidebar();
+  if (currentView === 'sv-' + id) switchView('all');
+  toast('Smart view deleted', 'ok');
+}
+
+// --- Rule engine ---
+function getEmailFieldValue(email, field) {
+  switch (field) {
+    case 'fromAddr':       return (email.fromAddr  || '').toLowerCase();
+    case 'fromName':       return (email.fromName  || '').toLowerCase();
+    case 'fromDomain':     return ((email.fromAddr || '').split('@')[1] || '').toLowerCase();
+    case 'toAddr':         return (email.toAddrs   || []).join(' ').toLowerCase();
+    case 'toDomain':       return (email.toAddrs   || []).map(a => (a.split('@')[1] || '')).join(' ').toLowerCase();
+    case 'ccAddr':         return (email.ccAddrs   || []).join(' ').toLowerCase();
+    case 'ccDomain':       return (email.ccAddrs   || []).map(a => (a.split('@')[1] || '')).join(' ').toLowerCase();
+    case 'subject':        return (email.subject   || '').toLowerCase();
+    case 'status':         return (email.status    || '').toLowerCase();
+    case 'tags':           return (email.tags      || []).join(' ').toLowerCase();
+    case 'hasAttachments': return email.hasAttachments ? 'true' : 'false';
+    case 'isActionable':   return email.isActionable   ? 'true' : 'false';
+    case 'isSystemEmail':  return email.isSystemEmail  ? 'true' : 'false';
+    default: return '';
+  }
+}
+
+function evaluateRule(email, rule) {
+  const { field, operator, value } = rule;
+  if (BOOL_FIELDS.has(field)) {
+    const boolVal = email[field] === true;
+    return operator === 'is_true' ? boolVal : !boolVal;
+  }
+  if (GROUP_FIELDS.has(field)) {
+    const group = emailGroups.find(g => g.id === value);
+    if (!group) return false;
+    const members = (group.members || []).map(m => m.toLowerCase());
+    let addrs = [];
+    if (field === 'fromInGroup') {
+      addrs = [(email.fromAddr || '').toLowerCase()];
+    } else if (field === 'recipientInGroup') {
+      addrs = [...(email.toAddrs || []), ...(email.ccAddrs || [])].map(a => a.toLowerCase());
+    } else { // participantInGroup
+      addrs = [(email.fromAddr || ''), ...(email.toAddrs || []), ...(email.ccAddrs || [])].map(a => a.toLowerCase());
+    }
+    const match = addrs.some(a => members.includes(a));
+    return operator === 'in_group' ? match : !match;
+  }
+  const fv  = getEmailFieldValue(email, field);
+  const val = (value || '').toLowerCase();
+  switch (operator) {
+    case 'contains':     return fv.includes(val);
+    case 'not_contains': return !fv.includes(val);
+    case 'equals':       return fv === val;
+    case 'not_equals':   return fv !== val;
+    case 'starts_with':  return fv.startsWith(val);
+    case 'ends_with':    return fv.endsWith(val);
+    case 'is_empty':     return fv === '';
+    case 'is_not_empty': return fv !== '';
+    default: return false;
+  }
+}
+
+function applySmartViewRules(email, sv) {
+  if (!sv.rules || sv.rules.length === 0) return true;
+  if (sv.ruleOperator === 'OR') {
+    return sv.rules.some(r => evaluateRule(email, r));
+  }
+  return sv.rules.every(r => evaluateRule(email, r));
+}
+
+async function loadSmartViews() {
+  smartViews = await dbGetAll('smartViews');
+  renderSmartViewsSidebar();
+}
+
+async function loadEmailGroups() {
+  emailGroups = await dbGetAll('emailGroups');
+}
+
+async function createEmailGroup(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const group = { id: 'eg-' + Date.now(), name: trimmed, members: [], createdAt: new Date().toISOString() };
+  await dbPut('emailGroups', group);
+  emailGroups.push(group);
+  return group;
+}
+
+async function deleteEmailGroup(id) {
+  if (!confirm('Delete this group? Smart view rules using it will no longer match.')) return;
+  await dbDelete('emailGroups', id);
+  emailGroups = emailGroups.filter(g => g.id !== id);
+  toast('Group deleted', 'ok');
+  showSettings();
+}
+
+async function addGroupMember(groupId, email) {
+  const addr = email.trim().toLowerCase();
+  if (!addr) return;
+  const group = emailGroups.find(g => g.id === groupId);
+  if (!group) return;
+  if (group.members.includes(addr)) { toast('Already in group', 'warn'); return; }
+  group.members.push(addr);
+  await dbPut('emailGroups', group);
+  toast(`Added ${addr}`, 'ok');
+  showSettings();
+}
+
+async function removeGroupMember(groupId, email) {
+  const group = emailGroups.find(g => g.id === groupId);
+  if (!group) return;
+  group.members = group.members.filter(m => m !== email);
+  await dbPut('emailGroups', group);
+  toast('Removed', 'ok');
+  showSettings();
+}
+
+async function renameEmailGroup(groupId) {
+  const group = emailGroups.find(g => g.id === groupId);
+  if (!group) return;
+  const name = prompt('New name for group:', group.name);
+  if (!name || !name.trim()) return;
+  group.name = name.trim();
+  await dbPut('emailGroups', group);
+  toast('Group renamed', 'ok');
+  showSettings();
+}
+
+function renderSmartViewsSidebar() {
+  const container = document.getElementById('smart-views-nav');
+  if (!container) return;
+  if (!smartViews.length) {
+    container.innerHTML = '<div style="padding:4px 8px 4px 16px; font-size:11px; color:var(--muted); font-style:italic;">No smart views yet</div>';
+    return;
+  }
+  container.innerHTML = smartViews.map(sv => {
+    const count   = allEmails.filter(e => applySmartViewRules(e, sv)).length;
+    const isActive = currentView === 'sv-' + sv.id;
+    return `
+      <button class="nav-item ${isActive ? 'active' : ''}" data-view="sv-${escHtml(sv.id)}"
+              onclick="switchView('sv-${escHtml(sv.id)}')"
+              oncontextmenu="event.preventDefault(); showSmartViewEditor('${escHtml(sv.id)}')"
+              title="Right-click to edit">
+        ${escHtml(sv.icon || '🔍')} ${escHtml(sv.name)}
+        <span class="nav-count">${count}</span>
+      </button>`;
+  }).join('');
+}
+
+// --- Custom automation patterns (persisted) ---
+async function loadCustomPatterns() {
+  const saved = await dbGet('settings', 'customAutomationPatterns');
+  if (saved) {
+    customPatterns.senders  = saved.senders  || [];
+    customPatterns.subjects = saved.subjects || [];
+    customPatterns.body     = saved.body     || [];
+    mergeCustomPatterns();
+  }
+}
+
+function mergeCustomPatterns() {
+  SYSTEM_SENDER_PATTERNS  = [...DEFAULT_SENDER_PATTERNS,  ...customPatterns.senders.map(s  => safeRegex(s)).filter(Boolean)];
+  SYSTEM_SUBJECT_PATTERNS = [...DEFAULT_SUBJECT_PATTERNS, ...customPatterns.subjects.map(s => safeRegex(s)).filter(Boolean)];
+  SYSTEM_BODY_PATTERNS    = [...DEFAULT_BODY_PATTERNS,    ...customPatterns.body.map(s     => safeRegex(s)).filter(Boolean)];
+}
+
+function safeRegex(src) {
+  try { return new RegExp(src, 'i'); } catch { return null; }
+}
+
+async function saveCustomPatterns() {
+  await dbPut('settings', { key: 'customAutomationPatterns', ...customPatterns });
+  mergeCustomPatterns();
+}
+
+function renderEmailGroupsSection() {
+  const groupsHTML = emailGroups.map(g => {
+    const memberChips = g.members.map(m =>
+      `<span class="pattern-chip custom">
+         ${escHtml(m)}
+         <button class="del-pat" onclick="removeGroupMember('${escHtml(g.id)}', '${escHtml(m)}')" title="Remove">×</button>
+       </span>`
+    ).join('');
+    return `
+      <div style="padding:12px; background:var(--surface); border:1px solid var(--border2); border-radius:5px; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+          <span style="font-weight:500; flex:1;">${escHtml(g.name)}</span>
+          <button class="btn" style="padding:2px 8px; font-size:11px;" onclick="renameEmailGroup('${escHtml(g.id)}')">Rename</button>
+          <button class="btn btn-danger" style="padding:2px 8px; font-size:11px;" onclick="deleteEmailGroup('${escHtml(g.id)}')">Delete</button>
+        </div>
+        <div style="margin-bottom:8px; min-height:24px;">
+          ${memberChips || '<span style="color:var(--muted);font-size:12px;font-style:italic;">No members yet</span>'}
+        </div>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="new-member-${escHtml(g.id)}" class="search-input"
+                 placeholder="Add email address…" style="flex:1;"
+                 onkeydown="if(event.key==='Enter') addGroupMember('${escHtml(g.id)}', this.value)">
+          <button class="btn" onclick="addGroupMember('${escHtml(g.id)}', document.getElementById('new-member-${escHtml(g.id)}').value)">+ Add</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    ${groupsHTML}
+    <div style="display:flex; gap:6px; margin-top:${emailGroups.length ? '4px' : '0'};">
+      <input type="text" id="new-group-name" class="search-input" placeholder="New group name…" style="flex:1;"
+             onkeydown="if(event.key==='Enter') createGroupFromSettings()">
+      <button class="btn" onclick="createGroupFromSettings()">+ New Group</button>
+    </div>`;
+}
+
+async function createGroupFromSettings() {
+  const input = document.getElementById('new-group-name');
+  if (!input || !input.value.trim()) return;
+  await createEmailGroup(input.value.trim());
+  toast('Group created', 'ok');
+  showSettings();
+}
+
+function renderPatternSection(title, category, defaults, customs) {
+  const defaultChips = defaults.map(re =>
+    `<span class="pattern-chip" title="Built-in (read-only)">${escHtml(re.source)}</span>`
+  ).join('');
+  const customChips = customs.map((p, i) =>
+    `<span class="pattern-chip custom">
+       ${escHtml(p)}
+       <button class="del-pat" onclick="removeCustomPattern('${category}', ${i})" title="Remove">×</button>
+     </span>`
+  ).join('');
+  return `
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px; font-family:var(--mono); letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">${title}</div>
+      <div style="margin-bottom:6px;">${defaultChips}${customChips}</div>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="new-pat-${category}" class="search-input" placeholder="Add pattern (text or /regex/)…" style="flex:1;">
+        <button class="btn" onclick="addCustomPattern('${category}')">+ Add</button>
+      </div>
+    </div>`;
+}
+
+async function addCustomPattern(category) {
+  const input = document.getElementById(`new-pat-${category}`);
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+
+  // Strip leading/trailing slashes if user typed /regex/
+  const src = val.startsWith('/') && val.lastIndexOf('/') > 0
+    ? val.slice(1, val.lastIndexOf('/'))
+    : val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape if plain text
+
+  if (!customPatterns[category]) customPatterns[category] = [];
+  customPatterns[category].push(src);
+  await saveCustomPatterns();
+  input.value = '';
+  toast('Pattern added', 'ok');
+  showSettings(); // re-render
+}
+
+async function removeCustomPattern(category, idx) {
+  if (!customPatterns[category]) return;
+  customPatterns[category].splice(idx, 1);
+  await saveCustomPatterns();
+  toast('Pattern removed', 'ok');
+  showSettings(); // re-render
 }
 
 function showSettings() {
@@ -2334,6 +3155,36 @@ function showSettings() {
         <button id="btn-rerun-detection" class="btn" onclick="rerunAutomatedDetection()">Re-run detection</button>
       </div>
 
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Automated detection patterns</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          Patterns used to classify emails as automated. Built-in patterns are shown in gray.
+          Add custom patterns as plain text (substring match) or regular expressions.
+        </div>
+
+        ${renderPatternSection('Sender Email Patterns', 'senders', DEFAULT_SENDER_PATTERNS, customPatterns.senders)}
+        ${renderPatternSection('Subject Patterns', 'subjects', DEFAULT_SUBJECT_PATTERNS, customPatterns.subjects)}
+        ${renderPatternSection('Body Patterns (first 1000 chars)', 'body', DEFAULT_BODY_PATTERNS, customPatterns.body)}
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:8px;">Normalize email body line breaks</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
+          Scans all emails and replaces the extra blank-line pattern (<code>\\n\\n \\n\\n</code>) with a single line break.
+          Run this once if you notice excessive spacing in email bodies imported from JSON.
+        </div>
+        <button id="btn-normalize-linebreaks" class="btn" onclick="normalizeLineBreaks()">Normalize line breaks</button>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Email Groups</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          Create named groups of email addresses to use in smart view rules.
+          For example, add your interface team members to a group, then filter by "Sender in Group" or "Any Participant in Group".
+        </div>
+        ${renderEmailGroupsSection()}
+      </div>
+
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
@@ -2371,6 +3222,25 @@ function toggleOrganizeEml(enabled) {
   toast(enabled ? 'EML organization enabled' : 'EML organization disabled', 'ok');
 }
 
+async function normalizeLineBreaks() {
+  const btn = document.getElementById('btn-normalize-linebreaks');
+  if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
+
+  const emails = await dbGetAll('emails');
+  let fixed = 0;
+
+  for (const email of emails) {
+    if (email.textBody && /\n[ \t]*\n/.test(email.textBody)) {
+      email.textBody = email.textBody.replace(/(\n[ \t]*){2,}/g, '\n');
+      await dbPut('emails', email);
+      fixed++;
+    }
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Normalize line breaks'; }
+  toast(fixed ? `Fixed ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed fixing', fixed ? 'ok' : '');
+}
+
 function showImport() { showPanel('import'); }
 
 function switchView(view) {
@@ -2378,18 +3248,23 @@ function switchView(view) {
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);
   });
-  if (view.startsWith('sv_')) {
-    const sv = smartViews.find(v => v.id === view);
-    document.getElementById('view-title').textContent = sv ? sv.name : view;
-  } else {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-  }
 
-  if (view === 'transmittals') {
+  if (view.startsWith('sv-')) {
+    const svId = view.slice(3);
+    const sv   = smartViews.find(s => s.id === svId);
+    document.getElementById('view-title').textContent = sv ? (sv.icon + ' ' + sv.name) : 'Smart View';
+    showPanel('list');
+    applyFilters();
+  } else if (view === 'transmittals') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    refreshBulkTagBar();
     showTransmittalRegister();
   } else if (view === 'issues') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    refreshBulkTagBar();
     showIssuesList();
   } else {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     applyFilters();
   }
 
@@ -2412,22 +3287,25 @@ function applyFilters() {
   // Rebuild message ID index for thread queries
   rebuildMsgIdIndex();
 
-  // Exclude automated emails from all views except the dedicated 'automated' view
-  if (currentView !== 'automated') {
-    list = list.filter(e => !e.isSystemEmail);
-  }
-
-  // View filter
-  if (currentView.startsWith('sv_')) {
-    const sv = smartViews.find(v => v.id === currentView);
-    if (sv) list = list.filter(e => emailMatchesSmartView(e, sv));
+  if (currentView.startsWith('sv-')) {
+    const svId = currentView.slice(3);
+    const sv   = smartViews.find(s => s.id === svId);
+    if (sv) {
+      if (sv.excludeAutomated !== false) list = list.filter(e => !e.isSystemEmail);
+      list = list.filter(e => applySmartViewRules(e, sv));
+    }
   } else {
+    // Exclude automated emails from all built-in views except 'automated'
+    if (currentView !== 'automated') {
+      list = list.filter(e => !e.isSystemEmail);
+    }
+
+    // View filter
     switch (currentView) {
       case 'unread':      list = list.filter(e => e.status === 'unread'); break;
       case 'actionable':  list = list.filter(e => e.isActionable); break;
-      case 'awaiting':
+      case 'awaiting': {
         list = list.filter(e => e.status === 'awaiting');
-        // Mark overdue (>7 days with no reply)
         const now = Date.now();
         list.forEach(e => {
           if (e.awaitingSince) {
@@ -2436,12 +3314,12 @@ function applyFilters() {
           }
         });
         break;
+      }
       case 'threads':
-        // Show only root emails that have replies
         list = list.filter(e => !e.inReplyTo && hasReplies(e));
         break;
       case 'attachments': list = list.filter(e => e.hasAttachments); break;
-      case 'automated':   list = list.filter(e => e.isSystemEmail); break;
+      case 'automated':   list = list.filter(e => e.isSystemEmail);  break;
     }
   }
 
@@ -2533,6 +3411,8 @@ function renderEmailList() {
         <div class="col-attach">${attach}</div>
       </div>`;
   }).join('');
+
+  refreshBulkTagBar();
 }
 
 
@@ -2599,10 +3479,11 @@ function openDetail(email) {
   // Meta
   const toStr = email.toAddrs?.join(', ') || '—';
   const ccStr = email.ccAddrs?.join(', ') || '';
+  const uid = email.id.replace(/[^a-z0-9]/gi, '');
   document.getElementById('det-meta').innerHTML = `
     <span><b>From:</b> ${escHtml(email.fromName ? `${email.fromName} <${email.fromAddr}>` : email.fromAddr)}</span>
-    <span><b>To:</b> ${escHtml(truncate(toStr, 80))}</span>
-    ${ccStr ? `<span><b>CC:</b> ${escHtml(truncate(ccStr, 80))}</span>` : ''}
+    ${recipientSpan('To', toStr, 80, uid)}
+    ${ccStr ? recipientSpan('CC', ccStr, 80, uid) : ''}
     <span><b>Date:</b> ${email.date ? new Date(email.date).toLocaleString() : '—'}</span>
     ${threadInfo}
     <span><b>File:</b> <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${escHtml(email.fileName || '')}</span></span>
@@ -3353,6 +4234,92 @@ async function bulkUnmarkActionable() {
   toast(`Unmarked ${flagged.length} email${flagged.length !== 1 ? 's' : ''}`, 'ok');
 }
 
+// ═══════════════════════════════════════════════════════
+//  BULK TAGGING
+// ═══════════════════════════════════════════════════════
+
+function refreshBulkTagBar() {
+  const bar = document.getElementById('bulk-tag-bar');
+  if (!bar) return;
+
+  // Hide in non-email-list views
+  if (currentView === 'transmittals' || currentView === 'issues') {
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  const count = filteredEmails.length;
+
+  // Gather unique tags across all currently filtered emails
+  const tagSet = new Set();
+  for (const email of filteredEmails) {
+    for (const t of (email.tags || [])) tagSet.add(t);
+  }
+  const uniqueTags = [...tagSet].sort();
+
+  const tagsHTML = uniqueTags.length > 0
+    ? uniqueTags.map(t => `
+        <span class="bulk-view-tag-chip">
+          #${escHtml(t)}
+          <button class="chip-remove" onclick="bulkRemoveTagFromView('${escHtml(t)}')" title="Remove tag from all ${count} filtered email${count !== 1 ? 's' : ''}">×</button>
+        </span>`).join('')
+    : `<span style="color:var(--muted);font-size:11px;font-style:italic;">none</span>`;
+
+  bar.innerHTML = `
+    <span class="bulk-tag-label">Bulk tag ${count} email${count !== 1 ? 's' : ''}:</span>
+    <input type="text" id="bulk-tag-input" placeholder="tag name…"
+           onkeydown="if(event.key==='Enter')bulkAddTagToView()">
+    <button class="btn btn-primary" style="height:26px;padding:0 10px;font-size:11px;"
+            onclick="bulkAddTagToView()">+ Add to all</button>
+    <div class="bulk-tag-sep"></div>
+    <span class="bulk-tag-label">Tags in view:</span>
+    ${tagsHTML}
+  `;
+}
+
+async function bulkAddTagToView() {
+  const input = document.getElementById('bulk-tag-input');
+  if (!input) return;
+  const tag = input.value.trim().toLowerCase();
+  if (!tag) { toast('Enter a tag name', 'err'); return; }
+
+  const targets = filteredEmails.filter(e => !(e.tags || []).includes(tag));
+  if (targets.length === 0) {
+    toast(`Tag "${tag}" already on all ${filteredEmails.length} email${filteredEmails.length !== 1 ? 's' : ''}`, 'ok');
+    return;
+  }
+
+  for (const email of targets) {
+    if (!email.tags) email.tags = [];
+    email.tags.push(tag);
+    await dbPut('emails', email);
+  }
+
+  input.value = '';
+  refreshBulkTagBar();
+  toast(`Added tag "${tag}" to ${targets.length} email${targets.length !== 1 ? 's' : ''}`, 'ok');
+}
+
+async function bulkRemoveTagFromView(tag) {
+  const targets = filteredEmails.filter(e => (e.tags || []).includes(tag));
+  if (targets.length === 0) {
+    toast(`Tag "${tag}" not found in current view`, 'ok');
+    return;
+  }
+  if (!confirm(`Remove tag "${tag}" from ${targets.length} email${targets.length !== 1 ? 's' : ''}?`)) return;
+
+  for (const email of targets) {
+    email.tags = email.tags.filter(t => t !== tag);
+    await dbPut('emails', email);
+  }
+
+  refreshBulkTagBar();
+  // Re-filter in case the active smart view rules depend on this tag
+  if (currentView.startsWith('sv-')) applyFilters();
+  toast(`Removed tag "${tag}" from ${targets.length} email${targets.length !== 1 ? 's' : ''}`, 'ok');
+}
+
 async function addTag(id) {
   const tag = prompt('Enter tag:');
   if (!tag) return;
@@ -3501,7 +4468,8 @@ function updateNavCounts() {
     document.getElementById('n-transmittals').textContent = atts.length;
   });
 
-  updateSmartViewCounts();
+  // Refresh smart view counts in sidebar
+  renderSmartViewsSidebar();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3549,6 +4517,7 @@ async function importData(input) {
     if (!email.id) continue;
     const existing = await dbGet('emails', email.id);
     if (existing) { emailsSkipped++; continue; }
+    if (email.textBody) email.textBody = email.textBody.replace(/(\n[ \t]*){2,}/g, '\n');
     await dbPut('emails', email);
     if (email.messageId) {
       await dbPut('msgIndex', { messageId: email.messageId, emailId: email.id });
@@ -3997,6 +4966,14 @@ function truncate(str, n) {
   return str.length > n ? str.substring(0, n) + '…' : str;
 }
 
+function recipientSpan(label, fullStr, maxLen, uid) {
+  if (!fullStr || fullStr.length <= maxLen) {
+    return `<span><b>${label}:</b> ${escHtml(fullStr || '—')}</span>`;
+  }
+  const s = `recip-${uid}-${label.toLowerCase()}`;
+  return `<span><b>${label}:</b> <span id="${s}-short">${escHtml(truncate(fullStr, maxLen))} <a href="#" onclick="document.getElementById('${s}-short').style.display='none';document.getElementById('${s}-full').style.display='';return false;" style="color:var(--accent);text-decoration:none">show&nbsp;more</a></span><span id="${s}-full" style="display:none">${escHtml(fullStr)} <a href="#" onclick="document.getElementById('${s}-full').style.display='none';document.getElementById('${s}-short').style.display='';return false;" style="color:var(--accent);text-decoration:none">show&nbsp;less</a></span></span>`;
+}
+
 function escHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -4009,331 +4986,6 @@ function toast(msg, type = '') {
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.className = ''; }, 3000);
 }
-
-// ═══════════════════════════════════════════════════════
-//  SMART VIEWS
-// ═══════════════════════════════════════════════════════
-
-function matchesTextOp(text, operator, value) {
-  const v = (value || '').toLowerCase();
-  switch (operator) {
-    case 'contains':     return text.includes(v);
-    case 'not_contains': return !text.includes(v);
-    case 'equals':       return text === v;
-    case 'starts_with':  return text.startsWith(v);
-    case 'ends_with':    return text.endsWith(v);
-    default: return false;
-  }
-}
-
-function evaluateRule(email, rule) {
-  const { field, operator, value } = rule;
-  switch (field) {
-    case 'from': {
-      const text = ((email.fromAddr || '') + ' ' + (email.fromName || '')).toLowerCase();
-      return matchesTextOp(text, operator, value);
-    }
-    case 'to': {
-      const text = (email.toAddrs || []).join(' ').toLowerCase();
-      return matchesTextOp(text, operator, value);
-    }
-    case 'subject':
-      return matchesTextOp((email.subject || '').toLowerCase(), operator, value);
-    case 'body':
-      return matchesTextOp((email.textBody || '').toLowerCase(), operator, value);
-    case 'status':
-      // For status, the desired status value is stored in operator (no separate value input)
-      return email.status === operator;
-    case 'tags':
-      if (operator === 'contains')     return (email.tags || []).includes((value || '').toLowerCase());
-      if (operator === 'not_contains') return !(email.tags || []).includes((value || '').toLowerCase());
-      return false;
-    case 'hasAttachments':
-      return operator === 'is_true' ? !!email.hasAttachments : !email.hasAttachments;
-    case 'isActionable':
-      return operator === 'is_true' ? !!email.isActionable : !email.isActionable;
-    default:
-      return false;
-  }
-}
-
-function emailMatchesSmartView(email, sv) {
-  if (!sv.rules || sv.rules.length === 0) return true;
-  return sv.matchType === 'any'
-    ? sv.rules.some(r  => evaluateRule(email, r))
-    : sv.rules.every(r => evaluateRule(email, r));
-}
-
-function renderSmartViewsNav() {
-  const container = document.getElementById('smart-views-nav');
-  if (!container) return;
-  if (smartViews.length === 0) {
-    container.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 8px 4px 12px;">No smart views yet</div>';
-    return;
-  }
-  container.innerHTML = smartViews.map(sv => `
-    <button class="nav-item ${currentView === sv.id ? 'active' : ''}"
-            data-view="${sv.id}"
-            onclick="switchView('${sv.id}')">
-      <span style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">◆ ${escHtml(sv.name)}</span>
-      <span class="nav-count" id="n-sv-${sv.id}">0</span>
-      <span onclick="event.stopPropagation();showSmartViewDialog('${sv.id}')"
-            title="Edit"
-            style="margin-left:4px;opacity:0.5;font-size:11px;padding:1px 3px;border-radius:3px;"
-            onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'">✎</span>
-    </button>
-  `).join('');
-}
-
-function updateSmartViewCounts() {
-  for (const sv of smartViews) {
-    const el = document.getElementById(`n-sv-${sv.id}`);
-    if (el) el.textContent = allEmails.filter(e => emailMatchesSmartView(e, sv)).length;
-  }
-}
-
-async function saveSmartView(sv) {
-  await dbPut('smartViews', sv);
-  const idx = smartViews.findIndex(v => v.id === sv.id);
-  if (idx >= 0) smartViews[idx] = sv; else smartViews.push(sv);
-  renderSmartViewsNav();
-  updateSmartViewCounts();
-}
-
-async function deleteSmartView(id) {
-  await dbDelete('smartViews', id);
-  smartViews = smartViews.filter(v => v.id !== id);
-  if (currentView === id) switchView('all');
-  renderSmartViewsNav();
-}
-
-const SV_FIELDS = [
-  { value: 'from',           label: 'From' },
-  { value: 'to',             label: 'To' },
-  { value: 'subject',        label: 'Subject' },
-  { value: 'body',           label: 'Body' },
-  { value: 'status',         label: 'Status' },
-  { value: 'tags',           label: 'Tags' },
-  { value: 'hasAttachments', label: 'Has Attachments' },
-  { value: 'isActionable',   label: 'Is Actionable' },
-];
-
-const SV_TEXT_OPS = [
-  { value: 'contains',     label: 'contains' },
-  { value: 'not_contains', label: 'does not contain' },
-  { value: 'equals',       label: 'equals' },
-  { value: 'starts_with',  label: 'starts with' },
-  { value: 'ends_with',    label: 'ends with' },
-];
-
-function getOperatorsForField(field) {
-  if (field === 'hasAttachments' || field === 'isActionable') {
-    return [{ value: 'is_true', label: 'is true' }, { value: 'is_false', label: 'is false' }];
-  }
-  if (field === 'status') {
-    return [
-      { value: 'unread',    label: 'is unread' },
-      { value: 'read',      label: 'is read' },
-      { value: 'replied',   label: 'is replied' },
-      { value: 'awaiting',  label: 'is awaiting reply' },
-      { value: 'actioned',  label: 'is actioned' },
-    ];
-  }
-  if (field === 'tags') {
-    return [
-      { value: 'contains',     label: 'contains tag' },
-      { value: 'not_contains', label: 'does not contain tag' },
-    ];
-  }
-  return SV_TEXT_OPS;
-}
-
-function showSmartViewDialog(editId) {
-  const existing = editId ? smartViews.find(v => v.id === editId) : null;
-  const sv = existing
-    ? JSON.parse(JSON.stringify(existing))
-    : { id: 'sv_' + Date.now(), name: '', matchType: 'all', rules: [] };
-
-  // Remove any existing dialog
-  document.getElementById('sv-dialog')?.remove();
-
-  const overlay = document.createElement('div');
-  overlay.id = 'sv-dialog';
-  overlay.style.cssText = `
-    position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;
-    display:flex;align-items:center;justify-content:center;`;
-
-  overlay.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;
-                width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:24px;
-                box-shadow:0 8px 32px rgba(0,0,0,0.18);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-        <h2 style="font-size:16px;font-weight:600;margin:0;">${existing ? 'Edit' : 'New'} Smart View</h2>
-        <button onclick="document.getElementById('sv-dialog').remove()"
-                style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--muted);line-height:1;">×</button>
-      </div>
-
-      <div style="margin-bottom:16px;">
-        <label style="display:block;font-size:12px;font-weight:500;margin-bottom:6px;color:var(--muted);">NAME</label>
-        <input id="sv-name" type="text" value="${escHtml(sv.name)}" placeholder="e.g. Client emails, Urgent subjects…"
-               style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:5px;
-                      font-family:var(--sans);font-size:14px;background:var(--surface);">
-      </div>
-
-      <div style="margin-bottom:16px;">
-        <label style="display:block;font-size:12px;font-weight:500;margin-bottom:6px;color:var(--muted);">MATCH</label>
-        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:5px;overflow:hidden;width:fit-content;">
-          <button id="sv-match-all"
-                  onclick="svSetMatch('all')"
-                  style="padding:6px 16px;border:none;cursor:pointer;font-size:13px;font-family:var(--sans);
-                         background:${sv.matchType==='all'?'var(--accent)':'var(--surface)'};
-                         color:${sv.matchType==='all'?'#fff':'var(--text)'};transition:all 0.15s;">
-            All rules match
-          </button>
-          <button id="sv-match-any"
-                  onclick="svSetMatch('any')"
-                  style="padding:6px 16px;border:none;cursor:pointer;font-size:13px;font-family:var(--sans);
-                         border-left:1px solid var(--border);
-                         background:${sv.matchType==='any'?'var(--accent)':'var(--surface)'};
-                         color:${sv.matchType==='any'?'#fff':'var(--text)'};transition:all 0.15s;">
-            Any rule matches
-          </button>
-        </div>
-      </div>
-
-      <div style="margin-bottom:8px;">
-        <label style="display:block;font-size:12px;font-weight:500;margin-bottom:8px;color:var(--muted);">RULES</label>
-        <div id="sv-rules-list"></div>
-        <button onclick="svAddRule()"
-                style="margin-top:8px;padding:6px 12px;border:1px dashed var(--border2);border-radius:5px;
-                       background:none;cursor:pointer;font-size:13px;color:var(--muted);font-family:var(--sans);">
-          + Add Rule
-        </button>
-      </div>
-
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);">
-        ${existing ? `<button onclick="svConfirmDelete('${sv.id}')"
-                              style="margin-right:auto;padding:7px 14px;border:1px solid var(--danger);border-radius:5px;
-                                     background:none;cursor:pointer;font-size:13px;color:var(--danger);font-family:var(--sans);">
-                        Delete
-                      </button>` : ''}
-        <button onclick="document.getElementById('sv-dialog').remove()"
-                style="padding:7px 16px;border:1px solid var(--border);border-radius:5px;
-                       background:none;cursor:pointer;font-size:13px;font-family:var(--sans);">
-          Cancel
-        </button>
-        <button onclick="svSave()"
-                style="padding:7px 16px;border:none;border-radius:5px;background:var(--accent);
-                       color:#fff;cursor:pointer;font-size:13px;font-family:var(--sans);font-weight:500;">
-          Save View
-        </button>
-      </div>
-    </div>`;
-
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-
-  // Store draft in closure via a module-level scratch object
-  window._svDraft = sv;
-  svRenderRules();
-  document.getElementById('sv-name').focus();
-}
-
-function svSetMatch(type) {
-  window._svDraft.matchType = type;
-  const all = document.getElementById('sv-match-all');
-  const any = document.getElementById('sv-match-any');
-  if (!all || !any) return;
-  const accent = 'var(--accent)', surface = 'var(--surface)', white = '#fff', text = 'var(--text)';
-  all.style.background = type === 'all' ? accent : surface;
-  all.style.color       = type === 'all' ? white  : text;
-  any.style.background  = type === 'any' ? accent : surface;
-  any.style.color       = type === 'any' ? white  : text;
-}
-
-function svAddRule() {
-  window._svDraft.rules.push({ field: 'from', operator: 'contains', value: '' });
-  svRenderRules();
-}
-
-function svRemoveRule(idx) {
-  window._svDraft.rules.splice(idx, 1);
-  svRenderRules();
-}
-
-function svRenderRules() {
-  const container = document.getElementById('sv-rules-list');
-  if (!container) return;
-  const rules = window._svDraft.rules;
-  if (rules.length === 0) {
-    container.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No rules — add one below.</div>';
-    return;
-  }
-  container.innerHTML = rules.map((r, i) => {
-    const ops = getOperatorsForField(r.field);
-    const isBool   = r.field === 'hasAttachments' || r.field === 'isActionable';
-    const isStatus = r.field === 'status';
-    return `
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-        <select onchange="svUpdateRule(${i},'field',this.value)"
-                style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;
-                       font-family:var(--sans);font-size:13px;background:var(--surface);flex-shrink:0;">
-          ${SV_FIELDS.map(f => `<option value="${f.value}"${r.field===f.value?' selected':''}>${f.label}</option>`).join('')}
-        </select>
-        <select onchange="svUpdateRule(${i},'operator',this.value)"
-                style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;
-                       font-family:var(--sans);font-size:13px;background:var(--surface);flex-shrink:0;">
-          ${ops.map(o => `<option value="${o.value}"${r.operator===o.value?' selected':''}>${o.label}</option>`).join('')}
-        </select>
-        ${isBool || isStatus ? '' : `
-        <input type="text" value="${escHtml(r.value)}" placeholder="value…"
-               onchange="svUpdateRule(${i},'value',this.value)"
-               oninput="svUpdateRule(${i},'value',this.value)"
-               style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:5px;
-                      font-family:var(--sans);font-size:13px;background:var(--surface);">`}
-        <button onclick="svRemoveRule(${i})"
-                title="Remove rule"
-                style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;
-                       padding:2px 6px;border-radius:4px;flex-shrink:0;"
-                onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">✕</button>
-      </div>`;
-  }).join('');
-}
-
-function svUpdateRule(idx, key, value) {
-  const rule = window._svDraft.rules[idx];
-  if (!rule) return;
-  if (key === 'field') {
-    // Reset operator to first valid one for the new field
-    const ops = getOperatorsForField(value);
-    rule.field    = value;
-    rule.operator = ops[0].value;
-    rule.value    = '';
-    svRenderRules();
-  } else {
-    rule[key] = value;
-  }
-}
-
-async function svSave() {
-  const sv = window._svDraft;
-  const name = (document.getElementById('sv-name')?.value || '').trim();
-  if (!name) { toast('Please enter a name for this view', 'err'); return; }
-  sv.name = name;
-  document.getElementById('sv-dialog')?.remove();
-  await saveSmartView(sv);
-  toast(`Smart view "${name}" saved`, 'ok');
-}
-
-async function svConfirmDelete(id) {
-  const sv = smartViews.find(v => v.id === id);
-  if (!sv) return;
-  if (!confirm(`Delete smart view "${sv.name}"?`)) return;
-  document.getElementById('sv-dialog')?.remove();
-  await deleteSmartView(id);
-  toast('Smart view deleted', 'ok');
-}
-
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
@@ -4342,12 +4994,15 @@ async function init() {
   db = await openDB();
   setupDropZone();
 
-  smartViews = await dbGetAll('smartViews');
-  renderSmartViewsNav();
+  // Load custom patterns, smart views, and email groups before processing emails
+  await loadCustomPatterns();
+  await loadEmailGroups();
+  await loadSmartViews();
 
   const emails = await dbGetAll('emails');
   if (emails.length > 0) {
     allEmails = emails;
+    buildThreadCache();
     applyFilters();
     updateNavCounts();
     await updateHeaderStats();
