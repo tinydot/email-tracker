@@ -726,6 +726,181 @@
     background-position: right 8px center;
     cursor: pointer;
   }
+
+  /* ── Sidebar Smart Views ── */
+  .sidebar-add-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 16px;
+    font-weight: 400;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 3px;
+    transition: all 0.12s;
+  }
+  .sidebar-add-btn:hover { color: var(--accent); background: var(--accent-dim); }
+
+  .sidebar-label-row {
+    display: flex;
+    align-items: center;
+    padding: 0 8px 8px;
+  }
+  .sidebar-label-row .sidebar-label {
+    padding: 0;
+    flex: 1;
+  }
+
+  /* ── Smart View Editor Modal ── */
+  #sv-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(0,0,0,0.5);
+    overflow-y: auto;
+    padding: 40px 20px 60px;
+    backdrop-filter: blur(2px);
+  }
+  #sv-modal-overlay.open { display: flex; align-items: flex-start; justify-content: center; }
+
+  #sv-modal {
+    width: 100%;
+    max-width: 620px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .sv-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .sv-modal-title { flex: 1; font-size: 14px; font-weight: 600; }
+
+  .sv-modal-body { padding: 20px; }
+
+  .sv-field-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+
+  .sv-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .sv-input:focus { border-color: var(--accent); }
+
+  .sv-operator-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .sv-operator-btn {
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.12s;
+    font-family: var(--sans);
+  }
+  .sv-operator-btn.active { background: var(--accent); color: #000; }
+
+  .rule-row {
+    display: grid;
+    grid-template-columns: 160px 160px 1fr 28px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .rule-row select, .rule-row input[type=text] {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 4px 7px;
+    font-size: 12px;
+    font-family: var(--sans);
+    color: var(--text);
+    width: 100%;
+    outline: none;
+  }
+  .rule-row select:focus, .rule-row input[type=text]:focus { border-color: var(--accent); }
+
+  .rule-remove {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    width: 28px;
+    height: 28px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s;
+    padding: 0;
+  }
+  .rule-remove:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-dim); }
+
+  /* ── Pattern chips in settings ── */
+  .pattern-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted);
+    margin: 2px 3px 2px 0;
+  }
+  .pattern-chip.custom {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .pattern-chip .del-pat {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    transition: color 0.1s;
+  }
+  .pattern-chip .del-pat:hover { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -778,6 +953,16 @@
           📋 Transmittal Register <span class="nav-count" id="n-transmittals">0</span>
         </button>
       </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label-row">
+          <span class="sidebar-label">Smart Views</span>
+          <button class="sidebar-add-btn" onclick="showSmartViewEditor()" title="New Smart View">+</button>
+        </div>
+        <div id="smart-views-nav">
+          <div style="padding:4px 8px; font-size:11px; color:var(--muted); font-style:italic;">No smart views yet</div>
+        </div>
+      </div>
+
       <div class="sidebar-section">
         <div class="sidebar-label">Actions</div>
         <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
@@ -883,12 +1068,17 @@
 
 <div id="toast"></div>
 
+<!-- Smart View Editor Modal -->
+<div id="sv-modal-overlay" onclick="handleSvOverlayClick(event)">
+  <div id="sv-modal"></div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 2; // Increment for new Issues store
+const DB_VERSION = 3; // v3: smartViews + settings stores
 let db = null;
 
 function openDB() {
@@ -931,6 +1121,16 @@ function openDB() {
         const istore = db.createObjectStore('issues', { keyPath: 'id' });
         istore.createIndex('status', 'status', { unique: false });
         istore.createIndex('createdDate', 'createdDate', { unique: false });
+      }
+
+      // Smart Views store (user-defined filter views)
+      if (!db.objectStoreNames.contains('smartViews')) {
+        db.createObjectStore('smartViews', { keyPath: 'id' });
+      }
+
+      // Settings store (key-value, e.g. custom automation patterns)
+      if (!db.objectStoreNames.contains('settings')) {
+        db.createObjectStore('settings', { keyPath: 'key' });
       }
     };
     req.onsuccess = e => res(e.target.result);
@@ -1490,25 +1690,48 @@ function simpleHash(str) {
 //  SYSTEM / AUTOMATED EMAIL DETECTION
 // ═══════════════════════════════════════════════════════
 
-const SYSTEM_SENDER_PATTERNS = [
+// Built-in patterns (mutable so custom ones can be merged in at runtime)
+let SYSTEM_SENDER_PATTERNS = [
   /^(noreply|no-reply|no\.reply|donotreply|do-not-reply|do\.not\.reply)@/i,
   /^(mailer-daemon|postmaster|bounce|bounces|daemon|notifications?|alerts?|automailer|auto-mailer|automated?)@/i,
 ];
 
-const SYSTEM_SUBJECT_PATTERNS = [
+let SYSTEM_SUBJECT_PATTERNS = [
   /^(auto-?reply|automatic reply|out of office|undeliverable)/i,
   /^delivery (status notification|failure|failed)/i,
   /^(mail delivery (failed|failure)|returned mail|non-delivery report)/i,
   /^\[?(automated|auto-generated|do not reply)\]?:/i,
 ];
 
-const SYSTEM_BODY_PATTERNS = [
+let SYSTEM_BODY_PATTERNS = [
   /this (is an |message (was |is ))?(automated|automatically (generated|sent))/i,
   /do not (reply to|respond to) this (email|message)/i,
   /this email (was sent automatically|is automatically generated)/i,
   /you('re| are) receiving this (email|message|notification) because/i,
   /to (unsubscribe|manage your (notification|email) preferences)/i,
 ];
+
+// Default pattern sources (kept for reference / reset)
+const DEFAULT_SENDER_PATTERNS = [
+  /^(noreply|no-reply|no\.reply|donotreply|do-not-reply|do\.not\.reply)@/i,
+  /^(mailer-daemon|postmaster|bounce|bounces|daemon|notifications?|alerts?|automailer|auto-mailer|automated?)@/i,
+];
+const DEFAULT_SUBJECT_PATTERNS = [
+  /^(auto-?reply|automatic reply|out of office|undeliverable)/i,
+  /^delivery (status notification|failure|failed)/i,
+  /^(mail delivery (failed|failure)|returned mail|non-delivery report)/i,
+  /^\[?(automated|auto-generated|do not reply)\]?:/i,
+];
+const DEFAULT_BODY_PATTERNS = [
+  /this (is an |message (was |is ))?(automated|automatically (generated|sent))/i,
+  /do not (reply to|respond to) this (email|message)/i,
+  /this email (was sent automatically|is automatically generated)/i,
+  /you('re| are) receiving this (email|message|notification) because/i,
+  /to (unsubscribe|manage your (notification|email) preferences)/i,
+];
+
+// Custom patterns loaded from DB (stored as plain regex source strings)
+let customPatterns = { senders: [], subjects: [], body: [] };
 
 function detectSystemEmail(rawHeaders, fromAddr, subject, body) {
   // 1. Authoritative automation headers
@@ -2259,6 +2482,7 @@ let currentSort    = 'date-desc';
 let searchTerm     = '';
 let selectedEmail  = null;
 let selectedEmailIdx = -1; // index in filteredEmails for navigation
+let smartViews     = []; // user-created smart views
 
 const VIEW_LABELS = {
   all:          'All Emails',
@@ -2276,6 +2500,356 @@ function showPanel(name) {
   document.getElementById('import-panel').style.display   = name === 'import'   ? '' : 'none';
   document.getElementById('progress-panel').className     = name === 'progress' ? 'active' : '';
   document.getElementById('email-list-panel').className   = name === 'list'     ? 'active' : '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  SMART VIEWS
+// ═══════════════════════════════════════════════════════
+
+// --- Rule field definitions ---
+const RULE_FIELDS = [
+  { value: 'fromAddr',       label: 'Sender Email' },
+  { value: 'fromName',       label: 'Sender Name' },
+  { value: 'fromDomain',     label: 'Sender Domain' },
+  { value: 'toAddr',         label: 'Recipient Email' },
+  { value: 'toDomain',       label: 'Recipient Domain' },
+  { value: 'ccAddr',         label: 'CC Email' },
+  { value: 'ccDomain',       label: 'CC Domain' },
+  { value: 'subject',        label: 'Subject' },
+  { value: 'status',         label: 'Status' },
+  { value: 'tags',           label: 'Tags' },
+  { value: 'hasAttachments', label: 'Has Attachments' },
+  { value: 'isActionable',   label: 'Is Actionable' },
+  { value: 'isSystemEmail',  label: 'Is Automated' },
+];
+
+const BOOL_FIELDS = new Set(['hasAttachments', 'isActionable', 'isSystemEmail']);
+
+function getOperatorOptions(field, selected) {
+  if (BOOL_FIELDS.has(field)) {
+    return `<option value="is_true" ${selected === 'is_true' ? 'selected' : ''}>is true</option>
+            <option value="is_false" ${selected === 'is_false' ? 'selected' : ''}>is false</option>`;
+  }
+  const ops = [
+    ['contains',     'contains'],
+    ['not_contains', 'does not contain'],
+    ['equals',       'equals'],
+    ['not_equals',   'does not equal'],
+    ['starts_with',  'starts with'],
+    ['ends_with',    'ends with'],
+  ];
+  return ops.map(([v, l]) => `<option value="${v}" ${selected === v ? 'selected' : ''}>${l}</option>`).join('');
+}
+
+function getValueInputHTML(field, value) {
+  if (BOOL_FIELDS.has(field)) return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  if (field === 'status') {
+    const statuses = ['unread','read','replied','awaiting','actioned'];
+    return `<select>${statuses.map(s => `<option value="${s}" ${value === s ? 'selected' : ''}>${s}</option>`).join('')}</select>`;
+  }
+  return `<input type="text" value="${escHtml(value)}" placeholder="Value…">`;
+}
+
+function buildRuleRowHTML(rule = {}) {
+  const field    = rule.field    || 'fromAddr';
+  const operator = rule.operator || 'contains';
+  const value    = rule.value    || '';
+  return `
+    <div class="rule-row">
+      <select class="rule-field" onchange="onRuleFieldChange(this)">
+        ${RULE_FIELDS.map(f => `<option value="${f.value}" ${field === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
+      </select>
+      <select class="rule-operator">
+        ${getOperatorOptions(field, operator)}
+      </select>
+      <div class="rule-value-container" style="min-width:0;">${getValueInputHTML(field, value)}</div>
+      <button class="rule-remove" onclick="this.closest('.rule-row').remove()" title="Remove rule">×</button>
+    </div>`;
+}
+
+function onRuleFieldChange(select) {
+  const row = select.closest('.rule-row');
+  const field = select.value;
+  row.querySelector('.rule-operator').innerHTML = getOperatorOptions(field, 'contains');
+  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '');
+}
+
+function addRuleRow() {
+  const container = document.getElementById('sv-rules-list');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildRuleRowHTML();
+  container.appendChild(tmp.firstElementChild);
+}
+
+function setSvOperator(op) {
+  document.getElementById('sv-operator').value = op;
+  document.getElementById('op-btn-AND').classList.toggle('active', op === 'AND');
+  document.getElementById('op-btn-OR').classList.toggle('active', op === 'OR');
+}
+
+function handleSvOverlayClick(e) {
+  if (e.target === document.getElementById('sv-modal-overlay')) closeSmartViewEditor();
+}
+
+function closeSmartViewEditor() {
+  document.getElementById('sv-modal-overlay').classList.remove('open');
+}
+
+function showSmartViewEditor(svId = null) {
+  const sv = svId ? smartViews.find(s => s.id === svId) : null;
+  const isEdit = !!sv;
+  const rules = sv?.rules?.length ? sv.rules : [{ field: 'fromDomain', operator: 'contains', value: '' }];
+  const op = sv?.ruleOperator || 'AND';
+
+  document.getElementById('sv-modal').innerHTML = `
+    <div class="sv-modal-header">
+      <span class="sv-modal-title">${isEdit ? 'Edit Smart View' : 'New Smart View'}</span>
+      <button class="btn" onclick="closeSmartViewEditor()">×</button>
+    </div>
+    <div class="sv-modal-body">
+      <input type="hidden" id="sv-edit-id" value="${isEdit ? escHtml(sv.id) : ''}">
+
+      <div style="display:flex; gap:10px; margin-bottom:16px;">
+        <div style="flex:0 0 auto;">
+          <div class="sv-field-label">Icon</div>
+          <input id="sv-icon" class="sv-input" value="${escHtml(sv?.icon || '🔍')}"
+                 style="width:52px; text-align:center; font-size:18px; padding:4px 6px;">
+        </div>
+        <div style="flex:1;">
+          <div class="sv-field-label">View Name</div>
+          <input id="sv-name" class="sv-input" placeholder="e.g. From Client" value="${escHtml(sv?.name || '')}">
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div class="sv-field-label" style="margin-bottom:6px;">Match emails where</div>
+        <div class="sv-operator-toggle">
+          <button class="sv-operator-btn" id="op-btn-AND" onclick="setSvOperator('AND')">ALL rules match</button>
+          <button class="sv-operator-btn" id="op-btn-OR"  onclick="setSvOperator('OR')">ANY rule matches</button>
+        </div>
+        <input type="hidden" id="sv-operator" value="${op}">
+      </div>
+
+      <div class="sv-field-label" style="margin-bottom:6px;">Rules</div>
+      <div id="sv-rules-list">
+        ${rules.map(r => buildRuleRowHTML(r)).join('')}
+      </div>
+      <button class="btn" onclick="addRuleRow()" style="margin-top:4px; margin-bottom:16px;">+ Add Rule</button>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; border-top:1px solid var(--border); padding-top:16px;">
+        ${isEdit ? `<button class="btn btn-danger" onclick="deleteSmartView('${escHtml(sv.id)}')">Delete</button>` : ''}
+        <button class="btn" onclick="closeSmartViewEditor()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSmartView()">Save</button>
+      </div>
+    </div>`;
+
+  document.getElementById('sv-modal-overlay').classList.add('open');
+  setSvOperator(op);
+  document.getElementById('sv-name').focus();
+}
+
+function collectRulesFromDOM() {
+  const rules = [];
+  document.querySelectorAll('#sv-rules-list .rule-row').forEach(row => {
+    const field    = row.querySelector('.rule-field')?.value;
+    const operator = row.querySelector('.rule-operator')?.value;
+    const textIn   = row.querySelector('.rule-value-container input[type=text]');
+    const selIn    = row.querySelector('.rule-value-container select');
+    const value    = textIn ? textIn.value : (selIn ? selIn.value : '');
+    if (field) rules.push({ field, operator: operator || 'contains', value: value || '' });
+  });
+  return rules;
+}
+
+async function saveSmartView() {
+  const id   = document.getElementById('sv-edit-id').value;
+  const name = document.getElementById('sv-name').value.trim();
+  const icon = document.getElementById('sv-icon').value.trim() || '🔍';
+  const ruleOperator = document.getElementById('sv-operator').value || 'AND';
+
+  if (!name) {
+    document.getElementById('sv-name').focus();
+    toast('Please enter a view name', 'warn');
+    return;
+  }
+
+  const rules = collectRulesFromDOM();
+
+  const existing = id ? smartViews.find(s => s.id === id) : null;
+  const svRecord = {
+    id: id || ('sv-' + Date.now()),
+    name, icon, ruleOperator, rules,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+  };
+
+  await dbPut('smartViews', svRecord);
+
+  const idx = smartViews.findIndex(s => s.id === svRecord.id);
+  if (idx >= 0) smartViews[idx] = svRecord;
+  else smartViews.push(svRecord);
+
+  closeSmartViewEditor();
+  renderSmartViewsSidebar();
+  updateNavCounts();
+  switchView('sv-' + svRecord.id);
+  toast(`Smart view "${name}" saved`, 'ok');
+}
+
+async function deleteSmartView(id) {
+  if (!confirm('Delete this smart view?')) return;
+  await dbDelete('smartViews', id);
+  smartViews = smartViews.filter(s => s.id !== id);
+  closeSmartViewEditor();
+  renderSmartViewsSidebar();
+  if (currentView === 'sv-' + id) switchView('all');
+  toast('Smart view deleted', 'ok');
+}
+
+// --- Rule engine ---
+function getEmailFieldValue(email, field) {
+  switch (field) {
+    case 'fromAddr':       return (email.fromAddr  || '').toLowerCase();
+    case 'fromName':       return (email.fromName  || '').toLowerCase();
+    case 'fromDomain':     return ((email.fromAddr || '').split('@')[1] || '').toLowerCase();
+    case 'toAddr':         return (email.toAddrs   || []).join(' ').toLowerCase();
+    case 'toDomain':       return (email.toAddrs   || []).map(a => (a.split('@')[1] || '')).join(' ').toLowerCase();
+    case 'ccAddr':         return (email.ccAddrs   || []).join(' ').toLowerCase();
+    case 'ccDomain':       return (email.ccAddrs   || []).map(a => (a.split('@')[1] || '')).join(' ').toLowerCase();
+    case 'subject':        return (email.subject   || '').toLowerCase();
+    case 'status':         return (email.status    || '').toLowerCase();
+    case 'tags':           return (email.tags      || []).join(' ').toLowerCase();
+    case 'hasAttachments': return email.hasAttachments ? 'true' : 'false';
+    case 'isActionable':   return email.isActionable   ? 'true' : 'false';
+    case 'isSystemEmail':  return email.isSystemEmail  ? 'true' : 'false';
+    default: return '';
+  }
+}
+
+function evaluateRule(email, rule) {
+  const { field, operator, value } = rule;
+  if (BOOL_FIELDS.has(field)) {
+    const boolVal = email[field] === true;
+    return operator === 'is_true' ? boolVal : !boolVal;
+  }
+  const fv  = getEmailFieldValue(email, field);
+  const val = (value || '').toLowerCase();
+  switch (operator) {
+    case 'contains':     return fv.includes(val);
+    case 'not_contains': return !fv.includes(val);
+    case 'equals':       return fv === val;
+    case 'not_equals':   return fv !== val;
+    case 'starts_with':  return fv.startsWith(val);
+    case 'ends_with':    return fv.endsWith(val);
+    default: return false;
+  }
+}
+
+function applySmartViewRules(email, sv) {
+  if (!sv.rules || sv.rules.length === 0) return true;
+  if (sv.ruleOperator === 'OR') {
+    return sv.rules.some(r => evaluateRule(email, r));
+  }
+  return sv.rules.every(r => evaluateRule(email, r));
+}
+
+async function loadSmartViews() {
+  smartViews = await dbGetAll('smartViews');
+  renderSmartViewsSidebar();
+}
+
+function renderSmartViewsSidebar() {
+  const container = document.getElementById('smart-views-nav');
+  if (!container) return;
+  if (!smartViews.length) {
+    container.innerHTML = '<div style="padding:4px 8px 4px 16px; font-size:11px; color:var(--muted); font-style:italic;">No smart views yet</div>';
+    return;
+  }
+  container.innerHTML = smartViews.map(sv => {
+    const count   = allEmails.filter(e => applySmartViewRules(e, sv)).length;
+    const isActive = currentView === 'sv-' + sv.id;
+    return `
+      <button class="nav-item ${isActive ? 'active' : ''}" data-view="sv-${escHtml(sv.id)}"
+              onclick="switchView('sv-${escHtml(sv.id)}')"
+              oncontextmenu="event.preventDefault(); showSmartViewEditor('${escHtml(sv.id)}')"
+              title="Right-click to edit">
+        ${escHtml(sv.icon || '🔍')} ${escHtml(sv.name)}
+        <span class="nav-count">${count}</span>
+      </button>`;
+  }).join('');
+}
+
+// --- Custom automation patterns (persisted) ---
+async function loadCustomPatterns() {
+  const saved = await dbGet('settings', 'customAutomationPatterns');
+  if (saved) {
+    customPatterns.senders  = saved.senders  || [];
+    customPatterns.subjects = saved.subjects || [];
+    customPatterns.body     = saved.body     || [];
+    mergeCustomPatterns();
+  }
+}
+
+function mergeCustomPatterns() {
+  SYSTEM_SENDER_PATTERNS  = [...DEFAULT_SENDER_PATTERNS,  ...customPatterns.senders.map(s  => safeRegex(s)).filter(Boolean)];
+  SYSTEM_SUBJECT_PATTERNS = [...DEFAULT_SUBJECT_PATTERNS, ...customPatterns.subjects.map(s => safeRegex(s)).filter(Boolean)];
+  SYSTEM_BODY_PATTERNS    = [...DEFAULT_BODY_PATTERNS,    ...customPatterns.body.map(s     => safeRegex(s)).filter(Boolean)];
+}
+
+function safeRegex(src) {
+  try { return new RegExp(src, 'i'); } catch { return null; }
+}
+
+async function saveCustomPatterns() {
+  await dbPut('settings', { key: 'customAutomationPatterns', ...customPatterns });
+  mergeCustomPatterns();
+}
+
+function renderPatternSection(title, category, defaults, customs) {
+  const defaultChips = defaults.map(re =>
+    `<span class="pattern-chip" title="Built-in (read-only)">${escHtml(re.source)}</span>`
+  ).join('');
+  const customChips = customs.map((p, i) =>
+    `<span class="pattern-chip custom">
+       ${escHtml(p)}
+       <button class="del-pat" onclick="removeCustomPattern('${category}', ${i})" title="Remove">×</button>
+     </span>`
+  ).join('');
+  return `
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px; font-family:var(--mono); letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">${title}</div>
+      <div style="margin-bottom:6px;">${defaultChips}${customChips}</div>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="new-pat-${category}" class="search-input" placeholder="Add pattern (text or /regex/)…" style="flex:1;">
+        <button class="btn" onclick="addCustomPattern('${category}')">+ Add</button>
+      </div>
+    </div>`;
+}
+
+async function addCustomPattern(category) {
+  const input = document.getElementById(`new-pat-${category}`);
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+
+  // Strip leading/trailing slashes if user typed /regex/
+  const src = val.startsWith('/') && val.lastIndexOf('/') > 0
+    ? val.slice(1, val.lastIndexOf('/'))
+    : val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape if plain text
+
+  if (!customPatterns[category]) customPatterns[category] = [];
+  customPatterns[category].push(src);
+  await saveCustomPatterns();
+  input.value = '';
+  toast('Pattern added', 'ok');
+  showSettings(); // re-render
+}
+
+async function removeCustomPattern(category, idx) {
+  if (!customPatterns[category]) return;
+  customPatterns[category].splice(idx, 1);
+  await saveCustomPatterns();
+  toast('Pattern removed', 'ok');
+  showSettings(); // re-render
 }
 
 function showSettings() {
@@ -2318,6 +2892,18 @@ function showSettings() {
           Useful if emails imported before this feature was enabled aren't showing up under Automated.
         </div>
         <button id="btn-rerun-detection" class="btn" onclick="rerunAutomatedDetection()">Re-run detection</button>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Automated detection patterns</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          Patterns used to classify emails as automated. Built-in patterns are shown in gray.
+          Add custom patterns as plain text (substring match) or regular expressions.
+        </div>
+
+        ${renderPatternSection('Sender Email Patterns', 'senders', DEFAULT_SENDER_PATTERNS, customPatterns.senders)}
+        ${renderPatternSection('Subject Patterns', 'subjects', DEFAULT_SUBJECT_PATTERNS, customPatterns.subjects)}
+        ${renderPatternSection('Body Patterns (first 1000 chars)', 'body', DEFAULT_BODY_PATTERNS, customPatterns.body)}
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
@@ -2392,16 +2978,24 @@ function switchView(view) {
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);
   });
-  document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-  
-  if (view === 'transmittals') {
+
+  if (view.startsWith('sv-')) {
+    const svId = view.slice(3);
+    const sv   = smartViews.find(s => s.id === svId);
+    document.getElementById('view-title').textContent = sv ? (sv.icon + ' ' + sv.name) : 'Smart View';
+    showPanel('list');
+    applyFilters();
+  } else if (view === 'transmittals') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     showTransmittalRegister();
   } else if (view === 'issues') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     showIssuesList();
   } else {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     applyFilters();
   }
-  
+
   closeDetail();
 }
 
@@ -2421,32 +3015,38 @@ function applyFilters() {
   // Rebuild message ID index for thread queries
   rebuildMsgIdIndex();
 
-  // Exclude automated emails from all views except the dedicated 'automated' view
-  if (currentView !== 'automated') {
-    list = list.filter(e => !e.isSystemEmail);
-  }
+  if (currentView.startsWith('sv-')) {
+    // Smart view: apply user-defined rules (includes automated emails by default)
+    const svId = currentView.slice(3);
+    const sv   = smartViews.find(s => s.id === svId);
+    if (sv) list = list.filter(e => applySmartViewRules(e, sv));
+  } else {
+    // Exclude automated emails from all built-in views except 'automated'
+    if (currentView !== 'automated') {
+      list = list.filter(e => !e.isSystemEmail);
+    }
 
-  // View filter
-  switch (currentView) {
-    case 'unread':      list = list.filter(e => e.status === 'unread'); break;
-    case 'actionable':  list = list.filter(e => e.isActionable); break;
-    case 'awaiting':
-      list = list.filter(e => e.status === 'awaiting');
-      // Mark overdue (>7 days with no reply)
-      const now = Date.now();
-      list.forEach(e => {
-        if (e.awaitingSince) {
-          const days = (now - new Date(e.awaitingSince).getTime()) / (1000*60*60*24);
-          e._overdue = days > 7;
-        }
-      });
-      break;
-    case 'threads':
-      // Show only root emails that have replies
-      list = list.filter(e => !e.inReplyTo && hasReplies(e));
-      break;
-    case 'attachments': list = list.filter(e => e.hasAttachments); break;
-    case 'automated':   list = list.filter(e => e.isSystemEmail); break;
+    // View filter
+    switch (currentView) {
+      case 'unread':      list = list.filter(e => e.status === 'unread'); break;
+      case 'actionable':  list = list.filter(e => e.isActionable); break;
+      case 'awaiting': {
+        list = list.filter(e => e.status === 'awaiting');
+        const now = Date.now();
+        list.forEach(e => {
+          if (e.awaitingSince) {
+            const days = (now - new Date(e.awaitingSince).getTime()) / (1000*60*60*24);
+            e._overdue = days > 7;
+          }
+        });
+        break;
+      }
+      case 'threads':
+        list = list.filter(e => !e.inReplyTo && hasReplies(e));
+        break;
+      case 'attachments': list = list.filter(e => e.hasAttachments); break;
+      case 'automated':   list = list.filter(e => e.isSystemEmail);  break;
+    }
   }
 
   // Search
@@ -3504,6 +4104,9 @@ function updateNavCounts() {
   dbGetAll('attachments').then(atts => {
     document.getElementById('n-transmittals').textContent = atts.length;
   });
+
+  // Refresh smart view counts in sidebar
+  renderSmartViewsSidebar();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4021,9 +4624,14 @@ async function init() {
   db = await openDB();
   setupDropZone();
 
+  // Load custom patterns and smart views before processing emails
+  await loadCustomPatterns();
+  await loadSmartViews();
+
   const emails = await dbGetAll('emails');
   if (emails.length > 0) {
     allEmails = emails;
+    buildThreadCache();
     applyFilters();
     updateNavCounts();
     await updateHeaderStats();
