@@ -2726,6 +2726,11 @@ function showSmartViewEditor(svId = null) {
       </div>
       <button class="btn" onclick="addRuleRow()" style="margin-top:4px; margin-bottom:16px;">+ Add Rule</button>
 
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px; font-size:13px; cursor:pointer;">
+        <input type="checkbox" id="sv-exclude-automated" ${sv?.excludeAutomated !== false ? 'checked' : ''}>
+        Exclude automated / system emails
+      </label>
+
       <div style="display:flex; gap:8px; justify-content:flex-end; border-top:1px solid var(--border); padding-top:16px;">
         ${isEdit ? `<button class="btn btn-danger" onclick="deleteSmartView('${escHtml(sv.id)}')">Delete</button>` : ''}
         <button class="btn" onclick="closeSmartViewEditor()">Cancel</button>
@@ -2769,6 +2774,7 @@ async function saveSmartView() {
   const svRecord = {
     id: id || ('sv-' + Date.now()),
     name, icon, ruleOperator, rules,
+    excludeAutomated: document.getElementById('sv-exclude-automated').checked,
     createdAt: existing?.createdAt || new Date().toISOString(),
   };
 
@@ -3110,10 +3116,12 @@ function applyFilters() {
   rebuildMsgIdIndex();
 
   if (currentView.startsWith('sv-')) {
-    // Smart view: apply user-defined rules (includes automated emails by default)
     const svId = currentView.slice(3);
     const sv   = smartViews.find(s => s.id === svId);
-    if (sv) list = list.filter(e => applySmartViewRules(e, sv));
+    if (sv) {
+      if (sv.excludeAutomated !== false) list = list.filter(e => !e.isSystemEmail);
+      list = list.filter(e => applySmartViewRules(e, sv));
+    }
   } else {
     // Exclude automated emails from all built-in views except 'automated'
     if (currentView !== 'automated') {
