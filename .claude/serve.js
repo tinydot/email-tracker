@@ -22,4 +22,4 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(3000, () => console.log('Serving on http://localhost:3000'));
+}).listen(process.env.PORT || 3000, () => console.log(`Serving on http://localhost:${process.env.PORT || 3000}`));
