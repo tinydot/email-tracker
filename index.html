@@ -3610,68 +3610,65 @@ function applySort(val) {
   applyFilters();
 }
 
+let _searchDebounceTimer = null;
 function searchEmails(val) {
-  searchTerm = val.toLowerCase();
-  applyFilters();
+  clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => {
+    searchTerm = val.toLowerCase();
+    applyFilters();
+  }, 150);
 }
 
 function applyFilters() {
-  let list = [...allEmails];
-
-  // Rebuild message ID index for thread queries
-  rebuildMsgIdIndex();
-
+  // Resolve smart view if active
+  let sv = null;
   if (currentView.startsWith('sv-')) {
     const svId = currentView.slice(3);
-    const sv   = smartViews.find(s => s.id === svId);
+    sv = smartViews.find(s => s.id === svId) || null;
+  }
+
+  const excludeSystem = sv ? sv.excludeAutomated !== false : currentView !== 'automated';
+  const excludeLow    = sv ? true : currentView !== 'lowvalue';
+  const term          = searchTerm;
+  const now           = Date.now();
+
+  // Single pass: all predicates combined
+  const list = [];
+  for (const e of allEmails) {
+    if (excludeSystem && e.isSystemEmail) continue;
+    if (excludeLow    && e.isLowValue)    continue;
+
     if (sv) {
-      if (sv.excludeAutomated !== false) list = list.filter(e => !e.isSystemEmail);
-      list = list.filter(e => !e.isLowValue);
-      list = list.filter(e => applySmartViewRules(e, sv));
-    }
-  } else {
-    // Exclude automated emails from all built-in views except 'automated'
-    if (currentView !== 'automated') {
-      list = list.filter(e => !e.isSystemEmail);
-    }
-
-    // Exclude low value emails from all built-in views except 'lowvalue'
-    if (currentView !== 'lowvalue') {
-      list = list.filter(e => !e.isLowValue);
-    }
-
-    // View filter
-    switch (currentView) {
-      case 'unread':      list = list.filter(e => e.status === 'unread'); break;
-      case 'actionable':  list = list.filter(e => e.isActionable); break;
-      case 'awaiting': {
-        list = list.filter(e => e.status === 'awaiting');
-        const now = Date.now();
-        list.forEach(e => {
+      if (!applySmartViewRules(e, sv)) continue;
+    } else {
+      switch (currentView) {
+        case 'unread':      if (e.status !== 'unread')  continue; break;
+        case 'actionable':  if (!e.isActionable)         continue; break;
+        case 'awaiting': {
+          if (e.status !== 'awaiting') continue;
           if (e.awaitingSince) {
             const days = (now - new Date(e.awaitingSince).getTime()) / (1000*60*60*24);
             e._overdue = days > 7;
           }
-        });
-        break;
+          break;
+        }
+        case 'threads':     if (e.inReplyTo || !hasReplies(e)) continue; break;
+        case 'attachments': if (!e.hasAttachments)  continue; break;
+        case 'automated':   if (!e.isSystemEmail)   continue; break;
+        case 'lowvalue':    if (!e.isLowValue)       continue; break;
       }
-      case 'threads':
-        list = list.filter(e => !e.inReplyTo && hasReplies(e));
-        break;
-      case 'attachments': list = list.filter(e => e.hasAttachments); break;
-      case 'automated':   list = list.filter(e => e.isSystemEmail);  break;
-      case 'lowvalue':    list = list.filter(e => e.isLowValue);     break;
     }
-  }
 
-  // Search
-  if (searchTerm) {
-    list = list.filter(e =>
-      (e.subject || '').toLowerCase().includes(searchTerm) ||
-      (e.fromAddr || '').toLowerCase().includes(searchTerm) ||
-      (e.fromName || '').toLowerCase().includes(searchTerm) ||
-      (e.textBody || '').toLowerCase().includes(searchTerm)
-    );
+    if (term) {
+      if (
+        !(e.subject  || '').toLowerCase().includes(term) &&
+        !(e.fromAddr || '').toLowerCase().includes(term) &&
+        !(e.fromName || '').toLowerCase().includes(term) &&
+        !(e.textBody || '').toLowerCase().includes(term)
+      ) continue;
+    }
+
+    list.push(e);
   }
 
   // Sort
@@ -4708,6 +4705,7 @@ async function deleteEmail(id) {
   const atts = await dbGetByIndex('attachments', 'emailId', id);
   for (const a of atts) await dbDelete('attachments', a.id);
   allEmails = allEmails.filter(e => e.id !== id);
+  rebuildMsgIdIndex();   // allEmails changed
   closeDetail();
   applyFilters();
   await updateHeaderStats();
@@ -4744,6 +4742,7 @@ async function rerunAutomatedDetection() {
 async function loadEmailList() {
   allEmails = await dbGetAll('emails');
   await backfillSystemEmailFlag();
+  rebuildMsgIdIndex();   // must precede buildThreadCache (thread walks use msgIdIndex)
   buildThreadCache();
   applyFilters();
   updateNavCounts();
@@ -4751,6 +4750,7 @@ async function loadEmailList() {
 
 async function updateHeaderStats() {
   allEmails = await dbGetAll('emails');
+  rebuildMsgIdIndex();
   buildThreadCache();
   const atts = await dbGetAll('attachments');
 
@@ -4765,12 +4765,16 @@ async function updateHeaderStats() {
 }
 
 // Fast in-memory stats update — no IndexedDB reads, used after single-email changes
+let _navCountsDebounceTimer = null;
 function updateHeaderStatsFast() {
   document.getElementById('h-total').textContent      = allEmails.length;
   document.getElementById('h-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
   document.getElementById('h-awaiting').textContent   = allEmails.filter(e => e.status === 'awaiting').length;
   document.getElementById('h-actionable').textContent = allEmails.filter(e => e.isActionable).length;
-  updateNavCounts();
+  // Debounce nav count + smart-view sidebar refresh — batches rapid actions
+  // (mark-read, tag, bulk-tag, etc.) into a single O(n) update instead of one per action
+  clearTimeout(_navCountsDebounceTimer);
+  _navCountsDebounceTimer = setTimeout(updateNavCounts, 300);
 }
 
 async function updateStorageIndicator(atts = null) {
@@ -4809,7 +4813,6 @@ async function changeAttachmentFolder() {
 }
 
 function updateNavCounts() {
-  rebuildMsgIdIndex();
   const threadRoots = allEmails.filter(e => !e.inReplyTo && hasReplies(e)).length;
   document.getElementById('n-all').textContent        = allEmails.length;
   document.getElementById('n-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
