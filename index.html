@@ -3956,6 +3956,15 @@ function openDetail(email) {
   const currentType = email.emailType || '';
   issueSection.innerHTML = `
     <div style="margin-bottom:16px;">
+      <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:6px;">📝 Remarks:</label>
+      <textarea id="email-remarks" class="search-input" rows="3"
+        style="width:100%; resize:vertical; font-family:var(--sans); font-size:13px; line-height:1.5;"
+        placeholder="Add notes or thoughts about this email…"
+        onblur="saveRemarks('${email.id}', this.value)"
+      >${escHtml(email.remarks || '')}</textarea>
+    </div>
+
+    <div style="margin-bottom:16px;">
       <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:6px;">🏷 Email Type:</label>
       <select id="email-type-select" class="btn" onchange="updateEmailType('${email.id}', this.value)" style="width:200px;">
         <option value="">— None —</option>
@@ -3965,7 +3974,7 @@ function openDetail(email) {
         <option value="action" ${currentType === 'action' ? 'selected' : ''}>Action</option>
       </select>
     </div>
-    
+
     <div>
       <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:6px;">🔗 Linked Issues:</label>
       <div id="linked-issues-list"></div>
@@ -4003,10 +4012,23 @@ async function renderLinkedIssues(email) {
   }).join('');
 }
 
+async function saveRemarks(emailId, text) {
+  const trimmed = text.trim();
+  const email = allEmails.find(e => e.id === emailId) || await dbGet('emails', emailId);
+  if (!email) return;
+  const prev = email.remarks || null;
+  if ((trimmed || null) === prev) return; // no change
+  email.remarks = trimmed || null;
+  await dbPut('emails', email);
+  const idx = allEmails.findIndex(e => e.id === emailId);
+  if (idx !== -1) allEmails[idx].remarks = email.remarks;
+  toast('Remarks saved', 'ok');
+}
+
 async function updateEmailType(emailId, type) {
   const email = await dbGet('emails', emailId);
   if (!email) return;
-  
+
   email.emailType = type || null;
   await dbPut('emails', email);
   toast(`Email type ${type ? 'set to ' + type : 'cleared'}`, 'ok');
