@@ -1215,7 +1215,7 @@
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 4; // v4: emailGroups store
+const DB_VERSION = 5; // v5: seenIds store (tombstones for discarded emails)
 let db = null;
 
 function openDB() {
@@ -1273,6 +1273,11 @@ function openDB() {
       // Email Groups store (named lists of email addresses for smart view rules)
       if (!db.objectStoreNames.contains('emailGroups')) {
         db.createObjectStore('emailGroups', { keyPath: 'id' });
+      }
+
+      // Seen IDs store (tombstones for discarded emails — prevents reimport)
+      if (!db.objectStoreNames.contains('seenIds')) {
+        db.createObjectStore('seenIds', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => res(e.target.result);
@@ -2237,7 +2242,12 @@ async function processFilesForImport(fileArr) {
       // Generate stable ID
       const id = parsed.messageId || `${file.name}-${parsed.date || Date.now()}`;
 
-      // Check for existing
+      // Check for existing (full record or tombstone)
+      const seen = await dbGet('seenIds', id);
+      if (seen) {
+        appendLog(`⊘ ${file.name}: previously discarded (skipped)`, 'warn');
+        continue;
+      }
       const existing = await dbGet('emails', id);
       if (existing) {
         // Re-parse recipients in case the email was imported with the old buggy parser
@@ -3523,6 +3533,14 @@ function showSettings() {
             Removes the ⚡ actionable flag from every email in the library. This cannot be undone.
           </div>
           <button class="btn btn-danger" onclick="bulkUnmarkActionable()">⚡ Unmark All Actionable</button>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <div style="font-weight:500; margin-bottom:4px;">Discard automated emails</div>
+          <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
+            Deletes all automated/system emails and their attachments, but remembers their IDs to prevent reimporting them. This cannot be undone.
+          </div>
+          <button class="btn btn-danger" onclick="discardAutomatedEmails()">✕ Discard Automated Emails</button>
         </div>
 
         <div>
@@ -4914,6 +4932,7 @@ async function clearDB() {
   await dbClear('msgIndex');
   await dbClear('tags');
   await dbClear('issues');
+  await dbClear('seenIds');
   allEmails = [];
   filteredEmails = [];
   selectedEmail = null;
@@ -4921,6 +4940,31 @@ async function clearDB() {
   await updateHeaderStats();
   showPanel('import');
   toast('Database cleared', 'ok');
+}
+
+async function discardAutomatedEmails() {
+  const automated = allEmails.filter(e => e.isSystemEmail);
+  if (!automated.length) {
+    toast('No automated emails to discard', 'warn');
+    return;
+  }
+  if (!confirm(`Discard ${automated.length} automated email(s)?\n\nTheir IDs will be remembered to prevent reimporting, but all content will be deleted. This cannot be undone.`)) return;
+
+  for (const email of automated) {
+    await dbPut('seenIds', { id: email.id });
+    await dbDelete('emails', email.id);
+    await dbDelete('msgIndex', email.messageId);
+    // Remove associated attachments
+    const atts = await dbGetByIndex('attachments', 'emailId', email.id);
+    for (const att of atts) await dbDelete('attachments', att.id);
+  }
+
+  allEmails = allEmails.filter(e => !e.isSystemEmail);
+  if (selectedEmail?.isSystemEmail) closeDetail();
+  applyFilters();
+  await updateHeaderStats();
+  await updateNavCounts();
+  toast(`Discarded ${automated.length} automated email(s)`, 'ok');
 }
 
 // ═══════════════════════════════════════════════════════
