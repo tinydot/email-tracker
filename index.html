@@ -683,6 +683,20 @@
   }
   .tag-add:hover { border-color: var(--accent); color: var(--accent); }
 
+  .tag-chip.tag-suggest {
+    background: none;
+    border-style: dashed;
+    opacity: 0.7;
+  }
+  .tag-chip.tag-suggest:hover { opacity: 1; }
+  .tag-suggest-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border2);
+    flex-shrink: 0;
+    align-self: center;
+  }
+
   /* ── Bulk Tag Bar ── */
   #bulk-tag-bar {
     display: flex;
@@ -4133,13 +4147,31 @@ function showThread(emailId) {
 }
 
 function renderDetailTags(email) {
-  const tags    = email.tags || [];
-  const row     = document.getElementById('det-tags');
-  row.innerHTML = tags.map(t => `
+  const tags = email.tags || [];
+  const row  = document.getElementById('det-tags');
+
+  // Compute top-5 globally used tags not already on this email
+  const freq = {};
+  for (const e of allEmails) {
+    for (const t of (e.tags || [])) freq[t] = (freq[t] || 0) + 1;
+  }
+  const suggestions = Object.entries(freq)
+    .filter(([t]) => !tags.includes(t))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([t]) => t);
+
+  const activeChips = tags.map(t => `
     <span class="tag-chip active" onclick="removeTag('${email.id}','${escHtml(t)}')">
       # ${escHtml(t)} ×
-    </span>
-  `).join('') + `<button class="tag-add" onclick="addTag('${email.id}')">+ tag</button>`;
+    </span>`).join('');
+
+  const suggestChips = suggestions.length ? `
+    <span class="tag-suggest-sep"></span>
+    ${suggestions.map(t => `<span class="tag-chip tag-suggest" title="Add tag: ${escHtml(t)}" onclick="addTag('${email.id}','${escHtml(t)}')">+ ${escHtml(t)}</span>`).join('')}` : '';
+
+  row.innerHTML = activeChips + suggestChips +
+    `<button class="tag-add" onclick="addTag('${email.id}')">+ tag</button>`;
 }
 
 function closeDetail() {
@@ -4737,8 +4769,8 @@ async function bulkRemoveTagFromView(tag) {
   toast(`Removed tag "${tag}" from ${targets.length} email${targets.length !== 1 ? 's' : ''}`, 'ok');
 }
 
-async function addTag(id) {
-  const tag = prompt('Enter tag:');
+async function addTag(id, tagName) {
+  const tag = tagName || prompt('Enter tag:');
   if (!tag) return;
   const clean = tag.trim().toLowerCase();
   const email = allEmails.find(e => e.id === id);
