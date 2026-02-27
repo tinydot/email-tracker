@@ -3863,6 +3863,10 @@ function openDetail(email) {
     <button class="btn${email.isLowValue ? ' btn-warn' : ''}" onclick="toggleLowValue('${email.id}')" title="Toggle low value flag">
       ${email.isLowValue ? '↓ Unmark Low Value' : '↓ Low Value'}
     </button>
+    ${(email.isSystemEmail || email.manualSystemOverride) ? `
+    <button class="btn" onclick="toggleAutomated('${email.id}')" title="${email.isSystemEmail ? 'Unmark automated — removes from automated view and protects from bulk discard' : 'Re-mark as automated'}">
+      ${email.isSystemEmail ? '🤖 Unmark Automated' : '🤖 Re-mark Automated'}
+    </button>` : ''}
     <button class="btn btn-danger" onclick="deleteEmail('${email.id}')">✕</button>
   `;
 
@@ -4581,6 +4585,23 @@ async function toggleActionable(id) {
   toast(email.isActionable ? 'Marked actionable' : 'Removed action flag', 'ok');
 }
 
+async function toggleAutomated(id) {
+  const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
+  if (!email) return;
+  if (email.isSystemEmail) {
+    email.isSystemEmail = false;
+    email.manualSystemOverride = true;  // prevent re-detection
+  } else {
+    email.isSystemEmail = true;
+    email.manualSystemOverride = false;
+  }
+  await dbPut('emails', email);
+  openDetail(email);
+  applyFilters();
+  updateNavCounts();
+  toast(email.isSystemEmail ? 'Marked as automated' : 'Unmarked from automated — protected from bulk discard', 'ok');
+}
+
 async function toggleLowValue(id) {
   const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
   if (!email) return;
@@ -4943,7 +4964,7 @@ async function clearDB() {
 }
 
 async function discardAutomatedEmails() {
-  const automated = allEmails.filter(e => e.isSystemEmail);
+  const automated = allEmails.filter(e => e.isSystemEmail && !e.manualSystemOverride);
   if (!automated.length) {
     toast('No automated emails to discard', 'warn');
     return;
