@@ -3774,7 +3774,7 @@ function renderEmailList() {
     const overdueFlag = email._overdue ? `<span style="color:var(--danger);margin-left:4px" title="Overdue">🔴</span>` : '';
 
     return `
-      <div class="email-row ${unread} ${selected}" onclick="selectEmail('${email.id}')">
+      <div class="email-row ${unread} ${selected}" data-id="${email.id}" onclick="selectEmail('${email.id}')">
         <div class="col-flag">${dot}</div>
         <div class="col-from" title="${escHtml(email.fromAddr)}">${escHtml(truncate(from, 26))}</div>
         <div class="col-subject" title="${escHtml(email.subject)}">
@@ -3800,6 +3800,35 @@ function renderBadge(email) {
       if (email.isActionable) return '<span class="badge badge-action">action!</span>';
       return '<span class="badge badge-actioned">read</span>';
   }
+}
+
+// Update a single email row in the list without re-rendering everything
+function updateEmailRow(email) {
+  const row = document.querySelector(`#email-list .email-row[data-id="${CSS.escape(email.id)}"]`);
+  if (!row) return;
+
+  // Update unread highlight
+  if (email.status === 'unread') row.classList.add('unread');
+  else row.classList.remove('unread');
+
+  // Update flag dot
+  const emailHasReplies = hasReplies(email);
+  const threadDepth = getThreadDepth(email);
+  let dot = '';
+  if (email.isActionable) {
+    dot = `<span title="Actionable" style="color:var(--danger);font-size:10px">⚡</span>`;
+  } else if (emailHasReplies) {
+    const replyCount = countThreadReplies(email);
+    dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
+  } else if (threadDepth > 0) {
+    dot = `<span class="thread-dot has-thread" title="Reply in thread"></span>`;
+  } else {
+    dot = `<span class="thread-dot no-thread"></span>`;
+  }
+  row.querySelector('.col-flag').innerHTML = dot;
+
+  // Update status badge
+  row.querySelector('.col-status').innerHTML = renderBadge(email);
 }
 
 function selectEmail(id) {
@@ -4622,21 +4651,23 @@ async function setStatus(id, status) {
     email.awaitingSince = null;
   }
   
-  await dbPut('emails', email);
+  // Update UI immediately (optimistic — DB write happens in background)
   openDetail(email);
-  renderEmailList();
-  await updateHeaderStats();
+  updateEmailRow(email);
+  updateHeaderStatsFast();
   toast(`Marked as ${status}`, 'ok');
+  await dbPut('emails', email);
 }
 
 async function toggleActionable(id) {
   const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
   if (!email) return;
   email.isActionable = !email.isActionable;
-  await dbPut('emails', email);
+  // Update UI immediately (optimistic)
   openDetail(email);
-  renderEmailList();
+  updateEmailRow(email);
   toast(email.isActionable ? 'Marked actionable' : 'Removed action flag', 'ok');
+  await dbPut('emails', email);
 }
 
 async function toggleAutomated(id) {
@@ -4660,11 +4691,11 @@ async function toggleLowValue(id) {
   const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
   if (!email) return;
   email.isLowValue = !email.isLowValue;
-  await dbPut('emails', email);
+  // Update UI immediately (optimistic); low value not shown in list rows so no row re-render
   openDetail(email);
-  renderEmailList();
-  updateNavCounts();
+  updateHeaderStatsFast();
   toast(email.isLowValue ? 'Marked as low value' : 'Removed low value flag', 'ok');
+  await dbPut('emails', email);
 }
 
 async function bulkUnmarkActionable() {
@@ -4778,9 +4809,8 @@ async function addTag(id, tagName) {
   if (!email.tags) email.tags = [];
   if (!email.tags.includes(clean)) {
     email.tags.push(clean);
+    renderDetailTags(email); // update UI immediately; tags not shown in list rows
     await dbPut('emails', email);
-    renderDetailTags(email);
-    renderEmailList();
   }
 }
 
@@ -4788,8 +4818,8 @@ async function removeTag(id, tag) {
   const email = allEmails.find(e => e.id === id);
   if (!email) return;
   email.tags = (email.tags || []).filter(t => t !== tag);
+  renderDetailTags(email); // update UI immediately
   await dbPut('emails', email);
-  renderDetailTags(email);
 }
 
 async function deleteEmail(id) {
