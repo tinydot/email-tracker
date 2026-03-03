@@ -1981,7 +1981,7 @@ let importedEmails = 0;
 let attachmentDirHandle = null; // File System Directory Handle
 let emlArchiveDirHandle = null; // For organizing imported EML files
 let extractNestedAttachments = true; // Setting: extract attachments from embedded .eml files
-let organizeEmlFiles = false; // Setting: copy EML files to organized folders by domain
+let organizeEmlFiles = true; // Setting: copy EML files to organized folders by domain
 
 async function organizeEmlFile(file, fromAddr) {
   if (!emlArchiveDirHandle || !fromAddr) return null;
