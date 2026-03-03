@@ -689,6 +689,41 @@
     opacity: 0.7;
   }
   .tag-chip.tag-suggest:hover { opacity: 1; }
+
+  .tag-chip.excluded {
+    background: var(--surface2);
+    color: var(--muted);
+    text-decoration: line-through;
+    cursor: pointer;
+    opacity: 0.65;
+    border-style: dashed;
+  }
+  .tag-chip.excluded:hover { opacity: 1; color: var(--text); }
+  .tag-btn-remove, .tag-btn-exclude {
+    background: none; border: none; cursor: pointer;
+    padding: 0 1px 0 3px; color: inherit; font-size: 11px; line-height: 1;
+  }
+  .tag-btn-exclude { opacity: 0.55; font-size: 10px; }
+  .tag-btn-exclude:hover { opacity: 1; color: var(--danger); }
+
+  .ai-summary-box {
+    background: var(--surface2);
+    border-left: 3px solid var(--accent);
+    padding: 8px 12px;
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    color: var(--text);
+    border-radius: 0 4px 4px 0;
+    font-style: italic;
+  }
+
+  .atr-rule-row {
+    display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+  }
+  .atr-rule-row select, .atr-rule-row input {
+    font-size: 12px; padding: 3px 6px; border-radius: 4px;
+    border: 1px solid var(--border2); background: var(--surface); color: var(--text);
+  }
   .tag-suggest-sep {
     width: 1px;
     height: 16px;
@@ -2308,7 +2343,12 @@ async function processFilesForImport(fileArr) {
         awaitingSince: null,
         importedAt:   new Date().toISOString(),
         fileName:     file.name,
+        aiSummary:    null,
       };
+
+      // Apply auto-tag rules to newly imported email
+      const autoTags = getAutoTagsForEmail(emailRecord);
+      if (autoTags.length) emailRecord.tags = autoTags;
 
       await dbPut('emails', emailRecord);
 
@@ -2678,6 +2718,7 @@ let selectedEmailIdx = -1; // index in filteredEmails for navigation
 let smartViews     = []; // user-created smart views
 let svSubView      = 'emails'; // 'emails' | 'attachments' — sub-view within smart views
 let emailGroups    = []; // user-created email groups for smart view rules
+let autoTagRules   = []; // user-created auto-tag rules (applied on import)
 
 const VIEW_LABELS = {
   all:          'All Emails',
@@ -3176,6 +3217,49 @@ async function loadEmailGroups() {
   emailGroups = await dbGetAll('emailGroups');
 }
 
+// ── Auto-Tag Rules engine ──────────────────────────────
+async function loadAutoTagRules() {
+  const saved = await dbGet('settings', 'autoTagRules');
+  autoTagRules = saved?.rules || [];
+}
+
+async function saveAutoTagRules() {
+  await dbPut('settings', { key: 'autoTagRules', rules: autoTagRules });
+}
+
+// Returns array of tag strings to apply to an email (respects tagExclusions)
+function getAutoTagsForEmail(email) {
+  const toApply = [];
+  for (const rule of autoTagRules) {
+    if (!rule.enabled) continue;
+    if (applySmartViewRules(email, rule)) {
+      const tag = (rule.tag || '').trim().toLowerCase();
+      if (tag && !(email.tagExclusions || []).includes(tag)) {
+        toApply.push(tag);
+      }
+    }
+  }
+  return toApply;
+}
+
+async function rerunAutoTagRules() {
+  const active = autoTagRules.filter(r => r.enabled);
+  if (!active.length) { toast('No enabled auto-tag rules', 'warn'); return; }
+  let changed = 0;
+  for (const email of allEmails) {
+    const toApply = getAutoTagsForEmail(email);
+    const newTags = toApply.filter(t => !(email.tags || []).includes(t));
+    if (newTags.length) {
+      if (!email.tags) email.tags = [];
+      email.tags.push(...newTags);
+      await dbPut('emails', email);
+      changed++;
+    }
+  }
+  applyFilters();
+  toast(`Auto-tag rules applied: ${changed} email${changed !== 1 ? 's' : ''} updated`, 'ok');
+}
+
 async function createEmailGroup(name) {
   const trimmed = name.trim();
   if (!trimmed) return null;
@@ -3465,6 +3549,259 @@ async function removeCustomPattern(category, idx) {
   showSettings(); // re-render
 }
 
+// --- Auto-tag rules CRUD + UI ---
+let _atrEditing = null; // 'new' | rule ID | null
+
+function showAtrEditor(id) {
+  _atrEditing = id;
+  showSettings();
+  setTimeout(() => {
+    const ed = document.getElementById('atr-editor');
+    if (ed) ed.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 50);
+}
+
+function cancelAtrEdit() {
+  _atrEditing = null;
+  showSettings();
+}
+
+function addAtrRuleRow() {
+  const container = document.getElementById('atr-rules-container');
+  if (!container) return;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildRuleRowHTML();
+  container.appendChild(tmp.firstElementChild);
+}
+
+async function saveAutoTagRule() {
+  const tagInput = document.getElementById('atr-tag');
+  const tag = (tagInput?.value || '').trim().toLowerCase();
+  if (!tag) { if (tagInput) tagInput.focus(); toast('Enter a tag name', 'warn'); return; }
+
+  const ruleOp = document.getElementById('atr-rule-op')?.value || 'AND';
+  const editId = document.getElementById('atr-edit-id')?.value || '';
+  const rules = [];
+  document.querySelectorAll('#atr-rules-container .rule-row').forEach(row => {
+    const field    = row.querySelector('.rule-field')?.value;
+    const operator = row.querySelector('.rule-operator')?.value;
+    const textIn   = row.querySelector('.rule-value-container input[type=text]');
+    const selIn    = row.querySelector('.rule-value-container select');
+    const value    = textIn ? textIn.value : (selIn ? selIn.value : '');
+    if (field) rules.push({ field, operator: operator || 'contains', value: value || '' });
+  });
+  if (!rules.length) { toast('Add at least one condition', 'warn'); return; }
+
+  const ruleData = {
+    id: editId || ('atr-' + Date.now()),
+    tag, ruleOperator: ruleOp, rules, enabled: true,
+  };
+  const existing = autoTagRules.find(r => r.id === ruleData.id);
+  if (existing) { Object.assign(existing, ruleData); } else { autoTagRules.push(ruleData); }
+  await saveAutoTagRules();
+  _atrEditing = null;
+  showSettings();
+  toast(`Auto-tag rule "${tag}" saved`, 'ok');
+}
+
+async function deleteAutoTagRule(id) {
+  if (!confirm('Delete this auto-tag rule?')) return;
+  autoTagRules = autoTagRules.filter(r => r.id !== id);
+  await saveAutoTagRules();
+  if (_atrEditing === id) _atrEditing = null;
+  showSettings();
+  toast('Auto-tag rule deleted', 'ok');
+}
+
+async function toggleAutoTagRule(id) {
+  const rule = autoTagRules.find(r => r.id === id);
+  if (!rule) return;
+  rule.enabled = !rule.enabled;
+  await saveAutoTagRules();
+  showSettings();
+}
+
+function renderAutoTagRulesSection() {
+  const rulesHTML = autoTagRules.length ? autoTagRules.map(r => `
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin-bottom:6px; opacity:${r.enabled ? '1' : '0.55'};">
+      <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleAutoTagRule('${escHtml(r.id)}')" style="width:14px;height:14px;cursor:pointer;" title="Enable/disable rule">
+      <span style="flex:1; font-weight:500;"># ${escHtml(r.tag)}</span>
+      <span style="color:var(--muted); font-size:11px;">${r.rules.length} condition${r.rules.length !== 1 ? 's' : ''} · ${r.ruleOperator}</span>
+      <button class="btn" style="padding:2px 8px; font-size:11px;" onclick="showAtrEditor('${escHtml(r.id)}')">Edit</button>
+      <button class="btn btn-danger" style="padding:2px 8px; font-size:11px;" onclick="deleteAutoTagRule('${escHtml(r.id)}')">×</button>
+    </div>`).join('') :
+    '<div style="color:var(--muted); font-size:12px; font-style:italic; margin-bottom:6px;">No auto-tag rules yet.</div>';
+
+  let editorHTML = '';
+  if (_atrEditing) {
+    const rule = _atrEditing === 'new' ? null : autoTagRules.find(r => r.id === _atrEditing);
+    const ruleRows = rule?.rules?.length ? rule.rules : [{ field: 'fromAddr', operator: 'contains', value: '' }];
+    const ruleOp = rule?.ruleOperator || 'AND';
+    const tag = rule?.tag || '';
+    editorHTML = `
+      <div id="atr-editor" style="margin-top:10px; padding:12px; background:var(--surface); border:1px solid var(--accent); border-radius:5px;">
+        <input type="hidden" id="atr-edit-id" value="${escHtml(_atrEditing === 'new' ? '' : _atrEditing)}">
+        <div class="atr-rule-row" style="margin-bottom:10px;">
+          <span style="font-size:12px; font-weight:500; white-space:nowrap;">Tag name:</span>
+          <input type="text" id="atr-tag" class="search-input" value="${escHtml(tag)}" placeholder="e.g. rcy, drawing-submission" style="flex:1;">
+        </div>
+        <div class="atr-rule-row" style="font-size:12px; margin-bottom:8px;">
+          <span>Apply when</span>
+          <select id="atr-rule-op" class="search-input" style="width:auto;">
+            <option value="AND" ${ruleOp === 'AND' ? 'selected' : ''}>ALL</option>
+            <option value="OR" ${ruleOp === 'OR' ? 'selected' : ''}>ANY</option>
+          </select>
+          <span>of these conditions match:</span>
+        </div>
+        <div id="atr-rules-container">
+          ${ruleRows.map(r => buildRuleRowHTML(r)).join('')}
+        </div>
+        <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+          <button class="btn" style="font-size:11px; padding:3px 8px;" onclick="addAtrRuleRow()">+ Add condition</button>
+          <div style="flex:1;"></div>
+          <button class="btn" onclick="cancelAtrEdit()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveAutoTagRule()">Save rule</button>
+        </div>
+      </div>`;
+  }
+
+  const hasEnabled = autoTagRules.some(r => r.enabled);
+  return `
+    ${rulesHTML}
+    ${editorHTML}
+    ${!_atrEditing ? `
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+        <button class="btn" onclick="showAtrEditor('new')">+ Add Rule</button>
+        <button class="btn" onclick="rerunAutoTagRules()" ${!hasEnabled ? 'disabled title="No enabled rules"' : ''}>⟳ Re-run on all emails</button>
+      </div>` : ''}`;
+}
+
+// --- Claude API key helpers ---
+async function getClaudeApiKey() {
+  const rec = await dbGet('settings', 'claudeApiKey');
+  return rec?.value || null;
+}
+
+async function saveClaudeApiKey() {
+  const input = document.getElementById('setting-claude-key');
+  const val = (input?.value || '').trim();
+  if (!val) { toast('Enter an API key first', 'warn'); return; }
+  await dbPut('settings', { key: 'claudeApiKey', value: val });
+  if (input) input.value = '';
+  await _loadClaudeKeyStatus();
+  toast('Claude API key saved', 'ok');
+}
+
+async function clearClaudeApiKey() {
+  await dbPut('settings', { key: 'claudeApiKey', value: '' });
+  await _loadClaudeKeyStatus();
+  toast('Claude API key cleared', 'ok');
+}
+
+async function _loadClaudeKeyStatus() {
+  const el = document.getElementById('claude-key-status');
+  if (!el) return;
+  const key = await getClaudeApiKey();
+  el.textContent = key ? '✓ API key is set (stored locally only)' : 'No key saved';
+  el.style.color = key ? 'var(--ok, #2a9d5c)' : 'var(--muted)';
+}
+
+// --- AI tagging functions ---
+function buildEmailPrompt(email) {
+  return [
+    `Subject: ${email.subject || '(none)'}`,
+    `From: ${email.fromName ? email.fromName + ' <' + email.fromAddr + '>' : email.fromAddr}`,
+    `To: ${(email.toAddrs || []).join(', ')}`,
+    email.ccAddrs?.length ? `CC: ${email.ccAddrs.join(', ')}` : null,
+    '',
+    (email.textBody || '(no body)').slice(0, 2000),
+  ].filter(l => l !== null).join('\n');
+}
+
+async function aiTagEmail(emailId) {
+  const email = allEmails.find(e => e.id === emailId);
+  if (!email) return;
+  const apiKey = await getClaudeApiKey();
+  if (!apiKey) { toast('Add Claude API key in Settings first', 'err'); return; }
+
+  toast('Running AI tagging…', 'ok');
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 300,
+        output_config: {
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                tags:    { type: 'array', items: { type: 'string' } },
+                summary: { type: 'string' },
+              },
+              required: ['tags', 'summary'],
+              additionalProperties: false,
+            },
+          },
+        },
+        system: 'You tag and summarize project emails. Return 1–4 short lowercase tags (company names, topics, document types) and a one-sentence summary under 25 words. Tags must be single words or hyphenated, e.g. "rcy", "drawing-submission", "rfi".',
+        messages: [{ role: 'user', content: buildEmailPrompt(email) }],
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      toast(`AI error ${res.status}: ${errText.slice(0, 100)}`, 'err');
+      return;
+    }
+    const data = await res.json();
+    const parsed = JSON.parse(data.content[0].text);
+    const tags = parsed.tags || [];
+    const summary = parsed.summary || null;
+
+    if (!email.tags) email.tags = [];
+    for (const tag of tags) {
+      const clean = tag.trim().toLowerCase();
+      if (clean && !(email.tagExclusions || []).includes(clean) && !email.tags.includes(clean)) {
+        email.tags.push(clean);
+      }
+    }
+    email.aiSummary = summary;
+    await dbPut('emails', email);
+
+    if (selectedEmail?.id === emailId) openDetail(email);
+    renderEmailList();
+    toast(`AI tagged: ${tags.join(', ')}`, 'ok');
+  } catch (e) {
+    toast(`AI error: ${e.message}`, 'err');
+  }
+}
+
+async function bulkAiTagView() {
+  const apiKey = await getClaudeApiKey();
+  if (!apiKey) { toast('Add Claude API key in Settings first', 'err'); return; }
+  const targets = [...filteredEmails];
+  if (!targets.length) { toast('No emails in current view', 'warn'); return; }
+  if (!confirm(`Run AI tagging on ${targets.length} email${targets.length !== 1 ? 's' : ''}?\n\nThis will use Claude API credits (claude-haiku-4-5).`)) return;
+
+  let done = 0, errors = 0;
+  for (const email of targets) {
+    try {
+      await aiTagEmail(email.id);
+      done++;
+      if (done % 5 === 0) toast(`AI tagging: ${done}/${targets.length}…`, 'ok');
+    } catch { errors++; }
+  }
+  applyFilters();
+  toast(`AI tagging complete: ${done} tagged${errors ? ', ' + errors + ' errors' : ''}`, 'ok');
+}
+
 function showSettings() {
   showPanel('list'); // Show the list panel
   const container = document.getElementById('email-list');
@@ -3537,6 +3874,31 @@ function showSettings() {
         ${renderEmailGroupsSection()}
       </div>
 
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">🤖 Claude API Key</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
+          Used for AI tagging and summarization (✨ AI Tag button in the email detail panel).
+          Your key is stored <strong>locally in IndexedDB only</strong> — it never leaves your browser.
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="password" id="setting-claude-key" class="search-input"
+                 placeholder="sk-ant-api03-…" style="flex:1; font-family:var(--mono);"
+                 value="" autocomplete="off">
+          <button class="btn btn-primary" onclick="saveClaudeApiKey()">Save</button>
+          <button class="btn" onclick="clearClaudeApiKey()">Clear</button>
+        </div>
+        <div id="claude-key-status" style="margin-top:6px; font-size:11px; color:var(--muted);"></div>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">🏷 Auto-Tag Rules</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
+          Rules applied automatically when importing emails. Use the same field conditions as smart views.
+          Exclusions (⊘) on individual emails are always respected.
+        </div>
+        ${renderAutoTagRulesSection()}
+      </div>
+
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
@@ -3570,6 +3932,7 @@ function showSettings() {
     </div>
   `;
   closeDetail(); // Close detail panel if open
+  _loadClaudeKeyStatus(); // Async — updates #claude-key-status after render
 }
 
 function toggleNestedAttachments(enabled) {
@@ -3911,6 +4274,7 @@ function openDetail(email) {
       ${email.isSystemEmail ? '🤖 Unmark Automated' : '🤖 Re-mark Automated'}
     </button>` : ''}
     <button class="btn btn-danger" onclick="deleteEmail('${email.id}')">✕</button>
+    <button class="btn" onclick="aiTagEmail('${email.id}')" title="Tag and summarize with Claude AI">✨ AI Tag</button>
   `;
 
   // Tags
@@ -3918,7 +4282,17 @@ function openDetail(email) {
 
   // Body
   const bodyEl = document.getElementById('det-body');
-  bodyEl.innerHTML = '<div class="detail-body-label">Email Body</div>';
+  bodyEl.innerHTML = '';
+  if (email.aiSummary) {
+    const summaryEl = document.createElement('div');
+    summaryEl.className = 'ai-summary-box';
+    summaryEl.textContent = '✨ ' + email.aiSummary;
+    bodyEl.appendChild(summaryEl);
+  }
+  const labelEl = document.createElement('div');
+  labelEl.className = 'detail-body-label';
+  labelEl.textContent = 'Email Body';
+  bodyEl.appendChild(labelEl);
   const bodyText = document.createTextNode(email.textBody || '(no plain text body)');
   bodyEl.appendChild(bodyText);
 
@@ -4176,31 +4550,39 @@ function showThread(emailId) {
 }
 
 function renderDetailTags(email) {
-  const tags = email.tags || [];
-  const row  = document.getElementById('det-tags');
+  const tags       = email.tags || [];
+  const exclusions = email.tagExclusions || [];
+  const row        = document.getElementById('det-tags');
 
-  // Compute top-5 globally used tags not already on this email
+  // Compute top-5 globally used tags not already on this email or excluded
   const freq = {};
   for (const e of allEmails) {
     for (const t of (e.tags || [])) freq[t] = (freq[t] || 0) + 1;
   }
   const suggestions = Object.entries(freq)
-    .filter(([t]) => !tags.includes(t))
+    .filter(([t]) => !tags.includes(t) && !exclusions.includes(t))
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([t]) => t);
 
+  const safeId = escHtml(email.id);
   const activeChips = tags.map(t => `
-    <span class="tag-chip active" onclick="removeTag('${email.id}','${escHtml(t)}')">
-      # ${escHtml(t)} ×
+    <span class="tag-chip active">
+      # ${escHtml(t)}
+      <button class="tag-btn-remove" onclick="removeTag('${safeId}','${escHtml(t)}')" title="Remove tag">×</button><button class="tag-btn-exclude" onclick="excludeTag('${safeId}','${escHtml(t)}')" title="Exclude — prevent auto/bulk re-tagging">⊘</button>
+    </span>`).join('');
+
+  const excludedChips = exclusions.map(t => `
+    <span class="tag-chip excluded" title="Excluded from auto-tagging — click to un-exclude" onclick="unexcludeTag('${safeId}','${escHtml(t)}')">
+      ⊘ ${escHtml(t)}
     </span>`).join('');
 
   const suggestChips = suggestions.length ? `
     <span class="tag-suggest-sep"></span>
-    ${suggestions.map(t => `<span class="tag-chip tag-suggest" title="Add tag: ${escHtml(t)}" onclick="addTag('${email.id}','${escHtml(t)}')">+ ${escHtml(t)}</span>`).join('')}` : '';
+    ${suggestions.map(t => `<span class="tag-chip tag-suggest" title="Add tag: ${escHtml(t)}" onclick="addTag('${safeId}','${escHtml(t)}')">+ ${escHtml(t)}</span>`).join('')}` : '';
 
-  row.innerHTML = activeChips + suggestChips +
-    `<button class="tag-add" onclick="addTag('${email.id}')">+ tag</button>`;
+  row.innerHTML = activeChips + excludedChips + suggestChips +
+    `<button class="tag-add" onclick="addTag('${safeId}')">+ tag</button>`;
 }
 
 function closeDetail() {
@@ -4753,6 +5135,8 @@ function refreshBulkTagBar() {
     <button class="btn btn-primary" style="height:26px;padding:0 10px;font-size:11px;"
             onclick="bulkAddTagToView()">+ Add to all</button>
     <div class="bulk-tag-sep"></div>
+    <button class="btn" onclick="bulkAiTagView()" style="height:26px;padding:0 10px;font-size:11px;" title="AI-tag all emails in current view with Claude">✨ AI Tag All</button>
+    <div class="bulk-tag-sep"></div>
     <span class="bulk-tag-label">Tags in view:</span>
     ${tagsHTML}
   `;
@@ -4764,9 +5148,16 @@ async function bulkAddTagToView() {
   const tag = input.value.trim().toLowerCase();
   if (!tag) { toast('Enter a tag name', 'err'); return; }
 
-  const targets = filteredEmails.filter(e => !(e.tags || []).includes(tag));
+  // Skip emails that already have the tag OR have it excluded
+  const targets = filteredEmails.filter(e =>
+    !(e.tags || []).includes(tag) && !(e.tagExclusions || []).includes(tag)
+  );
+  const skipped = filteredEmails.filter(e => (e.tagExclusions || []).includes(tag)).length;
   if (targets.length === 0) {
-    toast(`Tag "${tag}" already on all ${filteredEmails.length} email${filteredEmails.length !== 1 ? 's' : ''}`, 'ok');
+    const msg = skipped
+      ? `Tag "${tag}" skipped on all — ${skipped} email${skipped !== 1 ? 's' : ''} have it excluded`
+      : `Tag "${tag}" already on all ${filteredEmails.length} email${filteredEmails.length !== 1 ? 's' : ''}`;
+    toast(msg, 'ok');
     return;
   }
 
@@ -4778,7 +5169,8 @@ async function bulkAddTagToView() {
 
   input.value = '';
   refreshBulkTagBar();
-  toast(`Added tag "${tag}" to ${targets.length} email${targets.length !== 1 ? 's' : ''}`, 'ok');
+  const skipNote = skipped ? ` (${skipped} excluded)` : '';
+  toast(`Added tag "${tag}" to ${targets.length} email${targets.length !== 1 ? 's' : ''}${skipNote}`, 'ok');
 }
 
 async function bulkRemoveTagFromView(tag) {
@@ -4806,6 +5198,10 @@ async function addTag(id, tagName) {
   const clean = tag.trim().toLowerCase();
   const email = allEmails.find(e => e.id === id);
   if (!email) return;
+  if ((email.tagExclusions || []).includes(clean)) {
+    toast(`"${clean}" is excluded on this email — click ⊘ chip to un-exclude first`, 'warn');
+    return;
+  }
   if (!email.tags) email.tags = [];
   if (!email.tags.includes(clean)) {
     email.tags.push(clean);
@@ -4820,6 +5216,27 @@ async function removeTag(id, tag) {
   email.tags = (email.tags || []).filter(t => t !== tag);
   renderDetailTags(email); // update UI immediately
   await dbPut('emails', email);
+}
+
+// Exclude a tag: removes it AND marks it so auto-tag/bulk won't reapply
+async function excludeTag(id, tag) {
+  const email = allEmails.find(e => e.id === id);
+  if (!email) return;
+  email.tags = (email.tags || []).filter(t => t !== tag);
+  if (!email.tagExclusions) email.tagExclusions = [];
+  if (!email.tagExclusions.includes(tag)) email.tagExclusions.push(tag);
+  await dbPut('emails', email);
+  renderDetailTags(email);
+  renderEmailList();
+}
+
+// Remove exclusion — allows the tag to be applied again
+async function unexcludeTag(id, tag) {
+  const email = allEmails.find(e => e.id === id);
+  if (!email) return;
+  email.tagExclusions = (email.tagExclusions || []).filter(t => t !== tag);
+  await dbPut('emails', email);
+  renderDetailTags(email);
 }
 
 async function deleteEmail(id) {
@@ -5506,9 +5923,10 @@ async function init() {
   db = await openDB();
   setupDropZone();
 
-  // Load custom patterns, smart views, and email groups before processing emails
+  // Load custom patterns, smart views, email groups, and auto-tag rules before processing emails
   await loadCustomPatterns();
   await loadEmailGroups();
+  await loadAutoTagRules();
   await loadSmartViews();
 
   const emails = await dbGetAll('emails');
