@@ -2720,6 +2720,14 @@ let svSubView      = 'emails'; // 'emails' | 'attachments' — sub-view within s
 let emailGroups    = []; // user-created email groups for smart view rules
 let autoTagRules   = []; // user-created auto-tag rules (applied on import)
 
+const AI_SYSTEM_PROMPT_DEFAULT = 'You tag and summarize project emails. Return 1–4 short lowercase tags (company names, topics, document types) and a one-sentence summary under 25 words. Tags must be single words or hyphenated, e.g. "rcy", "drawing-submission", "rfi".';
+const AI_USER_TEMPLATE_DEFAULT = 'Subject: {{subject}}\nFrom: {{from}}\nTo: {{to}}\n{{cc}}\n\n{{body}}';
+const AI_BODY_LIMIT_DEFAULT    = 2000;
+
+let aiSystemPrompt = AI_SYSTEM_PROMPT_DEFAULT;
+let aiUserTemplate = AI_USER_TEMPLATE_DEFAULT;
+let aiBodyLimit    = AI_BODY_LIMIT_DEFAULT;
+
 const VIEW_LABELS = {
   all:          'All Emails',
   unread:       'Unread',
@@ -3217,6 +3225,25 @@ async function loadEmailGroups() {
   emailGroups = await dbGetAll('emailGroups');
 }
 
+// ── AI prompt settings ─────────────────────────────────
+async function loadAiPrompts() {
+  const saved = await dbGet('settings', 'aiPrompts');
+  if (saved) {
+    aiSystemPrompt = saved.systemPrompt ?? AI_SYSTEM_PROMPT_DEFAULT;
+    aiUserTemplate = saved.userTemplate ?? AI_USER_TEMPLATE_DEFAULT;
+    aiBodyLimit    = saved.bodyLimit    ?? AI_BODY_LIMIT_DEFAULT;
+  }
+}
+
+async function saveAiPrompts() {
+  await dbPut('settings', {
+    key: 'aiPrompts',
+    systemPrompt: aiSystemPrompt,
+    userTemplate: aiUserTemplate,
+    bodyLimit:    aiBodyLimit,
+  });
+}
+
 // ── Auto-Tag Rules engine ──────────────────────────────
 async function loadAutoTagRules() {
   const saved = await dbGet('settings', 'autoTagRules');
@@ -3698,6 +3725,29 @@ async function clearClaudeApiKey() {
   toast('Claude API key cleared', 'ok');
 }
 
+async function saveAiPromptsFromUI() {
+  const sys  = document.getElementById('ai-system-prompt')?.value ?? '';
+  const tmpl = document.getElementById('ai-user-template')?.value ?? '';
+  const lim  = parseInt(document.getElementById('ai-body-limit')?.value, 10);
+  if (!sys.trim())  { toast('System prompt cannot be empty', 'warn'); return; }
+  if (!tmpl.trim()) { toast('User template cannot be empty', 'warn'); return; }
+  aiSystemPrompt = sys;
+  aiUserTemplate = tmpl;
+  aiBodyLimit    = Number.isFinite(lim) && lim > 0 ? lim : AI_BODY_LIMIT_DEFAULT;
+  await saveAiPrompts();
+  toast('AI prompt settings saved', 'ok');
+}
+
+function resetAiSystemPrompt() {
+  const el = document.getElementById('ai-system-prompt');
+  if (el) el.value = AI_SYSTEM_PROMPT_DEFAULT;
+}
+
+function resetAiUserTemplate() {
+  const el = document.getElementById('ai-user-template');
+  if (el) el.value = AI_USER_TEMPLATE_DEFAULT;
+}
+
 async function _loadClaudeKeyStatus() {
   const el = document.getElementById('claude-key-status');
   if (!el) return;
@@ -3708,14 +3758,14 @@ async function _loadClaudeKeyStatus() {
 
 // --- AI tagging functions ---
 function buildEmailPrompt(email) {
-  return [
-    `Subject: ${email.subject || '(none)'}`,
-    `From: ${email.fromName ? email.fromName + ' <' + email.fromAddr + '>' : email.fromAddr}`,
-    `To: ${(email.toAddrs || []).join(', ')}`,
-    email.ccAddrs?.length ? `CC: ${email.ccAddrs.join(', ')}` : null,
-    '',
-    (email.textBody || '(no body)').slice(0, 2000),
-  ].filter(l => l !== null).join('\n');
+  const vars = {
+    subject: email.subject || '(none)',
+    from:    email.fromName ? `${email.fromName} <${email.fromAddr}>` : (email.fromAddr || ''),
+    to:      (email.toAddrs || []).join(', '),
+    cc:      email.ccAddrs?.length ? `CC: ${email.ccAddrs.join(', ')}` : '',
+    body:    (email.textBody || '(no body)').slice(0, aiBodyLimit),
+  };
+  return aiUserTemplate.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
 async function aiTagEmail(emailId) {
@@ -3751,7 +3801,7 @@ async function aiTagEmail(emailId) {
             },
           },
         },
-        system: 'You tag and summarize project emails. Return 1–4 short lowercase tags (company names, topics, document types) and a one-sentence summary under 25 words. Tags must be single words or hyphenated, e.g. "rcy", "drawing-submission", "rfi".',
+        system: aiSystemPrompt,
         messages: [{ role: 'user', content: buildEmailPrompt(email) }],
       }),
     });
@@ -3888,6 +3938,42 @@ function showSettings() {
           <button class="btn" onclick="clearClaudeApiKey()">Clear</button>
         </div>
         <div id="claude-key-status" style="margin-top:6px; font-size:11px; color:var(--muted);"></div>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">✨ AI Prompt Configuration</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          Customize the prompts sent to Claude when AI tagging emails.
+          Available template variables: <code>{{subject}}</code> <code>{{from}}</code> <code>{{to}}</code> <code>{{cc}}</code> (expands to "CC: …" or empty) <code>{{body}}</code>.
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <label style="font-size:12px; font-weight:500; flex:1;">System Prompt</label>
+            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiSystemPrompt()">Reset to default</button>
+          </div>
+          <textarea id="ai-system-prompt" class="search-input"
+                    style="width:100%; height:90px; resize:vertical; font-size:12px; font-family:inherit; box-sizing:border-box;"
+                    placeholder="System instructions for Claude…">${escHtml(aiSystemPrompt)}</textarea>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <label style="font-size:12px; font-weight:500; flex:1;">User Message Template</label>
+            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiUserTemplate()">Reset to default</button>
+          </div>
+          <textarea id="ai-user-template" class="search-input"
+                    style="width:100%; height:110px; resize:vertical; font-size:12px; font-family:var(--mono); box-sizing:border-box;"
+                    placeholder="User message template…">${escHtml(aiUserTemplate)}</textarea>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <label style="font-size:12px; font-weight:500; white-space:nowrap;">Body character limit:</label>
+          <input type="number" id="ai-body-limit" class="search-input" value="${aiBodyLimit}" min="100" max="10000" step="100"
+                 style="width:90px;">
+        </div>
+
+        <button class="btn btn-primary" onclick="saveAiPromptsFromUI()">Save prompt settings</button>
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
@@ -5893,10 +5979,11 @@ async function init() {
   db = await openDB();
   setupDropZone();
 
-  // Load custom patterns, smart views, email groups, and auto-tag rules before processing emails
+  // Load custom patterns, smart views, email groups, auto-tag rules, and AI prompts before processing emails
   await loadCustomPatterns();
   await loadEmailGroups();
   await loadAutoTagRules();
+  await loadAiPrompts();
   await loadSmartViews();
 
   const emails = await dbGetAll('emails');
