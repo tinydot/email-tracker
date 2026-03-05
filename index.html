@@ -1508,6 +1508,9 @@ function parseEML(raw) {
     cleanText = stripHtml(htmlBody);
   }
 
+  // Remove excessive blank lines (e.g. \r\n\r\n \r\n\r\n → single newline)
+  if (cleanText) cleanText = cleanText.replace(/\r\n/g, '\n').replace(/\n([ \t]*\n)+/g, '\n');
+
   // Parse addresses
   const from  = parseAddress(headers['from']  || '');
   const to    = parseAddressList(headers['to'] || '');
@@ -3909,8 +3912,8 @@ function showSettings() {
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:8px;">Normalize email body line breaks</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
-          Scans all emails and replaces the extra blank-line pattern (<code>\\n\\n \\n\\n</code>) with a single line break.
-          Run this once if you notice excessive spacing in email bodies imported from JSON.
+          Scans all emails and collapses repeated blank lines (including <code>\r\n\r\n&nbsp;\r\n\r\n</code> patterns) into a single line break.
+          New imports are cleaned automatically. Run this once on existing emails if you notice excessive spacing.
         </div>
         <button id="btn-normalize-linebreaks" class="btn" onclick="normalizeLineBreaks()">Normalize line breaks</button>
       </div>
@@ -4039,15 +4042,21 @@ async function normalizeLineBreaks() {
   let fixed = 0;
 
   for (const email of emails) {
-    if (email.textBody && /\n[ \t]*\n/.test(email.textBody)) {
-      email.textBody = email.textBody.replace(/(\n[ \t]*){2,}/g, '\n');
-      await dbPut('emails', email);
-      fixed++;
+    if (email.textBody) {
+      const orig = email.textBody;
+      email.textBody = email.textBody
+        .replace(/\r\n/g, '\n')
+        .replace(/\n([ \t]*\n)+/g, '\n');
+      if (email.textBody !== orig) {
+        await dbPut('emails', email);
+        fixed++;
+      }
     }
   }
 
   if (btn) { btn.disabled = false; btn.textContent = 'Normalize line breaks'; }
   toast(fixed ? `Fixed ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed fixing', fixed ? 'ok' : '');
+  if (fixed) { await loadEmailList(); applyFilters(); }
 }
 
 function showImport() { showPanel('import'); }
