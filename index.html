@@ -1151,6 +1151,7 @@
         <div class="sidebar-label">Actions</div>
         <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
+        <button class="nav-item" onclick="exportSQLite()">⬇ Export SQLite</button>
         <input type="file" id="json-import-input" accept=".json" style="display:none" onchange="importData(this)">
         <button class="nav-item" onclick="document.getElementById('json-import-input').click()">⬆ Import JSON</button>
         <button class="nav-item" onclick="showSettings()">⚙ Settings</button>
@@ -5485,6 +5486,165 @@ async function exportData() {
   a.download   = `email-tracker-${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+async function exportSQLite() {
+  toast('Building SQLite export…', '');
+
+  // Lazy-load sql.js from CDN
+  if (!window.SQL) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+    window.SQL = await initSqlJs({
+      locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`
+    });
+  }
+
+  const db = new window.SQL.Database();
+
+  db.run(`
+    CREATE TABLE emails (
+      id               TEXT PRIMARY KEY,
+      message_id       TEXT,
+      in_reply_to      TEXT,
+      subject          TEXT,
+      from_addr        TEXT,
+      from_name        TEXT,
+      date             TEXT,
+      text_body        TEXT,
+      status           TEXT,
+      is_actionable    INTEGER,
+      is_system_email  INTEGER,
+      manual_override  INTEGER,
+      is_low_value     INTEGER,
+      has_attachments  INTEGER,
+      attachment_count INTEGER,
+      awaiting_since   TEXT,
+      thread_id        TEXT,
+      file_name        TEXT,
+      ai_summary       TEXT,
+      imported_at      INTEGER
+    );
+    CREATE TABLE email_tags (
+      email_id  TEXT,
+      tag       TEXT
+    );
+    CREATE TABLE email_addresses (
+      email_id  TEXT,
+      role      TEXT,
+      address   TEXT
+    );
+    CREATE TABLE email_issue_links (
+      email_id  TEXT,
+      issue_id  TEXT
+    );
+    CREATE TABLE attachments (
+      id              TEXT PRIMARY KEY,
+      email_id        TEXT,
+      filename        TEXT,
+      size            INTEGER,
+      mime_type       TEXT,
+      hash            TEXT,
+      stored_path     TEXT,
+      transmittal_ref TEXT,
+      source_party    TEXT,
+      document_type   TEXT,
+      is_nested       INTEGER,
+      parent_filename TEXT
+    );
+    CREATE INDEX idx_emails_date      ON emails(date);
+    CREATE INDEX idx_emails_from_addr ON emails(from_addr);
+    CREATE INDEX idx_emails_status    ON emails(status);
+    CREATE INDEX idx_email_tags_email ON email_tags(email_id);
+    CREATE INDEX idx_email_tags_tag   ON email_tags(tag);
+    CREATE INDEX idx_email_addr_email ON email_addresses(email_id);
+    CREATE INDEX idx_att_email        ON attachments(email_id);
+  `);
+
+  const emails = await dbGetAll('emails');
+  const atts   = await dbGetAll('attachments');
+
+  const insertEmail = db.prepare(`
+    INSERT INTO emails VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+  const insertTag = db.prepare(`INSERT INTO email_tags VALUES (?,?)`);
+  const insertAddr = db.prepare(`INSERT INTO email_addresses VALUES (?,?,?)`);
+  const insertLink = db.prepare(`INSERT INTO email_issue_links VALUES (?,?)`);
+
+  db.run('BEGIN');
+  for (const e of emails) {
+    insertEmail.run([
+      e.id ?? null,
+      e.messageId ?? null,
+      e.inReplyTo ?? null,
+      e.subject ?? null,
+      e.fromAddr ?? null,
+      e.fromName ?? null,
+      e.date ?? null,
+      e.textBody ?? null,
+      e.status ?? null,
+      e.isActionable ? 1 : 0,
+      e.isSystemEmail ? 1 : 0,
+      e.manualSystemOverride ? 1 : 0,
+      e.isLowValue ? 1 : 0,
+      e.hasAttachments ? 1 : 0,
+      e.attachmentCount ?? 0,
+      e.awaitingSince ?? null,
+      e.threadId ?? null,
+      e.fileName ?? null,
+      e.aiSummary ?? null,
+      e.importedAt ?? null,
+    ]);
+    for (const tag of (e.tags || [])) insertTag.run([e.id, tag]);
+    for (const addr of (e.toAddrs || [])) insertAddr.run([e.id, 'to', addr]);
+    for (const addr of (e.ccAddrs || [])) insertAddr.run([e.id, 'cc', addr]);
+    for (const ref of (e.references || [])) insertAddr.run([e.id, 'ref', ref]);
+    for (const issueId of (e.linkedIssues || [])) insertLink.run([e.id, issueId]);
+  }
+  db.run('COMMIT');
+
+  insertEmail.free();
+  insertTag.free();
+  insertAddr.free();
+  insertLink.free();
+
+  const insertAtt = db.prepare(`INSERT INTO attachments VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  db.run('BEGIN');
+  for (const a of atts) {
+    insertAtt.run([
+      a.id ?? null,
+      a.emailId ?? null,
+      a.filename ?? null,
+      a.size ?? null,
+      a.mimeType ?? null,
+      a.hash ?? null,
+      a.storedPath ?? null,
+      a.transmittalRef ?? null,
+      a.sourceParty ?? null,
+      a.documentType ?? null,
+      a.isNested ? 1 : 0,
+      a.parentFilename ?? null,
+    ]);
+  }
+  db.run('COMMIT');
+  insertAtt.free();
+
+  const bytes = db.export();
+  db.close();
+
+  const blob = new Blob([bytes], { type: 'application/x-sqlite3' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `email-tracker-${new Date().toISOString().split('T')[0]}.sqlite`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`SQLite exported — ${emails.length} emails, ${atts.length} attachments`, 'ok');
 }
 
 async function importData(input) {
