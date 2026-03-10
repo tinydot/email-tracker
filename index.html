@@ -1432,7 +1432,11 @@ function parseEML(raw) {
       const ct = (r.headers['content-type'] || '').toLowerCase();
       const cd = r.headers['content-disposition'] || '';
 
-      if (cd.toLowerCase().includes('attachment')) {
+      // Outlook often uses Content-Disposition: inline; filename="..." for real attachments.
+      // Treat any part with a filename in Content-Disposition as an attachment,
+      // regardless of whether the keyword is 'attachment' or 'inline'.
+      const cdIsAttachment = cd.toLowerCase().includes('attachment') || !!extractParam(cd, 'filename');
+      if (cdIsAttachment) {
         attachments.push(buildAttachment(r));
       } else if (ct.startsWith('text/plain') && !textBody) {
         textBody = decodePart(r);
@@ -1448,7 +1452,8 @@ function parseEML(raw) {
             if (!sr) continue;
             const sct = (sr.headers['content-type'] || '').toLowerCase();
             const scd = sr.headers['content-disposition'] || '';
-            if (scd.toLowerCase().includes('attachment')) {
+            const scdIsAttachment = scd.toLowerCase().includes('attachment') || !!extractParam(scd, 'filename');
+            if (scdIsAttachment) {
               attachments.push(buildAttachment(sr));
             } else if (sct.startsWith('text/plain') && !textBody) {
               textBody = decodePart(sr);
@@ -1464,7 +1469,8 @@ function parseEML(raw) {
                   if (!ssr) continue;
                   const ssct = (ssr.headers['content-type'] || '').toLowerCase();
                   const sscd = ssr.headers['content-disposition'] || '';
-                  if (sscd.toLowerCase().includes('attachment')) {
+                  const sscdIsAttachment = sscd.toLowerCase().includes('attachment') || !!extractParam(sscd, 'filename');
+                  if (sscdIsAttachment) {
                     attachments.push(buildAttachment(ssr));
                   } else if (ssct.startsWith('text/plain') && !textBody) {
                     textBody = decodePart(ssr);
@@ -1750,7 +1756,8 @@ function parseAddress(str) {
 
 function parseAddressList(str) {
   if (!str) return [];
-  // Statefully split on commas not inside angle brackets or double-quoted strings
+  // Statefully split on commas or semicolons not inside angle brackets or double-quoted strings.
+  // Outlook (and PST-exported EMLs) frequently uses semicolons as the address delimiter.
   const parts = [];
   let current = '';
   let inAngle = false;
@@ -1760,7 +1767,7 @@ function parseAddressList(str) {
     if (ch === '"' && !inAngle) inQuote = !inQuote;
     else if (ch === '<' && !inQuote) inAngle = true;
     else if (ch === '>' && !inQuote) inAngle = false;
-    if (ch === ',' && !inAngle && !inQuote) {
+    if ((ch === ',' || ch === ';') && !inAngle && !inQuote) {
       parts.push(current.trim());
       current = '';
     } else {
