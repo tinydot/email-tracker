@@ -4744,10 +4744,10 @@ function openDetail(email) {
                 extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Extract text for review / AI">${lbl}</button>`;
               } else if (status === 'done') {
                 if (a.extractedText) {
-                  extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Toggle extracted text">Text ✓</button>`;
-                  textPreview = `<div id="att-text-${a.id}" style="display:none; margin:-4px 0 8px 0; padding:10px 12px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:180px; overflow-y:auto;">${escHtml(a.extractedText.slice(0, 500))}${a.extractedText.length > 500 ? '\n…' : ''}</div>`;
+                  extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Toggle extracted text">Text ✓</button><button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Re-extract with current limit">↺</button>`;
+                  textPreview = `<div id="att-text-${a.id}" style="display:none; margin:-4px 0 8px 0; padding:10px 12px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:300px; overflow-y:auto;">${escHtml(a.extractedText)}</div>`;
                 } else {
-                  extractBtn = `<span style="font-size:11px; color:var(--muted); padding:4px 6px;">No text</span>`;
+                  extractBtn = `<span style="font-size:11px; color:var(--muted); padding:4px 6px;">No text</span><button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Re-extract with current limit">↺</button>`;
                 }
               }
             }
