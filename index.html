@@ -1972,10 +1972,10 @@ function isExtractableType(contentType, filename) {
 function _truncateToLimit(text) {
   if (!text) return '';
   const clean = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-  if (clean.length <= ATTACH_TEXT_LIMIT) return clean;
-  const cut = clean.slice(0, ATTACH_TEXT_LIMIT);
+  if (clean.length <= attachTextLimit) return clean;
+  const cut = clean.slice(0, attachTextLimit);
   const lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > ATTACH_TEXT_LIMIT * 0.8 ? cut.slice(0, lastSpace) : cut) + '…';
+  return (lastSpace > attachTextLimit * 0.8 ? cut.slice(0, lastSpace) : cut) + '…';
 }
 
 // Returns extracted plain text string, or null for unsupported formats.
@@ -1994,7 +1994,7 @@ async function extractAttachmentText(data, contentType, filename) {
       const page    = await pdf.getPage(i);
       const content = await page.getTextContent();
       text += content.items.map(item => item.str).join(' ') + '\n';
-      if (text.length > ATTACH_TEXT_LIMIT * 1.5) break;
+      if (text.length > attachTextLimit * 1.5) break;
     }
     return _truncateToLimit(text);
   }
@@ -2016,7 +2016,7 @@ async function extractAttachmentText(data, contentType, filename) {
     for (const sheetName of wb.SheetNames) {
       const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sheetName], { skipHidden: true });
       text += `[${sheetName}]\n${csv}\n\n`;
-      if (text.length > ATTACH_TEXT_LIMIT * 1.5) break;
+      if (text.length > attachTextLimit * 1.5) break;
     }
     return _truncateToLimit(text);
   }
@@ -2038,7 +2038,7 @@ async function extractAttachmentText(data, contentType, filename) {
       const matches   = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)];
       const slideText = matches.map(m => m[1]).join(' ').trim();
       if (slideText) text += slideText + '\n';
-      if (text.length > ATTACH_TEXT_LIMIT * 1.5) break;
+      if (text.length > attachTextLimit * 1.5) break;
     }
     return _truncateToLimit(text);
   }
