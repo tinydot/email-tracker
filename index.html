@@ -1903,6 +1903,267 @@ function simpleHash(str) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  ATTACHMENT TEXT EXTRACTION
+// ═══════════════════════════════════════════════════════
+
+// ~500 words/page × 2 pages × avg 5 chars/word ≈ 5 000 chars
+const ATTACH_TEXT_LIMIT = 5000;
+
+const _LIB_URLS = {
+  pdfjs:   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js',
+  jszip:   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+  xlsx:    'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+};
+const _libLoaded = {};
+
+async function loadLib(name) {
+  if (_libLoaded[name]) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = _LIB_URLS[name];
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error(`Failed to load ${name} from CDN`));
+    document.head.appendChild(s);
+  });
+  _libLoaded[name] = true;
+  if (name === 'pdfjs' && window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+}
+
+function isExtractableType(contentType, filename) {
+  const ext  = (filename || '').split('.').pop().toLowerCase();
+  const mime = (contentType || '').toLowerCase();
+  return (
+    mime.includes('pdf') || ext === 'pdf' ||
+    mime.includes('wordprocessingml') || mime.includes('msword') || ext === 'docx' || ext === 'doc' ||
+    mime.includes('spreadsheetml') || mime.includes('excel') ||
+      ext === 'xlsx' || ext === 'xls' || ext === 'csv' ||
+    mime.includes('presentationml') || ext === 'pptx' || ext === 'pptm' ||
+    ext === 'odp' || ext === 'ods' || ext === 'odt'
+  );
+}
+
+function _truncateToLimit(text) {
+  if (!text) return '';
+  const clean = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (clean.length <= ATTACH_TEXT_LIMIT) return clean;
+  const cut = clean.slice(0, ATTACH_TEXT_LIMIT);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > ATTACH_TEXT_LIMIT * 0.8 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
+// Returns extracted plain text string, or null for unsupported formats.
+// data: Uint8Array or ArrayBuffer
+async function extractAttachmentText(data, contentType, filename) {
+  const buf  = data instanceof Uint8Array ? data.buffer : data;
+  const ext  = (filename || '').split('.').pop().toLowerCase();
+  const mime = (contentType || '').toLowerCase();
+
+  // ── PDF ──────────────────────────────────────────────
+  if (mime.includes('pdf') || ext === 'pdf') {
+    await loadLib('pdfjs');
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page    = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(' ') + '\n';
+      if (text.length > ATTACH_TEXT_LIMIT * 1.5) break;
+    }
+    return _truncateToLimit(text);
+  }
+
+  // ── DOCX / DOC ────────────────────────────────────────
+  if (mime.includes('wordprocessingml') || mime.includes('msword') ||
+      ext === 'docx' || ext === 'doc') {
+    await loadLib('mammoth');
+    const result = await mammoth.extractRawText({ arrayBuffer: buf });
+    return _truncateToLimit(result.value);
+  }
+
+  // ── XLSX / XLS / CSV ─────────────────────────────────
+  if (mime.includes('spreadsheetml') || mime.includes('excel') ||
+      ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+    await loadLib('xlsx');
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+    let text = '';
+    for (const sheetName of wb.SheetNames) {
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sheetName], { skipHidden: true });
+      text += `[${sheetName}]\n${csv}\n\n`;
+      if (text.length > ATTACH_TEXT_LIMIT * 1.5) break;
+    }
+    return _truncateToLimit(text);
+  }
+
+  // ── PPTX / PPTM ──────────────────────────────────────
+  if (mime.includes('presentationml') || ext === 'pptx' || ext === 'pptm') {
+    await loadLib('jszip');
+    const zip = await JSZip.loadAsync(buf);
+    const slideNames = Object.keys(zip.files)
+      .filter(n => /^ppt\/slides\/slide\d+\.xml$/i.test(n))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/slide(\d+)/i)[1]);
+        const nb = parseInt(b.match(/slide(\d+)/i)[1]);
+        return na - nb;
+      });
+    let text = '';
+    for (const name of slideNames) {
+      const xml       = await zip.files[name].async('string');
+      const matches   = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)];
+      const slideText = matches.map(m => m[1]).join(' ').trim();
+      if (slideText) text += slideText + '\n';
+      if (text.length > ATTACH_TEXT_LIMIT * 1.5) break;
+    }
+    return _truncateToLimit(text);
+  }
+
+  // ── ODP / ODS / ODT ──────────────────────────────────
+  if (ext === 'odp' || ext === 'ods' || ext === 'odt') {
+    await loadLib('jszip');
+    const zip         = await JSZip.loadAsync(buf);
+    const contentFile = zip.files['content.xml'];
+    if (!contentFile) return '';
+    const xml     = await contentFile.async('string');
+    const matches = [...xml.matchAll(/<text:[^>]+>([^<]+)<\/text:[^>]+>/g)];
+    return _truncateToLimit(matches.map(m => m[1]).filter(Boolean).join(' '));
+  }
+
+  return null; // unsupported
+}
+
+// Internal helper: extract and persist to DB.  data = Uint8Array (available at import time).
+async function _extractAndStoreText(attId, data, contentType, filename) {
+  if (!isExtractableType(contentType, filename)) return;
+  try {
+    const text = await extractAttachmentText(data, contentType, filename);
+    const att  = await dbGet('attachments', attId);
+    if (!att) return;
+    att.extractedText      = text ?? '';
+    att.extractionStatus   = text != null ? 'done' : 'unsupported';
+    att.extractedAt        = Date.now();
+    await dbPut('attachments', att);
+  } catch (err) {
+    console.warn('Auto-extract failed for', filename, err);
+    const att = await dbGet('attachments', attId);
+    if (!att) return;
+    att.extractionStatus = 'failed';
+    att.extractedAt      = Date.now();
+    await dbPut('attachments', att);
+  }
+}
+
+// Manual single-attachment extraction — reads the file from the stored path on disk.
+async function extractTextManualFromDisk(attId) {
+  const att = await dbGet('attachments', attId);
+  if (!att) return;
+
+  if (!att.storedPath) {
+    toast('No file stored on disk for this attachment', 'warn');
+    return;
+  }
+  if (!isExtractableType(att.contentType, att.filename)) {
+    toast(`${att.filename}: format not supported for text extraction`, 'warn');
+    return;
+  }
+
+  if (!attachmentDirHandle) {
+    const ok = confirm('Attachment folder not connected.\nClick OK to select the folder.');
+    if (ok) {
+      const success = await setupAttachmentStorage();
+      if (!success) { toast('Cannot extract without folder access', 'err'); return; }
+    } else return;
+  }
+
+  const btn = document.getElementById(`extract-btn-${attId}`);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+  try {
+    const parts       = att.storedPath.split('/');
+    const domainDir   = await attachmentDirHandle.getDirectoryHandle(parts[0]);
+    const fileHandle  = await domainDir.getFileHandle(parts[1]);
+    const file        = await fileHandle.getFile();
+    const buf         = await file.arrayBuffer();
+    const text        = await extractAttachmentText(new Uint8Array(buf), att.contentType, att.filename);
+    att.extractedText    = text ?? '';
+    att.extractionStatus = text != null ? 'done' : 'unsupported';
+    att.extractedAt      = Date.now();
+    await dbPut('attachments', att);
+    toast(
+      text ? `Extracted ${text.length.toLocaleString()} chars from ${att.filename}` : `No text found in ${att.filename}`,
+      text ? 'ok' : 'warn'
+    );
+  } catch (err) {
+    att.extractionStatus = 'failed';
+    att.extractedAt      = Date.now();
+    await dbPut('attachments', att);
+    toast(`Extraction failed: ${err.message}`, 'err');
+  }
+
+  // Re-render the open detail panel so buttons + preview update
+  if (selectedEmail) openDetail(selectedEmail);
+}
+
+// Bulk extraction — iterates all stored attachments that don't yet have extracted text.
+async function bulkExtractAttachmentText() {
+  const atts    = await dbGetAll('attachments');
+  const pending = atts.filter(a =>
+    !a.extractionStatus && isExtractableType(a.contentType, a.filename) && a.storedPath
+  );
+  if (!pending.length) {
+    toast('No pending extractable attachments with stored files', 'warn');
+    return;
+  }
+  if (!confirm(`Extract text from ${pending.length} attachment${pending.length !== 1 ? 's' : ''}?\n\nRequires the attachment folder to be connected.`)) return;
+
+  if (!attachmentDirHandle) {
+    const ok = confirm('Attachment folder not connected.\nClick OK to select the folder.');
+    if (ok) {
+      const success = await setupAttachmentStorage();
+      if (!success) { toast('Cannot extract without folder access', 'err'); return; }
+    } else return;
+  }
+
+  let done = 0, failed = 0;
+  toast(`Extracting text from ${pending.length} attachments…`, 'ok');
+
+  for (const att of pending) {
+    try {
+      const parts      = att.storedPath.split('/');
+      const domainDir  = await attachmentDirHandle.getDirectoryHandle(parts[0]);
+      const fileHandle = await domainDir.getFileHandle(parts[1]);
+      const file       = await fileHandle.getFile();
+      const buf        = await file.arrayBuffer();
+      const text       = await extractAttachmentText(new Uint8Array(buf), att.contentType, att.filename);
+      att.extractedText    = text ?? '';
+      att.extractionStatus = text != null ? 'done' : 'unsupported';
+      att.extractedAt      = Date.now();
+      await dbPut('attachments', att);
+      done++;
+      if (done % 10 === 0) toast(`Extracting text: ${done}/${pending.length}…`, 'ok');
+    } catch (err) {
+      att.extractionStatus = 'failed';
+      att.extractedAt      = Date.now();
+      await dbPut('attachments', att);
+      failed++;
+    }
+  }
+
+  toast(
+    `Text extraction complete: ${done} done${failed ? `, ${failed} failed` : ''}`,
+    failed && !done ? 'err' : 'ok'
+  );
+  if (currentView === 'transmittals') showTransmittalRegister();
+}
+
+function toggleAttachText(attId) {
+  const el = document.getElementById(`att-text-${attId}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ═══════════════════════════════════════════════════════
 //  SYSTEM / AUTOMATED EMAIL DETECTION
 // ═══════════════════════════════════════════════════════
 
@@ -2411,7 +2672,12 @@ async function processFilesForImport(fileArr) {
         }
 
         await dbPut('attachments', attRecord);
-        
+
+        // Extract text in the background (non-blocking)
+        if (att.rawData && isExtractableType(att.contentType, att.filename)) {
+          _extractAndStoreText(attId, att.rawData, att.contentType, att.filename).catch(() => {});
+        }
+
         // Process nested attachments (from embedded .eml files)
         if (att.nestedAttachments && att.nestedAttachments.length > 0) {
           for (const nested of att.nestedAttachments) {
@@ -2445,6 +2711,11 @@ async function processFilesForImport(fileArr) {
             }
             
             await dbPut('attachments', nestedRecord);
+
+            // Extract text in the background (non-blocking)
+            if (nested.rawData && isExtractableType(nested.contentType, nested.filename)) {
+              _extractAndStoreText(nestedId, nested.rawData, nested.contentType, nested.filename).catch(() => {});
+            }
           }
         }
       }
@@ -4410,6 +4681,26 @@ function openDetail(email) {
               ? `onclick="openAttachmentFromDisk('${a.storedPath}')" style="cursor:pointer" title="Click to open"`
               : 'title="File not stored on disk"';
             const icon = hasFile ? '📎' : '📋';
+
+            // Extract text button / status indicator
+            const extractable = isExtractableType(a.contentType, a.filename);
+            let extractBtn = '';
+            let textPreview = '';
+            if (extractable) {
+              const status = a.extractionStatus;
+              if (!status || status === 'failed') {
+                const lbl = status === 'failed' ? 'Retry Extract' : 'Extract Text';
+                extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Extract text for review / AI">${lbl}</button>`;
+              } else if (status === 'done') {
+                if (a.extractedText) {
+                  extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Toggle extracted text">Text ✓</button>`;
+                  textPreview = `<div id="att-text-${a.id}" style="display:none; margin:-4px 0 8px 0; padding:10px 12px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:180px; overflow-y:auto;">${escHtml(a.extractedText.slice(0, 500))}${a.extractedText.length > 500 ? '\n…' : ''}</div>`;
+                } else {
+                  extractBtn = `<span style="font-size:11px; color:var(--muted); padding:4px 6px;">No text</span>`;
+                }
+              }
+            }
+
             return `
               <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px; background:var(--surface2);">
                 <div class="attach-chip" ${action} style="flex:1; margin:0;">
@@ -4417,8 +4708,10 @@ function openDetail(email) {
                   <span class="attach-size">${formatSize(a.size)}</span>
                   ${hasFile ? '<span style="color:var(--accent);margin-left:4px">●</span>' : ''}
                 </div>
+                ${extractBtn}
                 <button class="btn" onclick="editAttachmentMetadata('${a.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
               </div>
+              ${textPreview}
               <div id="att-meta-${a.id}" style="display:none; padding:8px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin:-4px 0 8px 0;">
                 <div style="display:grid; grid-template-columns:120px 1fr; gap:8px; font-size:12px;">
                   <label style="color:var(--muted); padding-top:4px;">Transmittal Ref:</label>
@@ -4832,6 +5125,7 @@ async function showTransmittalRegister() {
         </select>
         <button class="btn btn-primary" onclick="bulkAutoFillMetadata(false)" style="margin-left:auto;">✨ Auto-fill Empty</button>
         <button class="btn" onclick="bulkAutoFillMetadata(true)" title="Overwrite existing source parties">✨ Force Auto-fill All</button>
+        <button class="btn" onclick="bulkExtractAttachmentText()" title="Extract text from all stored attachments that haven't been processed yet">📄 Extract Text</button>
         <button class="btn" onclick="exportTransmittalCSV()">⬇ Export CSV</button>
       </div>
       <div id="tx-table-container" style="overflow:auto; flex:1;"></div>
