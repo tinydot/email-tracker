@@ -1906,8 +1906,10 @@ function simpleHash(str) {
 //  ATTACHMENT TEXT EXTRACTION
 // ═══════════════════════════════════════════════════════
 
-// ~500 words/page × 2 pages × avg 5 chars/word ≈ 5 000 chars
-const ATTACH_TEXT_LIMIT = 5000;
+// User-configurable; stored in DB as KB. Default = 5 KB (~2 pages).
+const ATTACH_TEXT_LIMIT_DEFAULT_KB = 5;
+let attachTextLimitKb = ATTACH_TEXT_LIMIT_DEFAULT_KB;
+let attachTextLimit   = attachTextLimitKb * 1000; // chars; recomputed on load
 
 const _LIB_URLS = {
   pdfjs:   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
@@ -1931,6 +1933,27 @@ async function loadLib(name) {
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
+}
+
+async function loadAttachTextLimit() {
+  const saved = await dbGet('settings', 'attachTextLimit');
+  if (saved?.kb > 0) {
+    attachTextLimitKb = saved.kb;
+    attachTextLimit   = attachTextLimitKb * 1000;
+  }
+}
+
+async function saveAttachTextLimitFromUI() {
+  const input = document.getElementById('setting-attach-text-limit');
+  const kb    = parseInt(input?.value, 10);
+  if (!Number.isFinite(kb) || kb < 1) {
+    toast('Enter a valid KB limit (e.g. 200)', 'warn');
+    return;
+  }
+  attachTextLimitKb = kb;
+  attachTextLimit   = kb * 1000;
+  await dbPut('settings', { key: 'attachTextLimit', kb });
+  toast(`Attachment text limit set to ${kb} KB`, 'ok');
 }
 
 function isExtractableType(contentType, filename) {
@@ -4188,6 +4211,29 @@ function showSettings() {
           New imports are cleaned automatically. Run this once on existing emails if you notice excessive spacing.
         </div>
         <button id="btn-normalize-linebreaks" class="btn" onclick="normalizeLineBreaks()">Normalize line breaks</button>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">📄 Attachment text extraction limit</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
+          Maximum amount of text extracted from each attachment (PDF, DOCX, XLSX, PPTX).
+          Larger limits give more context for review but use more storage.
+          ~5 KB ≈ 2 pages · ~50 KB ≈ 15–20 pages · ~200 KB ≈ full report.
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <input type="number" id="setting-attach-text-limit" class="search-input"
+                 value="${attachTextLimitKb}" min="1" max="10000" step="1"
+                 style="width:90px;" placeholder="KB">
+          <span style="font-size:12px; color:var(--muted);">KB</span>
+          <span style="font-size:11px; color:var(--muted);">(≈ ${(attachTextLimitKb * 1000).toLocaleString()} chars)</span>
+          <div style="display:flex; gap:4px; margin-left:8px;">
+            ${[5, 50, 100, 200, 300, 500].map(kb =>
+              `<button class="btn${attachTextLimitKb === kb ? ' btn-primary' : ''}" style="padding:3px 8px; font-size:11px;"
+                 onclick="document.getElementById('setting-attach-text-limit').value=${kb}">${kb} KB</button>`
+            ).join('')}
+          </div>
+          <button class="btn btn-primary" style="margin-left:auto;" onclick="saveAttachTextLimitFromUI()">Save</button>
+        </div>
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
@@ -6620,6 +6666,7 @@ async function init() {
   await loadEmailGroups();
   await loadAutoTagRules();
   await loadAiPrompts();
+  await loadAttachTextLimit();
   await loadSmartViews();
 
   const emails = await dbGetAll('emails');
