@@ -4152,6 +4152,9 @@ async function bulkAiTagView() {
 
 function showSettings() {
   showPanel('list'); // Show the list panel
+  document.querySelector('.toolbar').style.display = 'none';
+  document.getElementById('bulk-tag-bar').style.display = 'none';
+  document.querySelector('.email-list-header').style.display = 'none';
   const container = document.getElementById('email-list');
   container.innerHTML = `
     <div style="padding:20px;">
@@ -4381,6 +4384,8 @@ function showImport() { showPanel('import'); }
 
 function switchView(view) {
   currentView = view;
+  document.querySelector('.toolbar').style.display = '';
+  document.querySelector('.email-list-header').style.display = '';
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);
   });
