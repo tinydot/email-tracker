@@ -2,37 +2,31 @@
 
 ## Project at a glance
 
-A **single-file** client-side web app (`index.html`, ~4800 lines).
-No build step, no npm, no server. Open the file in a browser and it runs entirely in-browser using the File System Access API and IndexedDB.
+A client-side web app with no build step, no npm, no server. Open `index.html` in a browser and it runs entirely in-browser using the File System Access API and IndexedDB.
 
 ```
 email-tracker/
-└── index.html   ← everything: HTML + CSS + JS in one file
+├── index.html        ← HTML structure only (~200 lines)
+├── css/
+│   └── styles.css    ← all styles (~1078 lines)
+└── js/
+    ├── db.js         ← IndexedDB wrapper
+    ├── parser.js     ← EML parser + attachment text extraction
+    ├── detection.js  ← system/automated email detection
+    ├── import.js     ← import pipeline + attachment file storage
+    ├── threading.js  ← thread linking + thread computation
+    ├── state.js      ← global state variables + panel switching
+    ├── smart-views.js← smart view CRUD, rule engine, settings panel, view routing
+    ├── render.js     ← renderEmailList, openDetail, transmittal register
+    ├── actions.js    ← email actions + bulk tagging
+    ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts
+    ├── export.js     ← JSON export/import, clearDB, danger zone
+    ├── issues.js     ← issue tracker CRUD, email↔issue linking
+    ├── helpers.js    ← drag & drop, formatDate, escHtml, toast
+    └── init.js       ← init(), keyboard shortcuts
 ```
 
-## Architecture
-
-The file is organized into clearly delimited sections marked by `// ═══…` banners:
-
-| Line range | Section |
-|---|---|
-| 1–1154 | HTML + CSS (layout, sidebar, modals, styles) |
-| 1155–1280 | **DB** — IndexedDB wrapper (`dbGet`, `dbPut`, `dbGetAll`, `dbDelete`, `dbClear`, `dbGetByIndex`) |
-| 1281–1766 | **EML Parser** — parses raw `.eml` text into structured objects (`parseEML`) |
-| 1767–1841 | **System email detection** — pattern matching to flag automated/bulk email |
-| 1842–2444 | **Import pipeline** — file/folder import, attachment storage, EML organization |
-| 2445–2551 | **Threading** — links emails by `Message-ID` / `In-Reply-To` headers |
-| 2552–2874 | **State + Smart Views** — global state vars, view switching, smart view CRUD + rule engine |
-| 2875–3065 | **Settings panel** — custom automation patterns, danger zone actions |
-| 3066–3172 | **View routing** — `switchView`, `applyFilters`, `applySort`, `searchEmails` |
-| 3173–3605 | **Render** — `renderEmailList`, `renderBadge`, `selectEmail`, `openDetail`, tags UI, threading UI |
-| 3606–3956 | **Transmittal Register** — attachment metadata table with inline editing |
-| 3957–4055 | **Email actions** — `setStatus`, `toggleActionable`, `bulkUnmarkActionable` |
-| 4056–4176 | **Bulk Tagging** — `refreshBulkTagBar`, `bulkAddTagToView`, `bulkRemoveTagFromView`, `addTag`, `removeTag` |
-| 4177–4293 | **Data load** — `loadEmailList`, `updateHeaderStats`, `updateNavCounts` |
-| 4294–4381 | **Export / Import / Clear** — JSON export/import, `clearDB` |
-| 4382–4749 | **Issue Tracker** — CRUD for issues, email↔issue linking |
-| 4750–4843 | **Utilities + init** — `formatDate`, `escHtml`, `toast`, keyboard shortcuts, `init()` |
+All JS files share a single global scope (loaded via `<script src>`), so there are no module imports. The section banners (`// ═══…`) within each file mark sub-sections.
 
 ## Data model
 
@@ -141,11 +135,11 @@ Rule evaluation: `evaluateRule(email, rule)` → `applySmartViewRules(email, sv)
 
 ## Adding a new feature — checklist
 
-1. **New email action** → add button in `renderDetailActions` (inside `openDetail`) + async handler function
-2. **New view** → add entry to `VIEW_LABELS`, add `nav-item` in sidebar HTML, add case in `switchView` and `applyFilters`
-3. **New smart view rule field** → add to `RULE_FIELDS` array; if boolean add to `BOOL_FIELDS`; add case in `getEmailFieldValue`
-4. **New DB store** → increment `DB_VERSION`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed
-5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`
+1. **New email action** → add button in `renderDetailActions` (inside `openDetail` in `js/render.js`) + async handler in `js/actions.js`
+2. **New view** → add entry to `VIEW_LABELS` in `js/smart-views.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views.js`
+3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views.js`; if boolean add to `BOOL_FIELDS`; add case in `getEmailFieldValue`
+4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed
+5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in the settings panel inside `js/smart-views.js`
 
 ---
 
@@ -318,4 +312,4 @@ Current IndexedDB wrappers map straightforwardly to SQL equivalents:
 
 ### Verdict
 
-The migration is **worthwhile at ~5 000+ emails** — below that IndexedDB + in-memory JS is fast enough and far simpler. The biggest structural cost is normalizing the array fields and threading all DB calls through async SQL. The OPFS header requirement is the deployment risk for a pure file-open app.
+**Not applicable for this deployment.** The app is hosted on GitHub Pages, which cannot serve custom HTTP headers. SQLite WASM + OPFS requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` — both blocked on GitHub Pages. The `sql.js` alternative (no OPFS, memory-only) offers no advantage over IndexedDB at the current scale. At 10k emails with no performance complaints, IndexedDB + in-memory JS remains the right choice.
