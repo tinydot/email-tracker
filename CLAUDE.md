@@ -16,7 +16,14 @@ email-tracker/
     ├── import.js     ← import pipeline + attachment file storage
     ├── threading.js  ← thread linking + thread computation
     ├── state.js      ← global state variables + panel switching
-    ├── smart-views.js← smart view CRUD, rule engine, settings panel, view routing
+    ├── smart-views/  ← smart views (split into focused modules)
+    │   ├── rule-engine.js ← RULE_FIELDS, evaluateRule, applySmartViewRules, loadSmartViews
+    │   ├── editor.js      ← smart view editor modal (build, show, save, delete)
+    │   ├── sidebar.js     ← renderSmartViewsSidebar, tab toggle, sv attachments view
+    │   ├── routing.js     ← switchView, applyFilters, searchEmails, applySort
+    │   ├── auto-tag.js    ← auto-tag rules engine + CRUD UI
+    │   ├── ai.js          ← Claude API key, aiTagEmail, bulkAiTagView, prompt config
+    │   └── settings.js    ← showSettings, email groups, custom patterns, maintenance
     ├── render.js     ← renderEmailList, openDetail, transmittal register
     ├── actions.js    ← email actions + bulk tagging
     ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts
@@ -136,10 +143,10 @@ Rule evaluation: `evaluateRule(email, rule)` → `applySmartViewRules(email, sv)
 ## Adding a new feature — checklist
 
 1. **New email action** → add button in `renderDetailActions` (inside `openDetail` in `js/render.js`) + async handler in `js/actions.js`
-2. **New view** → add entry to `VIEW_LABELS` in `js/smart-views.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views.js`
-3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views.js`; if boolean add to `BOOL_FIELDS`; add case in `getEmailFieldValue`
+2. **New view** → add entry to `VIEW_LABELS` in `js/state.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views/routing.js`
+3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS`; add case in `getEmailFieldValue`
 4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed
-5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in the settings panel inside `js/smart-views.js`
+5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js`
 
 ---
 
