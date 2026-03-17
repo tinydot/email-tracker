@@ -83,6 +83,77 @@ async function saveCustomPatterns() {
   mergeCustomPatterns();
 }
 
+// --- Custom quote / thread-marker patterns ---
+
+// Source strings for the UI (raw regex source, same format as customPatterns)
+let customQuotePatternSrcs = [];
+
+const DEFAULT_QUOTE_PATTERNS = [
+  /^On .+ wrote:$/i,
+  /^-{3,}\s*Original Message\s*-{3,}/i,
+  /^_{3,}\s*Original Message\s*_{3,}/i,
+  /^From:.*Sent:.*To:/i,
+  /^={3,}$/,
+  /^-{5,}$/,
+  /^Begin forwarded message:/i,
+  /^-{3,}\s*Forwarded message\s*-{3,}/i,
+  /^发件人:|^寄件者:/i,
+];
+
+async function loadCustomQuotePatterns() {
+  const saved = await dbGet('settings', 'customQuotePatterns');
+  customQuotePatternSrcs = (saved && saved.patterns) ? saved.patterns : [];
+  customQuotePatterns = customQuotePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
+}
+
+async function saveCustomQuotePatterns() {
+  await dbPut('settings', { key: 'customQuotePatterns', patterns: customQuotePatternSrcs });
+  customQuotePatterns = customQuotePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
+}
+
+async function addCustomQuotePattern() {
+  const input = document.getElementById('new-quote-pattern');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  const src = val.startsWith('/') && val.lastIndexOf('/') > 0
+    ? val.slice(1, val.lastIndexOf('/'))
+    : val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!safeRegex(src)) { toast('Invalid pattern', 'warn'); return; }
+  customQuotePatternSrcs.push(src);
+  await saveCustomQuotePatterns();
+  input.value = '';
+  toast('Pattern added', 'ok');
+  showSettings();
+}
+
+async function removeCustomQuotePattern(idx) {
+  customQuotePatternSrcs.splice(idx, 1);
+  await saveCustomQuotePatterns();
+  toast('Pattern removed', 'ok');
+  showSettings();
+}
+
+function renderQuotePatternSection() {
+  const defaultChips = DEFAULT_QUOTE_PATTERNS.map(re =>
+    `<span class="pattern-chip" title="Built-in (read-only)">${escHtml(re.source)}</span>`
+  ).join('');
+  const customChips = customQuotePatternSrcs.map((p, i) =>
+    `<span class="pattern-chip custom">
+       ${escHtml(p)}
+       <button class="del-pat" onclick="removeCustomQuotePattern(${i})" title="Remove">×</button>
+     </span>`
+  ).join('');
+  return `
+    <div style="margin-bottom:6px;">${defaultChips}${customChips}</div>
+    <div style="display:flex; gap:6px;">
+      <input type="text" id="new-quote-pattern" class="search-input"
+             placeholder="Add pattern (text or /regex/)…" style="flex:1;"
+             onkeydown="if(event.key==='Enter') addCustomQuotePattern()">
+      <button class="btn" onclick="addCustomQuotePattern()">+ Add</button>
+    </div>`;
+}
+
 function renderEmailGroupsSection() {
   const groupsHTML = emailGroups.map(g => {
     const memberChips = g.members.map(m =>
@@ -232,6 +303,16 @@ function showSettings() {
         ${renderPatternSection('Sender Email Patterns', 'senders', DEFAULT_SENDER_PATTERNS, customPatterns.senders)}
         ${renderPatternSection('Subject Patterns', 'subjects', DEFAULT_SUBJECT_PATTERNS, customPatterns.subjects)}
         ${renderPatternSection('Body Patterns (first 1000 chars)', 'body', DEFAULT_BODY_PATTERNS, customPatterns.body)}
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Quote / reply truncation patterns</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          When importing, the email body is truncated at the first line matching one of these patterns —
+          keeping only the top-most reply and discarding the quoted thread below.
+          Built-in patterns are shown in gray. Add custom patterns as plain text (substring match) or <code>/regex/</code>.
+        </div>
+        ${renderQuotePatternSection()}
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
