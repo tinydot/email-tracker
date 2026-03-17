@@ -602,57 +602,85 @@ async function reimportEmlBody(emailId) {
   const email = allEmails.find(e => e.id === emailId);
   if (!email) return;
 
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.eml';
-
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
+  // Reuse the already-selected EML archive folder if available; otherwise ask
+  let dirHandle = emlArchiveDirHandle;
+  if (!dirHandle) {
     try {
-      const raw = await file.text();
-      const parsed = parseEML(raw);
-      if (!parsed) {
-        toast('Failed to parse EML file', 'err');
-        return;
-      }
-
-      // Update textBody (and fileName to reflect newly-picked file)
-      email.textBody = parsed.textBody;
-      email.fileName = file.name;
-      await dbPut('emails', email);
-
-      // Refresh in-memory allEmails
-      const idx = allEmails.findIndex(e => e.id === emailId);
-      if (idx >= 0) {
-        allEmails[idx].textBody = parsed.textBody;
-        allEmails[idx].fileName = file.name;
-      }
-
-      // Refresh body display if this email is still open
-      if (selectedEmail?.id === emailId) {
-        const bodyEl = document.getElementById('det-body-text');
-        if (bodyEl) bodyEl.textContent = parsed.textBody || '(no plain text body)';
-        // Reset truncation state so it rescans the new body
-        _truncMatches = [];
-        _truncCurrent = -1;
-        _truncOrigBody = null;
-        const status = document.getElementById('trunc-status');
-        if (status) status.textContent = '';
-        ['trunc-prev-btn','trunc-next-btn','trunc-save-btn','trunc-reset-btn'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.style.display = 'none';
-        });
-      }
-
-      toast('Email body updated from EML', 'ok');
+      dirHandle = await window.showDirectoryPicker({ mode: 'read', startIn: 'documents' });
     } catch (err) {
-      toast('Reimport failed: ' + err.message, 'err');
+      if (err.name !== 'AbortError') toast('Could not open folder: ' + err.message, 'err');
+      return;
     }
-  };
+  }
 
-  input.click();
+  try {
+    // Derive the same sanitised domain used by organizeEmlFile()
+    const domain = (email.fromAddr || '').split('@')[1] || 'unknown';
+    const sanitizedDomain = domain.replace(/[^a-zA-Z0-9.-]/g, '_').replace(/^_+|_+$/g, '');
+
+    // Navigate into domain subfolder
+    let domainFolder;
+    try {
+      domainFolder = await dirHandle.getDirectoryHandle(sanitizedDomain);
+    } catch {
+      toast(`Domain folder "${sanitizedDomain}" not found in selected folder`, 'err');
+      return;
+    }
+
+    // Determine target filename: use emlArchivePath's filename part, fall back to fileName
+    let targetFilename = email.fileName || '';
+    if (email.emlArchivePath) {
+      const parts = email.emlArchivePath.split('/');
+      targetFilename = parts[parts.length - 1] || targetFilename;
+    }
+    if (!targetFilename) {
+      toast('No filename stored for this email', 'err');
+      return;
+    }
+
+    // Get file handle from domain folder
+    let fileHandle;
+    try {
+      fileHandle = await domainFolder.getFileHandle(targetFilename);
+    } catch {
+      toast(`File "${targetFilename}" not found in ${sanitizedDomain}/`, 'err');
+      return;
+    }
+
+    const file = await fileHandle.getFile();
+    const raw = await file.text();
+    const parsed = parseEML(raw);
+    if (!parsed) {
+      toast('Failed to parse EML file', 'err');
+      return;
+    }
+
+    // Update textBody on record
+    email.textBody = parsed.textBody;
+    await dbPut('emails', email);
+
+    const idx = allEmails.findIndex(e => e.id === emailId);
+    if (idx >= 0) allEmails[idx].textBody = parsed.textBody;
+
+    // Refresh body display if still open
+    if (selectedEmail?.id === emailId) {
+      const bodyEl = document.getElementById('det-body-text');
+      if (bodyEl) bodyEl.textContent = parsed.textBody || '(no plain text body)';
+      _truncMatches = [];
+      _truncCurrent = -1;
+      _truncOrigBody = null;
+      const status = document.getElementById('trunc-status');
+      if (status) status.textContent = '';
+      ['trunc-prev-btn','trunc-next-btn','trunc-save-btn','trunc-reset-btn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    }
+
+    toast(`Reimported from ${sanitizedDomain}/${targetFilename}`, 'ok');
+  } catch (err) {
+    toast('Reimport failed: ' + err.message, 'err');
+  }
 }
 
 async function openAttachmentFromDisk(storedPath) {
