@@ -681,7 +681,115 @@ async function reimportEmlBody(emailId) {
       truncFindMatches();
     }
 
-    toast(`Body loaded from ${sanitizedDomain}/${targetFilename} — pick truncation or Save Full`, 'ok');
+    // Re-process attachments — add any that are missing from the DB.
+    // Existing attachment records are left untouched to preserve metadata
+    // (transmittalRef, sourceParty, blacklist status, etc.).
+    let newAttCount = 0;
+    for (const att of parsed.attachments) {
+      const attId = `${emailId}::${att.filename}`;
+      const existing = await dbGet('attachments', attId);
+      if (!existing) {
+        const attRecord = {
+          id: attId,
+          emailId,
+          filename: att.filename,
+          contentType: att.contentType,
+          size: att.size,
+          hash: att.hash,
+          contentId: att.contentId || null,
+          transmittalRef: '',
+          sourceParty: '',
+          documentType: '',
+          storedPath: '',
+          isNested: false,
+          parentFilename: null,
+          importedAt: new Date().toISOString(),
+        };
+
+        // Inherit blacklist status from any existing attachment with the same hash
+        const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
+        if (existingForBlacklist.some(a => a.isBlacklisted)) {
+          attRecord.isBlacklisted = true;
+        }
+
+        if (attachmentDirHandle && att.rawData) {
+          try {
+            const savedPath = await saveAttachmentToDisk(att, email.fromAddr);
+            if (savedPath) attRecord.storedPath = savedPath;
+          } catch (e) { /* non-fatal */ }
+        }
+
+        await dbPut('attachments', attRecord);
+        if (att.rawData && isExtractableType(att.contentType, att.filename)) {
+          _extractAndStoreText(attId, att.rawData, att.contentType, att.filename).catch(() => {});
+        }
+        newAttCount++;
+      }
+
+      // Process nested attachments (embedded .eml files)
+      for (const nested of (att.nestedAttachments || [])) {
+        const nestedId = `${emailId}::${att.filename}::${nested.filename}`;
+        const existingNested = await dbGet('attachments', nestedId);
+        if (!existingNested) {
+          const nestedRecord = {
+            id: nestedId,
+            emailId,
+            filename: nested.filename,
+            contentType: nested.contentType,
+            size: nested.size,
+            hash: nested.hash,
+            contentId: nested.contentId || null,
+            transmittalRef: '',
+            sourceParty: '',
+            documentType: '',
+            storedPath: '',
+            isNested: true,
+            parentFilename: att.filename,
+            importedAt: new Date().toISOString(),
+          };
+
+          const existingNestedBL = await dbGetByIndex('attachments', 'hash', nested.hash);
+          if (existingNestedBL.some(a => a.isBlacklisted)) {
+            nestedRecord.isBlacklisted = true;
+          }
+
+          if (attachmentDirHandle && nested.rawData) {
+            try {
+              const savedPath = await saveAttachmentToDisk(nested, email.fromAddr);
+              if (savedPath) nestedRecord.storedPath = savedPath;
+            } catch (e) { /* non-fatal */ }
+          }
+
+          await dbPut('attachments', nestedRecord);
+          if (nested.rawData && isExtractableType(nested.contentType, nested.filename)) {
+            _extractAndStoreText(nestedId, nested.rawData, nested.contentType, nested.filename).catch(() => {});
+          }
+          newAttCount++;
+        }
+      }
+    }
+
+    // Update email's attachment count if new attachments were found
+    if (newAttCount > 0) {
+      const allAtts = await dbGetByIndex('attachments', 'emailId', emailId);
+      email.hasAttachments = allAtts.length > 0;
+      email.attachmentCount = allAtts.length;
+      if (idx >= 0) {
+        allEmails[idx].hasAttachments = email.hasAttachments;
+        allEmails[idx].attachmentCount = email.attachmentCount;
+      }
+      await dbPut('emails', email);
+
+      // Refresh detail panel if email is still open
+      if (selectedEmail?.id === emailId) {
+        selectedEmail.hasAttachments = email.hasAttachments;
+        selectedEmail.attachmentCount = email.attachmentCount;
+        openDetail(email);
+      }
+    }
+
+    const attMsg = newAttCount > 0 ? `, ${newAttCount} new attachment${newAttCount > 1 ? 's' : ''} added` : '';
+    toast(`Body loaded from ${sanitizedDomain}/${targetFilename}${attMsg} — pick truncation or Save Full`, 'ok');
   } catch (err) {
     toast('Reimport failed: ' + err.message, 'err');
   }
