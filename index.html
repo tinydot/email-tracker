@@ -159,13 +159,15 @@
 <div id="email-modal-overlay" onclick="handleModalOverlayClick(event)">
   <div id="detail-panel">
     <div class="detail-header">
-      <button class="modal-close" onclick="closeDetail()" title="Close (Esc)">×</button>
-      <div class="modal-nav">
-        <button class="modal-nav-btn" id="nav-prev" onclick="navigateEmail(-1)" title="Previous email (k)">‹</button>
-        <span class="modal-nav-counter" id="nav-counter"></span>
-        <button class="modal-nav-btn" id="nav-next" onclick="navigateEmail(1)" title="Next email (j)">›</button>
+      <div class="detail-header-top">
+        <div class="detail-subject" id="det-subject">—</div>
+        <div class="modal-nav">
+          <button class="modal-nav-btn" id="nav-prev" onclick="navigateEmail(-1)" title="Previous email (k)">‹</button>
+          <span class="modal-nav-counter" id="nav-counter"></span>
+          <button class="modal-nav-btn" id="nav-next" onclick="navigateEmail(1)" title="Next email (j)">›</button>
+        </div>
+        <button class="modal-close" onclick="closeDetail()" title="Close (Esc)">×</button>
       </div>
-      <div class="detail-subject" id="det-subject">—</div>
       <div class="detail-meta" id="det-meta"></div>
     </div>
     <div class="detail-actions" id="det-actions"></div>
