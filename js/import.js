@@ -598,56 +598,60 @@ async function findAttachmentByHash(hash) {
 //  EML REIMPORT (single email — retrieve full body)
 // ═══════════════════════════════════════════════════════
 
-async function reimportEmlBody(emailId) {
-  const email = allEmails.find(e => e.id === emailId);
-  if (!email) return;
-
-  // Reuse the already-selected EML archive folder if available; otherwise ask
+// Shared helper: resolve the File object for an email's archived EML.
+// Returns { file, sanitizedDomain, targetFilename } or null on failure.
+async function _resolveEmlFile(email) {
   let dirHandle = emlArchiveDirHandle;
   if (!dirHandle) {
     try {
       dirHandle = await window.showDirectoryPicker({ mode: 'read', startIn: 'documents' });
     } catch (err) {
       if (err.name !== 'AbortError') toast('Could not open folder: ' + err.message, 'err');
-      return;
+      return null;
     }
   }
 
+  const domain = (email.fromAddr || '').split('@')[1] || 'unknown';
+  const sanitizedDomain = domain.replace(/[^a-zA-Z0-9.-]/g, '_').replace(/^_+|_+$/g, '');
+
+  let domainFolder;
   try {
-    // Derive the same sanitised domain used by organizeEmlFile()
-    const domain = (email.fromAddr || '').split('@')[1] || 'unknown';
-    const sanitizedDomain = domain.replace(/[^a-zA-Z0-9.-]/g, '_').replace(/^_+|_+$/g, '');
+    domainFolder = await dirHandle.getDirectoryHandle(sanitizedDomain);
+  } catch {
+    toast(`Domain folder "${sanitizedDomain}" not found in selected folder`, 'err');
+    return null;
+  }
 
-    // Navigate into domain subfolder
-    let domainFolder;
-    try {
-      domainFolder = await dirHandle.getDirectoryHandle(sanitizedDomain);
-    } catch {
-      toast(`Domain folder "${sanitizedDomain}" not found in selected folder`, 'err');
-      return;
-    }
+  let targetFilename = email.fileName || '';
+  if (email.emlArchivePath) {
+    const parts = email.emlArchivePath.split('/');
+    targetFilename = parts[parts.length - 1] || targetFilename;
+  }
+  if (!targetFilename) {
+    toast('No filename stored for this email', 'err');
+    return null;
+  }
 
-    // Determine target filename: use emlArchivePath's filename part, fall back to fileName
-    let targetFilename = email.fileName || '';
-    if (email.emlArchivePath) {
-      const parts = email.emlArchivePath.split('/');
-      targetFilename = parts[parts.length - 1] || targetFilename;
-    }
-    if (!targetFilename) {
-      toast('No filename stored for this email', 'err');
-      return;
-    }
+  let fileHandle;
+  try {
+    fileHandle = await domainFolder.getFileHandle(targetFilename);
+  } catch {
+    toast(`File "${targetFilename}" not found in ${sanitizedDomain}/`, 'err');
+    return null;
+  }
 
-    // Get file handle from domain folder
-    let fileHandle;
-    try {
-      fileHandle = await domainFolder.getFileHandle(targetFilename);
-    } catch {
-      toast(`File "${targetFilename}" not found in ${sanitizedDomain}/`, 'err');
-      return;
-    }
+  return { file: await fileHandle.getFile(), sanitizedDomain, targetFilename };
+}
 
-    const file = await fileHandle.getFile();
+async function reimportEmlBody(emailId) {
+  const email = allEmails.find(e => e.id === emailId);
+  if (!email) return;
+
+  try {
+    const resolved = await _resolveEmlFile(email);
+    if (!resolved) return;
+    const { file, sanitizedDomain, targetFilename } = resolved;
+    const raw = await file.text();
     const raw = await file.text();
     const parsed = parseEML(raw);
     if (!parsed) {
@@ -679,6 +683,24 @@ async function reimportEmlBody(emailId) {
     toast(`Body loaded from ${sanitizedDomain}/${targetFilename} — pick truncation or Save Full`, 'ok');
   } catch (err) {
     toast('Reimport failed: ' + err.message, 'err');
+  }
+}
+
+async function openOriginalEml(emailId) {
+  const email = allEmails.find(e => e.id === emailId);
+  if (!email) return;
+  try {
+    const resolved = await _resolveEmlFile(email);
+    if (!resolved) return;
+    const { file, targetFilename } = resolved;
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = targetFilename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (err) {
+    toast('Could not open EML: ' + err.message, 'err');
   }
 }
 
