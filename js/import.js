@@ -594,6 +594,67 @@ async function findAttachmentByHash(hash) {
   }
 }
 
+// ═══════════════════════════════════════════════════════
+//  EML REIMPORT (single email — retrieve full body)
+// ═══════════════════════════════════════════════════════
+
+async function reimportEmlBody(emailId) {
+  const email = allEmails.find(e => e.id === emailId);
+  if (!email) return;
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.eml';
+
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const parsed = parseEML(raw);
+      if (!parsed) {
+        toast('Failed to parse EML file', 'err');
+        return;
+      }
+
+      // Update textBody (and fileName to reflect newly-picked file)
+      email.textBody = parsed.textBody;
+      email.fileName = file.name;
+      await dbPut('emails', email);
+
+      // Refresh in-memory allEmails
+      const idx = allEmails.findIndex(e => e.id === emailId);
+      if (idx >= 0) {
+        allEmails[idx].textBody = parsed.textBody;
+        allEmails[idx].fileName = file.name;
+      }
+
+      // Refresh body display if this email is still open
+      if (selectedEmail?.id === emailId) {
+        const bodyEl = document.getElementById('det-body-text');
+        if (bodyEl) bodyEl.textContent = parsed.textBody || '(no plain text body)';
+        // Reset truncation state so it rescans the new body
+        _truncMatches = [];
+        _truncCurrent = -1;
+        _truncOrigBody = null;
+        const status = document.getElementById('trunc-status');
+        if (status) status.textContent = '';
+        ['trunc-prev-btn','trunc-next-btn','trunc-save-btn','trunc-reset-btn'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+      }
+
+      toast('Email body updated from EML', 'ok');
+    } catch (err) {
+      toast('Reimport failed: ' + err.message, 'err');
+    }
+  };
+
+  input.click();
+}
+
 async function openAttachmentFromDisk(storedPath) {
   if (!storedPath) {
     toast('No file path stored for this attachment', 'err');
