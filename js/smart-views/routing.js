@@ -7,6 +7,7 @@ function showImport() { showPanel('import'); }
 
 function switchView(view) {
   currentView = view;
+  bulkTagBarExpanded = false;
   document.querySelector('.toolbar').style.display = '';
   document.querySelector('.email-list-header').style.display = '';
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {

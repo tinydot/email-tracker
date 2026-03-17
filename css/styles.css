@@ -366,8 +366,7 @@
   #email-list-panel.active { display: flex; }
 
   .email-list {
-    flex: 1;
-    overflow-y: auto;
+    min-height: 0;
   }
 
   .email-row {
@@ -734,9 +733,23 @@
     background: var(--surface2);
     border-bottom: 1px solid var(--border);
     font-size: 12px;
-    flex-shrink: 0;
     flex-wrap: wrap;
     min-height: 36px;
+  }
+
+  .tags-show-more {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .tags-show-more:hover {
+    background: var(--accent-dim);
   }
 
   .bulk-tag-label {
