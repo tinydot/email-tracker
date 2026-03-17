@@ -216,77 +216,84 @@ function openDetail(email) {
     dbGetByIndex('attachments', 'emailId', email.id).then(atts => {
       // Only update if the same email is still open
       if (!selectedEmail || selectedEmail.id !== emailIdAtLoad) return;
+
+      const ATTACH_THRESHOLD = 3;
+
+      const renderAttachItem = a => {
+        const hasFile = !!a.storedPath;
+        const action = hasFile
+          ? `onclick="openAttachmentFromDisk('${a.storedPath}')" title="Click to open"`
+          : 'title="File not stored on disk"';
+        const icon = hasFile ? '📎' : '📋';
+
+        const extractable = isExtractableType(a.contentType, a.filename);
+        let extractBtn = '';
+        let textPreview = '';
+        if (extractable) {
+          const status = a.extractionStatus;
+          if (!status || status === 'failed') {
+            const lbl = status === 'failed' ? '↺' : '⇩T';
+            extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:2px 6px; font-size:10px;" title="${status === 'failed' ? 'Retry extract' : 'Extract text'}">${lbl}</button>`;
+          } else if (status === 'done') {
+            if (a.extractedText) {
+              extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Toggle extracted text">T✓</button><button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
+              textPreview = `<div id="att-text-${a.id}" style="display:none; margin:2px 0 4px 0; padding:8px 10px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:300px; overflow-y:auto;">${escHtml(a.extractedText)}</div>`;
+            } else {
+              extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
+            }
+          }
+        }
+
+        return `
+          <div class="attach-item">
+            <div class="attach-chip" ${action} style="flex:1; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              ${icon} ${escHtml(a.filename)}<span class="attach-size" style="margin-left:6px;">${formatSize(a.size)}</span>${hasFile ? '<span style="color:var(--accent);margin-left:4px">●</span>' : ''}
+            </div>
+            ${extractBtn}
+            <button class="btn" onclick="editAttachmentMetadata('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Edit metadata">✏</button>
+          </div>
+          ${textPreview}
+          <div id="att-meta-${a.id}" style="display:none; padding:8px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin:2px 0 4px 0;">
+            <div style="display:grid; grid-template-columns:120px 1fr; gap:8px; font-size:12px;">
+              <label style="color:var(--muted); padding-top:4px;">Transmittal Ref:</label>
+              <input type="text" class="search-input" value="${escHtml(a.transmittalRef || '')}" onchange="updateAttachment('${a.id}', 'transmittalRef', this.value)" style="width:100%;" placeholder="e.g., T-2024-001">
+
+              <label style="color:var(--muted); padding-top:4px;">Source Party:</label>
+              <div style="display:flex; gap:4px;">
+                <input type="text" id="party-${a.id}" class="search-input" value="${escHtml(a.sourceParty || '')}" onchange="updateAttachment('${a.id}', 'sourceParty', this.value)" style="flex:1;" placeholder="e.g., RCY, CAG, LTA">
+                <button class="btn" onclick="autoFillParty('${a.id}', '${escHtml(email.fromAddr)}')" style="padding:2px 6px; font-size:10px;" title="Auto-suggest from sender">✨</button>
+              </div>
+
+              <label style="color:var(--muted); padding-top:4px;">Document Type:</label>
+              <select class="btn" onchange="updateAttachment('${a.id}', 'documentType', this.value)" style="width:100%;">
+                <option value="">—</option>
+                <option value="Drawing" ${a.documentType === 'Drawing' ? 'selected' : ''}>Drawing</option>
+                <option value="Specification" ${a.documentType === 'Specification' ? 'selected' : ''}>Specification</option>
+                <option value="Report" ${a.documentType === 'Report' ? 'selected' : ''}>Report</option>
+                <option value="Minutes" ${a.documentType === 'Minutes' ? 'selected' : ''}>Minutes</option>
+                <option value="RFI" ${a.documentType === 'RFI' ? 'selected' : ''}>RFI</option>
+                <option value="Submittal" ${a.documentType === 'Submittal' ? 'selected' : ''}>Submittal</option>
+                <option value="Certificate" ${a.documentType === 'Certificate' ? 'selected' : ''}>Certificate</option>
+                <option value="Other" ${a.documentType === 'Other' ? 'selected' : ''}>Other</option>
+              </select>
+
+              <label style="color:var(--muted); padding-top:4px;">Hash:</label>
+              <span style="font-family:var(--mono); font-size:10px; color:var(--muted); padding-top:4px;">${a.hash}</span>
+            </div>
+          </div>
+        `;
+      };
+
+      const visibleHtml = atts.slice(0, ATTACH_THRESHOLD).map(renderAttachItem).join('');
+      const overflowCount = atts.length - ATTACH_THRESHOLD;
+      const overflowHtml = overflowCount > 0
+        ? `<div class="attach-overflow" style="display:none;">${atts.slice(ATTACH_THRESHOLD).map(renderAttachItem).join('')}</div>
+           <button class="attach-show-more" onclick="toggleAttachMore(this)" data-more-label="+${overflowCount} more">+${overflowCount} more</button>`
+        : '';
+
       attPanel.innerHTML = `
         <div class="detail-attach-title">Attachments (${atts.length})</div>
-        <div style="margin-bottom: 12px;">
-          ${atts.map(a => {
-            const hasFile = !!a.storedPath;
-            const action = hasFile
-              ? `onclick="openAttachmentFromDisk('${a.storedPath}')" style="cursor:pointer" title="Click to open"`
-              : 'title="File not stored on disk"';
-            const icon = hasFile ? '📎' : '📋';
-
-            // Extract text button / status indicator
-            const extractable = isExtractableType(a.contentType, a.filename);
-            let extractBtn = '';
-            let textPreview = '';
-            if (extractable) {
-              const status = a.extractionStatus;
-              if (!status || status === 'failed') {
-                const lbl = status === 'failed' ? 'Retry Extract' : 'Extract Text';
-                extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Extract text for review / AI">${lbl}</button>`;
-              } else if (status === 'done') {
-                if (a.extractedText) {
-                  extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Toggle extracted text">Text ✓</button><button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Re-extract with current limit">↺</button>`;
-                  textPreview = `<div id="att-text-${a.id}" style="display:none; margin:-4px 0 8px 0; padding:10px 12px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:300px; overflow-y:auto;">${escHtml(a.extractedText)}</div>`;
-                } else {
-                  extractBtn = `<span style="font-size:11px; color:var(--muted); padding:4px 6px;">No text</span><button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:4px 8px; font-size:11px;" title="Re-extract with current limit">↺</button>`;
-                }
-              }
-            }
-
-            return `
-              <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px; background:var(--surface2);">
-                <div class="attach-chip" ${action} style="flex:1; margin:0;">
-                  ${icon} ${escHtml(a.filename)}
-                  <span class="attach-size">${formatSize(a.size)}</span>
-                  ${hasFile ? '<span style="color:var(--accent);margin-left:4px">●</span>' : ''}
-                </div>
-                ${extractBtn}
-                <button class="btn" onclick="editAttachmentMetadata('${a.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
-              </div>
-              ${textPreview}
-              <div id="att-meta-${a.id}" style="display:none; padding:8px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin:-4px 0 8px 0;">
-                <div style="display:grid; grid-template-columns:120px 1fr; gap:8px; font-size:12px;">
-                  <label style="color:var(--muted); padding-top:4px;">Transmittal Ref:</label>
-                  <input type="text" class="search-input" value="${escHtml(a.transmittalRef || '')}" onchange="updateAttachment('${a.id}', 'transmittalRef', this.value)" style="width:100%;" placeholder="e.g., T-2024-001">
-
-                  <label style="color:var(--muted); padding-top:4px;">Source Party:</label>
-                  <div style="display:flex; gap:4px;">
-                    <input type="text" id="party-${a.id}" class="search-input" value="${escHtml(a.sourceParty || '')}" onchange="updateAttachment('${a.id}', 'sourceParty', this.value)" style="flex:1;" placeholder="e.g., RCY, CAG, LTA">
-                    <button class="btn" onclick="autoFillParty('${a.id}', '${escHtml(email.fromAddr)}')" style="padding:4px 8px; font-size:11px;" title="Auto-suggest from sender">✨</button>
-                  </div>
-
-                  <label style="color:var(--muted); padding-top:4px;">Document Type:</label>
-                  <select class="btn" onchange="updateAttachment('${a.id}', 'documentType', this.value)" style="width:100%;">
-                    <option value="">—</option>
-                    <option value="Drawing" ${a.documentType === 'Drawing' ? 'selected' : ''}>Drawing</option>
-                    <option value="Specification" ${a.documentType === 'Specification' ? 'selected' : ''}>Specification</option>
-                    <option value="Report" ${a.documentType === 'Report' ? 'selected' : ''}>Report</option>
-                    <option value="Minutes" ${a.documentType === 'Minutes' ? 'selected' : ''}>Minutes</option>
-                    <option value="RFI" ${a.documentType === 'RFI' ? 'selected' : ''}>RFI</option>
-                    <option value="Submittal" ${a.documentType === 'Submittal' ? 'selected' : ''}>Submittal</option>
-                    <option value="Certificate" ${a.documentType === 'Certificate' ? 'selected' : ''}>Certificate</option>
-                    <option value="Other" ${a.documentType === 'Other' ? 'selected' : ''}>Other</option>
-                  </select>
-
-                  <label style="color:var(--muted); padding-top:4px;">Hash:</label>
-                  <span style="font-family:var(--mono); font-size:10px; color:var(--muted); padding-top:4px;">${a.hash}</span>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
+        <div class="attach-list">${visibleHtml}${overflowHtml}</div>
       `;
     });
   } else {
