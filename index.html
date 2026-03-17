@@ -135,7 +135,6 @@
           </select>
           <button class="btn btn-primary" onclick="showImport()">+ Import</button>
         </div>
-        <div id="bulk-tag-bar" style="display:none"></div>
         <div class="email-list-header">
           <div class="col-flag"></div>
           <div class="col-from">From</div>
@@ -144,7 +143,8 @@
           <div class="col-status">Status</div>
           <div class="col-attach">Attach</div>
         </div>
-        <div style="display:flex;flex:1;overflow:hidden;">
+        <div style="flex:1;overflow-y:auto;">
+          <div id="bulk-tag-bar" style="display:none"></div>
           <div class="email-list" id="email-list"></div>
         </div>
       </div>

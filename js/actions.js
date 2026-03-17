@@ -2,6 +2,8 @@
 //  EMAIL ACTIONS
 // ═══════════════════════════════════════════════════════
 
+let bulkTagBarExpanded = false;
+
 async function setStatus(id, status) {
   const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
   if (!email) return;
@@ -101,13 +103,25 @@ function refreshBulkTagBar() {
   }
   const uniqueTags = [...tagSet].sort();
 
-  const tagsHTML = uniqueTags.length > 0
-    ? uniqueTags.map(t => `
+  const TAGS_LIMIT = 5;
+  const visibleTags = bulkTagBarExpanded ? uniqueTags : uniqueTags.slice(0, TAGS_LIMIT);
+  const hiddenCount = uniqueTags.length - TAGS_LIMIT;
+
+  let tagsHTML;
+  if (uniqueTags.length === 0) {
+    tagsHTML = `<span style="color:var(--muted);font-size:11px;font-style:italic;">none</span>`;
+  } else {
+    tagsHTML = visibleTags.map(t => `
         <span class="bulk-view-tag-chip">
           #${escHtml(t)}
           <button class="chip-remove" onclick="bulkRemoveTagFromView('${escHtml(t)}')" title="Remove tag from all ${count} filtered email${count !== 1 ? 's' : ''}">×</button>
-        </span>`).join('')
-    : `<span style="color:var(--muted);font-size:11px;font-style:italic;">none</span>`;
+        </span>`).join('');
+    if (!bulkTagBarExpanded && hiddenCount > 0) {
+      tagsHTML += `<button class="tags-show-more" onclick="toggleBulkTagExpand()">+${hiddenCount} more</button>`;
+    } else if (bulkTagBarExpanded && uniqueTags.length > TAGS_LIMIT) {
+      tagsHTML += `<button class="tags-show-more" onclick="toggleBulkTagExpand()">show less</button>`;
+    }
+  }
 
   bar.innerHTML = `
     <span class="bulk-tag-label">Bulk tag ${count} email${count !== 1 ? 's' : ''}:</span>
@@ -121,6 +135,11 @@ function refreshBulkTagBar() {
     <span class="bulk-tag-label">Tags in view:</span>
     ${tagsHTML}
   `;
+}
+
+function toggleBulkTagExpand() {
+  bulkTagBarExpanded = !bulkTagBarExpanded;
+  refreshBulkTagBar();
 }
 
 async function bulkAddTagToView() {
