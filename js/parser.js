@@ -37,7 +37,9 @@ function parseEML(raw) {
       // Outlook often uses Content-Disposition: inline; filename="..." for real attachments.
       // Treat any part with a filename in Content-Disposition as an attachment,
       // regardless of whether the keyword is 'attachment' or 'inline'.
-      const cdIsAttachment = cd.toLowerCase().includes('attachment') || !!extractParam(cd, 'filename');
+      // Also treat inline images with a Content-ID (cid: references) as attachments.
+      const cdIsAttachment = cd.toLowerCase().includes('attachment') || !!extractParam(cd, 'filename')
+        || (!!r.headers['content-id'] && ct.startsWith('image/'));
       if (cdIsAttachment) {
         attachments.push(buildAttachment(r));
       } else if (ct.startsWith('text/plain') && !textBody) {
@@ -54,7 +56,8 @@ function parseEML(raw) {
             if (!sr) continue;
             const sct = (sr.headers['content-type'] || '').toLowerCase();
             const scd = sr.headers['content-disposition'] || '';
-            const scdIsAttachment = scd.toLowerCase().includes('attachment') || !!extractParam(scd, 'filename');
+            const scdIsAttachment = scd.toLowerCase().includes('attachment') || !!extractParam(scd, 'filename')
+              || (!!sr.headers['content-id'] && sct.startsWith('image/'));
             if (scdIsAttachment) {
               attachments.push(buildAttachment(sr));
             } else if (sct.startsWith('text/plain') && !textBody) {
@@ -71,7 +74,8 @@ function parseEML(raw) {
                   if (!ssr) continue;
                   const ssct = (ssr.headers['content-type'] || '').toLowerCase();
                   const sscd = ssr.headers['content-disposition'] || '';
-                  const sscdIsAttachment = sscd.toLowerCase().includes('attachment') || !!extractParam(sscd, 'filename');
+                  const sscdIsAttachment = sscd.toLowerCase().includes('attachment') || !!extractParam(sscd, 'filename')
+                    || (!!ssr.headers['content-id'] && ssct.startsWith('image/'));
                   if (sscdIsAttachment) {
                     attachments.push(buildAttachment(ssr));
                   } else if (ssct.startsWith('text/plain') && !textBody) {
@@ -271,14 +275,18 @@ function buildAttachment(part) {
   const size = rawData ? rawData.length : part.body.length;
   const hash = rawData ? hashUint8Array(rawData) : simpleHash(part.body.substring(0, 512));
   
-  const result = { 
-    filename, 
-    contentType: ct.split(';')[0].trim(), 
-    size, 
+  // Preserve Content-ID for inline/embedded images (cid: references in body)
+  const contentId = (part.headers['content-id'] || '').replace(/^<|>$/g, '').trim() || null;
+
+  const result = {
+    filename,
+    contentType: ct.split(';')[0].trim(),
+    size,
     hash,
     encoding: enc,
     rawData,
     isEmbeddedEmail,
+    contentId,
     nestedAttachments: [] // Will be populated if this is an embedded email
   };
   
