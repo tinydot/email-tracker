@@ -113,7 +113,7 @@ function renderSmartViewsSidebar() {
     return;
   }
   container.innerHTML = [...smartViews].sort((a, b) => a.name.localeCompare(b.name)).map(sv => {
-    const count   = allEmails.filter(e => applySmartViewRules(e, sv)).length;
+    const count   = allEmails.filter(e => applySmartViewRules(e, sv) && e.status === 'unread').length;
     const isActive = currentView === 'sv-' + sv.id;
     return `
       <button class="nav-item ${isActive ? 'active' : ''}" data-view="sv-${escHtml(sv.id)}"
