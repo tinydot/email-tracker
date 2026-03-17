@@ -220,12 +220,13 @@ function openDetail(email) {
 
       const ATTACH_THRESHOLD = 3;
 
-      const renderAttachItem = a => {
+      const renderAttachItem = (a, showingBlacklisted = false) => {
         const hasFile = !!a.storedPath;
         const action = hasFile
           ? `onclick="openAttachmentFromDisk('${a.storedPath}')" title="Click to open"`
           : 'title="File not stored on disk"';
         const icon = hasFile ? '📎' : '📋';
+        const blacklistBtn = `<button class="btn" onclick="toggleAttachmentBlacklist('${a.id}')" style="padding:2px 6px; font-size:10px; ${a.isBlacklisted ? 'color:var(--accent);' : 'color:var(--muted);'}" title="${a.isBlacklisted ? 'Unblacklist (show in list)' : 'Blacklist (hide from list)'}">${a.isBlacklisted ? '🚫' : '○'}</button>`;
 
         const extractable = isExtractableType(a.contentType, a.filename);
         let extractBtn = '';
@@ -252,6 +253,7 @@ function openDetail(email) {
             </div>
             ${extractBtn}
             <button class="btn" onclick="editAttachmentMetadata('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Edit metadata">✏</button>
+            ${blacklistBtn}
           </div>
           ${textPreview}
           <div id="att-meta-${a.id}" style="display:none; padding:8px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; margin:2px 0 4px 0;">
@@ -285,16 +287,30 @@ function openDetail(email) {
         `;
       };
 
-      const visibleHtml = atts.slice(0, ATTACH_THRESHOLD).map(renderAttachItem).join('');
-      const overflowCount = atts.length - ATTACH_THRESHOLD;
+      const visibleAtts = atts.filter(a => !a.isBlacklisted);
+      const blacklistedAtts = atts.filter(a => a.isBlacklisted);
+
+      const visibleHtml = visibleAtts.slice(0, ATTACH_THRESHOLD).map(a => renderAttachItem(a)).join('');
+      const overflowCount = visibleAtts.length - ATTACH_THRESHOLD;
       const overflowHtml = overflowCount > 0
-        ? `<div class="attach-overflow" style="display:none;">${atts.slice(ATTACH_THRESHOLD).map(renderAttachItem).join('')}</div>
+        ? `<div class="attach-overflow" style="display:none;">${visibleAtts.slice(ATTACH_THRESHOLD).map(a => renderAttachItem(a)).join('')}</div>
            <button class="attach-show-more" onclick="toggleAttachMore(this)" data-more-label="+${overflowCount} more">+${overflowCount} more</button>`
         : '';
 
+      const blacklistedHtml = blacklistedAtts.length > 0
+        ? `<div id="att-blacklisted-section" style="margin-top:4px;">
+             <button class="btn" onclick="toggleBlacklistedSection(this)" style="font-size:11px; color:var(--muted); padding:2px 6px;" data-expanded="false">
+               🚫 ${blacklistedAtts.length} hidden
+             </button>
+             <div id="att-blacklisted-items" style="display:none; margin-top:4px; opacity:0.6;">
+               ${blacklistedAtts.map(a => renderAttachItem(a, true)).join('')}
+             </div>
+           </div>`
+        : '';
+
       attPanel.innerHTML = `
-        <div class="detail-attach-title">Attachments (${atts.length})</div>
-        <div class="attach-list">${visibleHtml}${overflowHtml}</div>
+        <div class="detail-attach-title">Attachments (${visibleAtts.length}${blacklistedAtts.length > 0 ? `+${blacklistedAtts.length}` : ''})</div>
+        <div class="attach-list">${visibleHtml}${overflowHtml}${blacklistedHtml}</div>
       `;
     });
   } else {
@@ -601,6 +617,23 @@ function editAttachmentMetadata(attId) {
   }
 }
 
+async function toggleAttachmentBlacklist(attId) {
+  const att = await dbGet('attachments', attId);
+  if (!att) return;
+  att.isBlacklisted = !att.isBlacklisted;
+  await dbPut('attachments', att);
+  // Re-render the attachment panel for the current email
+  if (selectedEmail) openDetail(selectedEmail);
+}
+
+function toggleBlacklistedSection(btn) {
+  const expanded = btn.dataset.expanded === 'true';
+  const items = document.getElementById('att-blacklisted-items');
+  if (!items) return;
+  items.style.display = expanded ? 'none' : 'block';
+  btn.dataset.expanded = expanded ? 'false' : 'true';
+}
+
 async function updateAttachment(attId, field, value) {
   const att = await dbGet('attachments', attId);
   if (!att) return;
@@ -712,6 +745,10 @@ async function showTransmittalRegister() {
           <option value="stored">Stored Only</option>
           <option value="missing">Missing Only</option>
         </select>
+        <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted); cursor:pointer;" title="Show blacklisted (hidden) attachments">
+          <input type="checkbox" id="tx-show-blacklisted" onchange="filterTransmittalRegister()">
+          🚫 Blacklisted
+        </label>
         <button class="btn btn-primary" onclick="bulkAutoFillMetadata(false)" style="margin-left:auto;">✨ Auto-fill Empty</button>
         <button class="btn" onclick="bulkAutoFillMetadata(true)" title="Overwrite existing source parties">✨ Force Auto-fill All</button>
         <button class="btn" onclick="bulkExtractAttachmentText()" title="Extract text from all stored attachments that haven't been processed yet">📄 Extract Text</button>
@@ -721,11 +758,12 @@ async function showTransmittalRegister() {
     </div>
   `;
   
-  // Store rows for filtering
-  window._txRows = rows;
-  
+  // Store rows for filtering (exclude blacklisted by default)
+  window._txAllRows = rows;
+  window._txRows = rows.filter(r => !r.isBlacklisted);
+
   // Render initial table
-  renderTransmittalTable(rows);
+  renderTransmittalTable(window._txRows);
 }
 
 function filterTransmittalRegister() {
@@ -733,27 +771,22 @@ function filterTransmittalRegister() {
   const party = document.getElementById('tx-party').value;
   const type = document.getElementById('tx-type').value;
   const stored = document.getElementById('tx-stored').value;
-  
-  let filtered = window._txRows.filter(r => {
-    // Search filter
+  const showBlacklisted = document.getElementById('tx-show-blacklisted')?.checked;
+
+  const source = showBlacklisted ? window._txAllRows : (window._txAllRows || window._txRows).filter(r => !r.isBlacklisted);
+
+  let filtered = source.filter(r => {
     if (search && !(
       (r.filename || '').toLowerCase().includes(search) ||
       (r.transmittalRef || '').toLowerCase().includes(search)
     )) return false;
-    
-    // Party filter
     if (party && r.sourceParty !== party) return false;
-    
-    // Type filter
     if (type && r.documentType !== type) return false;
-    
-    // Stored filter
     if (stored === 'stored' && !r.storedPath) return false;
     if (stored === 'missing' && r.storedPath) return false;
-    
     return true;
   });
-  
+
   renderTransmittalTable(filtered);
 }
 
@@ -788,9 +821,10 @@ function renderTransmittalTable(rows) {
           const from = r.email?.fromName || r.email?.fromAddr || '—';
           
           return `
-            <tr style="border-bottom:1px solid var(--border); height:38px;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+            <tr style="border-bottom:1px solid var(--border); height:38px;${r.isBlacklisted ? ' opacity:0.45;' : ''}" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
               <td style="padding:8px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                 <span ${fileAction} title="${escHtml(r.filename)}" style="display:flex; align-items:center; gap:4px;">
+                  ${r.isBlacklisted ? '<span title="Blacklisted">🚫</span>' : ''}
                   ${r.isNested ? '<span style="color:var(--muted);margin-right:8px;">↳</span>' : ''}
                   ${fileIcon} ${escHtml(truncate(r.filename, r.isNested ? 35 : 40))}
                   ${r.isNested ? `<span style="color:var(--muted);font-size:10px;margin-left:4px;" title="From: ${escHtml(r.parentFilename)}">(nested)</span>` : ''}

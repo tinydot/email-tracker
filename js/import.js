@@ -419,6 +419,12 @@ async function processFilesForImport(fileArr) {
           importedAt: new Date().toISOString(),
         };
 
+        // Inherit blacklist status from any existing attachment with the same hash
+        const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
+        if (existingForBlacklist.some(a => a.isBlacklisted)) {
+          attRecord.isBlacklisted = true;
+        }
+
         // Save attachment to disk if storage is available
         if (attachmentDirHandle && att.rawData) {
           try {
@@ -458,6 +464,12 @@ async function processFilesForImport(fileArr) {
               importedAt: new Date().toISOString(),
             };
             
+            // Inherit blacklist status from any existing attachment with the same hash
+            const existingNested = await dbGetByIndex('attachments', 'hash', nested.hash);
+            if (existingNested.some(a => a.isBlacklisted)) {
+              nestedRecord.isBlacklisted = true;
+            }
+
             // Save nested attachment to disk
             if (attachmentDirHandle && nested.rawData) {
               try {
@@ -469,7 +481,7 @@ async function processFilesForImport(fileArr) {
                 appendLog(`  ⚠ Failed to save nested ${nested.filename}: ${err.message}`, 'warn');
               }
             }
-            
+
             await dbPut('attachments', nestedRecord);
 
             // Extract text in the background (non-blocking)
