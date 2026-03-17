@@ -394,6 +394,43 @@ function cleanMsgId(str) {
 // Custom quote/thread-marker patterns loaded from settings (compiled RegExp[])
 let customQuotePatterns = [];
 
+// Returns all line indices where a truncation pattern matches (not just the first).
+// Each entry: { lineIndex, snippet } where snippet is the trimmed matching line.
+function findTruncationMatches(text) {
+  const lines = text.split('\n');
+  const matches = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    const isMatch =
+      /^On .+ wrote:$/i.test(trimmed) ||
+      /^-{3,}\s*Original Message\s*-{3,}/i.test(trimmed) ||
+      /^_{3,}\s*Original Message\s*_{3,}/i.test(trimmed) ||
+      /^From:.*Sent:.*To:/s.test(text.substring(text.indexOf(line))) ||
+      (/^From:/i.test(trimmed) && lines[i+1] && /^Sent:/i.test(lines[i+1].trim())) ||
+      /^={3,}$/i.test(trimmed) ||
+      /^-{5,}$/i.test(trimmed) ||
+      /^Begin forwarded message:/i.test(trimmed) ||
+      /^-{3,}\s*Forwarded message\s*-{3,}/i.test(trimmed) ||
+      /^发件人:|^寄件者:/i.test(trimmed) ||
+      (/^When:/i.test(trimmed) && /^Where:/i.test(lines[i+1]?.trim() || '')) ||
+      customQuotePatterns.some(re => re.test(trimmed));
+
+    if (isMatch) {
+      matches.push({ lineIndex: i, snippet: trimmed.slice(0, 80) });
+    }
+  }
+
+  return matches;
+}
+
+// Truncate text at a specific line index (returned by findTruncationMatches).
+function truncateAtLine(text, lineIndex) {
+  return text.split('\n').slice(0, lineIndex).join('\n').trim();
+}
+
 function stripQuotedText(text) {
   // Remove lines starting with > (quoted), and common quote headers
   const lines = text.split('\n');

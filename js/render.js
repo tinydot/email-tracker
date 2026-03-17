@@ -131,7 +131,116 @@ function selectEmail(id) {
   }
 }
 
+// ── Truncation controls state ────────────────────────────
+let _truncMatches = [];     // [{lineIndex, snippet}]
+let _truncCurrent = -1;     // which match is previewed (-1 = none)
+let _truncOrigBody = null;  // original textBody before any preview
+
+function truncFindMatches() {
+  const email = selectedEmail;
+  if (!email) return;
+  _truncOrigBody = email.textBody || '';
+  _truncMatches = findTruncationMatches(_truncOrigBody);
+  _truncCurrent = -1;
+
+  const status = document.getElementById('trunc-status');
+  const prevBtn = document.getElementById('trunc-prev-btn');
+  const nextBtn = document.getElementById('trunc-next-btn');
+  const saveBtn = document.getElementById('trunc-save-btn');
+  const resetBtn = document.getElementById('trunc-reset-btn');
+
+  if (!_truncMatches.length) {
+    status.textContent = 'No truncation points found';
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+    saveBtn.style.display = 'none';
+    resetBtn.style.display = 'none';
+    return;
+  }
+
+  // Auto-select first match for preview
+  _truncCurrent = 0;
+  truncUpdatePreview();
+}
+
+function truncNav(dir) {
+  if (!_truncMatches.length) return;
+  _truncCurrent = Math.max(0, Math.min(_truncMatches.length - 1, _truncCurrent + dir));
+  truncUpdatePreview();
+}
+
+function truncUpdatePreview() {
+  const match = _truncMatches[_truncCurrent];
+  const bodyEl = document.getElementById('det-body-text');
+  const status = document.getElementById('trunc-status');
+  const prevBtn = document.getElementById('trunc-prev-btn');
+  const nextBtn = document.getElementById('trunc-next-btn');
+  const saveBtn = document.getElementById('trunc-save-btn');
+  const resetBtn = document.getElementById('trunc-reset-btn');
+  if (!bodyEl || !match) return;
+
+  const truncated = truncateAtLine(_truncOrigBody, match.lineIndex);
+  bodyEl.textContent = truncated || '(empty after truncation)';
+  const lines = (_truncOrigBody || '').split('\n');
+  const removedLines = lines.length - match.lineIndex;
+  status.textContent = `Match ${_truncCurrent + 1}/${_truncMatches.length} · "${match.snippet.slice(0,40)}${match.snippet.length>40?'…':''}" · removes ${removedLines} line${removedLines!==1?'s':''}`;
+  prevBtn.style.display = _truncCurrent > 0 ? '' : 'none';
+  nextBtn.style.display = _truncCurrent < _truncMatches.length - 1 ? '' : 'none';
+  saveBtn.style.display = '';
+  resetBtn.style.display = '';
+}
+
+async function truncSave() {
+  const email = selectedEmail;
+  if (!email || _truncCurrent < 0 || !_truncMatches.length) return;
+  const match = _truncMatches[_truncCurrent];
+  const truncated = truncateAtLine(_truncOrigBody, match.lineIndex);
+  email.textBody = truncated;
+  await dbPut('emails', email);
+  // Update allEmails in-place
+  const idx = allEmails.findIndex(e => e.id === email.id);
+  if (idx >= 0) allEmails[idx].textBody = truncated;
+  _truncOrigBody = truncated;
+  _truncMatches = [];
+  _truncCurrent = -1;
+  // Reset controls
+  const status = document.getElementById('trunc-status');
+  const prevBtn = document.getElementById('trunc-prev-btn');
+  const nextBtn = document.getElementById('trunc-next-btn');
+  const saveBtn = document.getElementById('trunc-save-btn');
+  const resetBtn = document.getElementById('trunc-reset-btn');
+  if (status) status.textContent = 'Saved';
+  if (prevBtn) prevBtn.style.display = 'none';
+  if (nextBtn) nextBtn.style.display = 'none';
+  if (saveBtn) saveBtn.style.display = 'none';
+  if (resetBtn) resetBtn.style.display = 'none';
+  toast('Body truncated and saved');
+}
+
+function truncReset() {
+  const bodyEl = document.getElementById('det-body-text');
+  if (bodyEl && _truncOrigBody !== null) bodyEl.textContent = _truncOrigBody;
+  _truncMatches = [];
+  _truncCurrent = -1;
+  const status = document.getElementById('trunc-status');
+  const prevBtn = document.getElementById('trunc-prev-btn');
+  const nextBtn = document.getElementById('trunc-next-btn');
+  const saveBtn = document.getElementById('trunc-save-btn');
+  const resetBtn = document.getElementById('trunc-reset-btn');
+  if (status) status.textContent = '';
+  if (prevBtn) prevBtn.style.display = 'none';
+  if (nextBtn) nextBtn.style.display = 'none';
+  if (saveBtn) saveBtn.style.display = 'none';
+  if (resetBtn) resetBtn.style.display = 'none';
+}
+// ── End truncation controls ──────────────────────────────
+
 function openDetail(email) {
+  // Reset truncation state for new email
+  _truncMatches = [];
+  _truncCurrent = -1;
+  _truncOrigBody = null;
+
   document.getElementById('email-modal-overlay').classList.add('open');
   document.getElementById('email-modal-overlay').scrollTop = 0;
   updateModalNavButtons();
@@ -205,8 +314,25 @@ function openDetail(email) {
   labelEl.className = 'detail-body-label';
   labelEl.textContent = 'Email Body';
   bodyEl.appendChild(labelEl);
-  const bodyText = document.createTextNode(email.textBody || '(no plain text body)');
-  bodyEl.appendChild(bodyText);
+
+  // Truncation controls
+  const truncCtrl = document.createElement('div');
+  truncCtrl.id = 'trunc-controls';
+  truncCtrl.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 8px 0;font-size:11px;';
+  truncCtrl.innerHTML = `
+    <button class="btn" id="trunc-find-btn" onclick="truncFindMatches()" style="padding:2px 8px;font-size:11px;" title="Scan body for reply/quote markers and show truncation options">✂ Truncation</button>
+    <span id="trunc-status" style="color:var(--muted);"></span>
+    <button class="btn" id="trunc-prev-btn" onclick="truncNav(-1)" style="display:none;padding:2px 6px;font-size:11px;">◀</button>
+    <button class="btn" id="trunc-next-btn" onclick="truncNav(1)" style="display:none;padding:2px 6px;font-size:11px;">▶</button>
+    <button class="btn" id="trunc-save-btn" onclick="truncSave()" style="display:none;padding:2px 8px;font-size:11px;color:var(--accent);" title="Save truncated body to this email">Save</button>
+    <button class="btn" id="trunc-reset-btn" onclick="truncReset()" style="display:none;padding:2px 6px;font-size:11px;" title="Reset to original body">Reset</button>
+  `;
+  bodyEl.appendChild(truncCtrl);
+
+  const bodyTextEl = document.createElement('div');
+  bodyTextEl.id = 'det-body-text';
+  bodyTextEl.textContent = email.textBody || '(no plain text body)';
+  bodyEl.appendChild(bodyTextEl);
 
   // Attachments — show placeholder immediately, load in background
   const attPanel = document.getElementById('det-attachments');
