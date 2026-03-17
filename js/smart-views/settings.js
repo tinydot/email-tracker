@@ -313,6 +313,13 @@ function showSettings() {
           Built-in patterns are shown in gray. Add custom patterns as plain text (substring match) or <code>/regex/</code>.
         </div>
         ${renderQuotePatternSection()}
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+          <div style="color:var(--muted); font-size:12px; margin-bottom:8px;">
+            Re-run truncation on all existing emails in the library using the current patterns above.
+            Only emails whose body contains a matching pattern will be updated.
+          </div>
+          <button id="btn-rerun-truncation" class="btn" onclick="rerunTruncation()">Re-run truncation</button>
+        </div>
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
@@ -485,5 +492,27 @@ async function normalizeLineBreaks() {
 
   if (btn) { btn.disabled = false; btn.textContent = 'Normalize line breaks'; }
   toast(fixed ? `Fixed ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed fixing', fixed ? 'ok' : '');
+  if (fixed) { await loadEmailList(); applyFilters(); }
+}
+
+async function rerunTruncation() {
+  const btn = document.getElementById('btn-rerun-truncation');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+
+  const emails = await dbGetAll('emails');
+  let fixed = 0;
+
+  for (const email of emails) {
+    if (!email.textBody) continue;
+    const matches = findTruncationMatches(email.textBody);
+    if (matches.length) {
+      email.textBody = truncateAtLine(email.textBody, matches[0].lineIndex);
+      await dbPut('emails', email);
+      fixed++;
+    }
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Re-run truncation'; }
+  toast(fixed ? `Truncated ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed truncation', fixed ? 'ok' : '');
   if (fixed) { await loadEmailList(); applyFilters(); }
 }
