@@ -684,10 +684,25 @@ async function reimportEmlBody(emailId) {
     // Re-process attachments — add any that are missing from the DB.
     // Existing attachment records are left untouched to preserve metadata
     // (transmittalRef, sourceParty, blacklist status, etc.).
+
+    // If there are attachments to save but no folder is connected, prompt for one now.
+    // (We're still inside a user-gesture call chain so showDirectoryPicker is allowed.)
+    const hasRawData = parsed.attachments.some(a => a.rawData ||
+      (a.nestedAttachments || []).some(n => n.rawData));
+    if (!attachmentDirHandle && hasRawData && 'showDirectoryPicker' in window) {
+      const pick = confirm(
+        'This email has attachments to save.\n\n' +
+        'Select the attachment storage folder to save them to disk,\n' +
+        'or Cancel to record metadata only.'
+      );
+      if (pick) await setupAttachmentStorage();
+    }
+
     let newAttCount = 0;
     for (const att of parsed.attachments) {
       const attId = `${emailId}::${att.filename}`;
       const existing = await dbGet('attachments', attId);
+
       if (!existing) {
         const attRecord = {
           id: attId,
@@ -706,11 +721,8 @@ async function reimportEmlBody(emailId) {
           importedAt: new Date().toISOString(),
         };
 
-        // Inherit blacklist status from any existing attachment with the same hash
         const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
-        if (existingForBlacklist.some(a => a.isBlacklisted)) {
-          attRecord.isBlacklisted = true;
-        }
+        if (existingForBlacklist.some(a => a.isBlacklisted)) attRecord.isBlacklisted = true;
 
         if (attachmentDirHandle && att.rawData) {
           try {
@@ -724,12 +736,23 @@ async function reimportEmlBody(emailId) {
           _extractAndStoreText(attId, att.rawData, att.contentType, att.filename).catch(() => {});
         }
         newAttCount++;
+      } else if (!existing.storedPath && attachmentDirHandle && att.rawData) {
+        // Record exists but file was never saved — save it now and patch storedPath
+        try {
+          const savedPath = await saveAttachmentToDisk(att, email.fromAddr);
+          if (savedPath) {
+            existing.storedPath = savedPath;
+            await dbPut('attachments', existing);
+            newAttCount++;
+          }
+        } catch (e) { /* non-fatal */ }
       }
 
       // Process nested attachments (embedded .eml files)
       for (const nested of (att.nestedAttachments || [])) {
         const nestedId = `${emailId}::${att.filename}::${nested.filename}`;
         const existingNested = await dbGet('attachments', nestedId);
+
         if (!existingNested) {
           const nestedRecord = {
             id: nestedId,
@@ -749,9 +772,7 @@ async function reimportEmlBody(emailId) {
           };
 
           const existingNestedBL = await dbGetByIndex('attachments', 'hash', nested.hash);
-          if (existingNestedBL.some(a => a.isBlacklisted)) {
-            nestedRecord.isBlacklisted = true;
-          }
+          if (existingNestedBL.some(a => a.isBlacklisted)) nestedRecord.isBlacklisted = true;
 
           if (attachmentDirHandle && nested.rawData) {
             try {
@@ -765,6 +786,16 @@ async function reimportEmlBody(emailId) {
             _extractAndStoreText(nestedId, nested.rawData, nested.contentType, nested.filename).catch(() => {});
           }
           newAttCount++;
+        } else if (!existingNested.storedPath && attachmentDirHandle && nested.rawData) {
+          // Patch missing storedPath for already-recorded nested attachment
+          try {
+            const savedPath = await saveAttachmentToDisk(nested, email.fromAddr);
+            if (savedPath) {
+              existingNested.storedPath = savedPath;
+              await dbPut('attachments', existingNested);
+              newAttCount++;
+            }
+          } catch (e) { /* non-fatal */ }
         }
       }
     }
@@ -788,7 +819,7 @@ async function reimportEmlBody(emailId) {
       }
     }
 
-    const attMsg = newAttCount > 0 ? `, ${newAttCount} new attachment${newAttCount > 1 ? 's' : ''} added` : '';
+    const attMsg = newAttCount > 0 ? `, ${newAttCount} attachment${newAttCount > 1 ? 's' : ''} saved` : '';
     toast(`Body loaded from ${sanitizedDomain}/${targetFilename}${attMsg} — pick truncation or Save Full`, 'ok');
   } catch (err) {
     toast('Reimport failed: ' + err.message, 'err');
