@@ -794,3 +794,10 @@ function toggleAttachText(attId) {
   const el = document.getElementById(`att-text-${attId}`);
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
+
+function toggleAttachMore(btn) {
+  const overflow = btn.closest('.attach-list').querySelector('.attach-overflow');
+  const expanded = overflow.style.display !== 'none';
+  overflow.style.display = expanded ? 'none' : '';
+  btn.textContent = expanded ? btn.dataset.moreLabel : 'show less';
+}
