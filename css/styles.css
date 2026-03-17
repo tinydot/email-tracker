@@ -458,21 +458,25 @@
   }
 
   .detail-header {
-    position: relative;
-    padding: 20px 52px 16px 24px;
+    padding: 14px 14px 16px 24px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     border-radius: 8px 8px 0 0;
     flex-shrink: 0;
   }
 
+  .detail-header-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
   .modal-nav {
-    position: absolute;
-    top: 14px;
-    right: 50px;
     display: flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
   }
 
   .modal-nav-btn {
@@ -509,9 +513,7 @@
   }
 
   .modal-close {
-    position: absolute;
-    top: 14px;
-    right: 14px;
+    flex-shrink: 0;
     background: none;
     border: 1px solid var(--border2);
     border-radius: 4px;
@@ -534,10 +536,12 @@
   }
 
   .detail-subject {
+    flex: 1;
+    min-width: 0;
     font-size: 15px;
     font-weight: 600;
-    margin-bottom: 10px;
     line-height: 1.4;
+    word-break: break-word;
   }
 
   .detail-meta {
