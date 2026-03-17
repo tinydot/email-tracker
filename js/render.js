@@ -397,12 +397,26 @@ async function linkEmailToIssue(emailId) {
   const openIssues = issues.filter(i => i.status !== 'resolved');
   
   if (openIssues.length === 0) {
-    const create = confirm('No open issues found. Create new issue?');
-    if (create) {
-      await createNewIssue();
-      // After creating, try linking again
-      setTimeout(() => linkEmailToIssue(emailId), 500);
+    const title = prompt('No open issues found. Enter a title to create one (or cancel):');
+    if (!title || !title.trim()) return;
+    const newIssue = {
+      id: 'issue-' + Date.now(),
+      title: title.trim(),
+      status: 'open',
+      createdDate: new Date().toISOString(),
+      resolvedDate: null,
+      linkedEmails: [emailId]
+    };
+    await dbPut('issues', newIssue);
+    const email = await dbGet('emails', emailId);
+    if (!email.linkedIssues) email.linkedIssues = [];
+    if (!email.linkedIssues.includes(newIssue.id)) {
+      email.linkedIssues.push(newIssue.id);
+      await dbPut('emails', email);
     }
+    toast('Issue created and email linked', 'ok');
+    updateNavCounts();
+    selectEmail(emailId);
     return;
   }
   
@@ -417,8 +431,31 @@ async function linkEmailToIssue(emailId) {
   
   const num = parseInt(selection);
   if (num === 0) {
-    await createNewIssue();
-    setTimeout(() => linkEmailToIssue(emailId), 500);
+    const title = prompt('New issue title:');
+    if (!title || !title.trim()) return;
+    const newIssue = {
+      id: 'issue-' + Date.now(),
+      title: title.trim(),
+      status: 'open',
+      createdDate: new Date().toISOString(),
+      resolvedDate: null,
+      linkedEmails: []
+    };
+    await dbPut('issues', newIssue);
+    toast('Issue created', 'ok');
+    updateNavCounts();
+    openIssues.push(newIssue);
+    // Fall through to link using the newly created issue
+    const email = await dbGet('emails', emailId);
+    if (!email.linkedIssues) email.linkedIssues = [];
+    if (!email.linkedIssues.includes(newIssue.id)) {
+      email.linkedIssues.push(newIssue.id);
+      await dbPut('emails', email);
+    }
+    newIssue.linkedEmails.push(emailId);
+    await dbPut('issues', newIssue);
+    toast('Email linked to new issue', 'ok');
+    selectEmail(emailId);
     return;
   }
   
