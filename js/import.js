@@ -655,29 +655,28 @@ async function reimportEmlBody(emailId) {
       return;
     }
 
-    // Update textBody on record
+    // Update textBody in-memory only — do NOT save to DB yet.
+    // The user will choose how much to keep via the truncation controls,
+    // then confirm with "Save Truncated" or "Save Full".
     email.textBody = parsed.textBody;
-    await dbPut('emails', email);
-
     const idx = allEmails.findIndex(e => e.id === emailId);
     if (idx >= 0) allEmails[idx].textBody = parsed.textBody;
 
-    // Refresh body display if still open
+    // Load into truncation UI if this email is still open
     if (selectedEmail?.id === emailId) {
       const bodyEl = document.getElementById('det-body-text');
       if (bodyEl) bodyEl.textContent = parsed.textBody || '(no plain text body)';
-      _truncMatches = [];
-      _truncCurrent = -1;
-      _truncOrigBody = null;
-      const status = document.getElementById('trunc-status');
-      if (status) status.textContent = '';
-      ['trunc-prev-btn','trunc-next-btn','trunc-save-btn','trunc-reset-btn'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = 'none';
-      });
+
+      // Show Save Full button so user can bypass truncation if they want the whole body
+      const saveFullBtn = document.getElementById('trunc-save-full-btn');
+      if (saveFullBtn) saveFullBtn.style.display = '';
+
+      // Auto-scan for truncation points and populate the controls
+      // (truncFindMatches reads selectedEmail.textBody, which we just updated above)
+      truncFindMatches();
     }
 
-    toast(`Reimported from ${sanitizedDomain}/${targetFilename}`, 'ok');
+    toast(`Body loaded from ${sanitizedDomain}/${targetFilename} — pick truncation or Save Full`, 'ok');
   } catch (err) {
     toast('Reimport failed: ' + err.message, 'err');
   }

@@ -209,12 +209,38 @@ async function truncSave() {
   const nextBtn = document.getElementById('trunc-next-btn');
   const saveBtn = document.getElementById('trunc-save-btn');
   const resetBtn = document.getElementById('trunc-reset-btn');
+  const saveFullBtn = document.getElementById('trunc-save-full-btn');
   if (status) status.textContent = 'Saved';
   if (prevBtn) prevBtn.style.display = 'none';
   if (nextBtn) nextBtn.style.display = 'none';
   if (saveBtn) saveBtn.style.display = 'none';
   if (resetBtn) resetBtn.style.display = 'none';
+  if (saveFullBtn) saveFullBtn.style.display = 'none';
   toast('Body truncated and saved');
+}
+
+async function truncSaveFull() {
+  const email = selectedEmail;
+  if (!email || _truncOrigBody === null) return;
+  email.textBody = _truncOrigBody;
+  await dbPut('emails', email);
+  const idx = allEmails.findIndex(e => e.id === email.id);
+  if (idx >= 0) allEmails[idx].textBody = _truncOrigBody;
+  _truncMatches = [];
+  _truncCurrent = -1;
+  const status = document.getElementById('trunc-status');
+  const prevBtn = document.getElementById('trunc-prev-btn');
+  const nextBtn = document.getElementById('trunc-next-btn');
+  const saveBtn = document.getElementById('trunc-save-btn');
+  const resetBtn = document.getElementById('trunc-reset-btn');
+  const saveFullBtn = document.getElementById('trunc-save-full-btn');
+  if (status) status.textContent = 'Saved';
+  if (prevBtn) prevBtn.style.display = 'none';
+  if (nextBtn) nextBtn.style.display = 'none';
+  if (saveBtn) saveBtn.style.display = 'none';
+  if (resetBtn) resetBtn.style.display = 'none';
+  if (saveFullBtn) saveFullBtn.style.display = 'none';
+  toast('Full body saved');
 }
 
 function truncReset() {
@@ -227,11 +253,13 @@ function truncReset() {
   const nextBtn = document.getElementById('trunc-next-btn');
   const saveBtn = document.getElementById('trunc-save-btn');
   const resetBtn = document.getElementById('trunc-reset-btn');
+  const saveFullBtn = document.getElementById('trunc-save-full-btn');
   if (status) status.textContent = '';
   if (prevBtn) prevBtn.style.display = 'none';
   if (nextBtn) nextBtn.style.display = 'none';
   if (saveBtn) saveBtn.style.display = 'none';
   if (resetBtn) resetBtn.style.display = 'none';
+  if (saveFullBtn) saveFullBtn.style.display = 'none';
 }
 // ── End truncation controls ──────────────────────────────
 
@@ -325,7 +353,8 @@ function openDetail(email) {
     <span id="trunc-status" style="color:var(--muted);"></span>
     <button class="btn" id="trunc-prev-btn" onclick="truncNav(-1)" style="display:none;padding:2px 6px;font-size:11px;">◀</button>
     <button class="btn" id="trunc-next-btn" onclick="truncNav(1)" style="display:none;padding:2px 6px;font-size:11px;">▶</button>
-    <button class="btn" id="trunc-save-btn" onclick="truncSave()" style="display:none;padding:2px 8px;font-size:11px;color:var(--accent);" title="Save truncated body to this email">Save</button>
+    <button class="btn" id="trunc-save-btn" onclick="truncSave()" style="display:none;padding:2px 8px;font-size:11px;color:var(--accent);" title="Save body truncated at this point">Save Truncated</button>
+    <button class="btn" id="trunc-save-full-btn" onclick="truncSaveFull()" style="display:none;padding:2px 8px;font-size:11px;" title="Save full reimported body without any truncation">Save Full</button>
     <button class="btn" id="trunc-reset-btn" onclick="truncReset()" style="display:none;padding:2px 6px;font-size:11px;" title="Reset to original body">Reset</button>
   `;
   bodyEl.appendChild(truncCtrl);
