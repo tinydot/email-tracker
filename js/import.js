@@ -658,17 +658,18 @@ async function reimportEmlBody(emailId) {
       return;
     }
 
-    // Update textBody in-memory only — do NOT save to DB yet.
+    // Use the raw (pre-strip) body so truncation controls can find quote markers.
     // The user will choose how much to keep via the truncation controls,
     // then confirm with "Save Truncated" or "Save Full".
-    email.textBody = parsed.textBody;
+    const bodyForTrunc = parsed.rawTextBody || parsed.textBody;
+    email.textBody = bodyForTrunc;
     const idx = allEmails.findIndex(e => e.id === emailId);
-    if (idx >= 0) allEmails[idx].textBody = parsed.textBody;
+    if (idx >= 0) allEmails[idx].textBody = bodyForTrunc;
 
     // Load into truncation UI if this email is still open
     if (selectedEmail?.id === emailId) {
       const bodyEl = document.getElementById('det-body-text');
-      if (bodyEl) bodyEl.textContent = parsed.textBody || '(no plain text body)';
+      if (bodyEl) bodyEl.textContent = bodyForTrunc || '(no plain text body)';
 
       // Show Save Full button so user can bypass truncation if they want the whole body
       const saveFullBtn = document.getElementById('trunc-save-full-btn');

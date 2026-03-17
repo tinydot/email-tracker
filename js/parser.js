@@ -144,6 +144,7 @@ function parseEML(raw) {
     cc,
     date,
     textBody:    cleanText,
+    rawTextBody: textBody,
     htmlBody:    htmlBody ? '[HTML available]' : '',
     attachments,
     rawHeaders:  headers,
