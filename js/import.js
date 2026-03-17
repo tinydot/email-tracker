@@ -652,7 +652,6 @@ async function reimportEmlBody(emailId) {
     if (!resolved) return;
     const { file, sanitizedDomain, targetFilename } = resolved;
     const raw = await file.text();
-    const raw = await file.text();
     const parsed = parseEML(raw);
     if (!parsed) {
       toast('Failed to parse EML file', 'err');
