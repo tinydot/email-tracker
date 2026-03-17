@@ -8,6 +8,7 @@ async function init() {
 
   // Load custom patterns, smart views, email groups, auto-tag rules, and AI prompts before processing emails
   await loadCustomPatterns();
+  await loadCustomQuotePatterns();
   await loadEmailGroups();
   await loadAutoTagRules();
   await loadAiPrompts();

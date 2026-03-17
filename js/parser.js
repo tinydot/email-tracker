@@ -391,6 +391,9 @@ function cleanMsgId(str) {
   return m ? m[1] : str.trim();
 }
 
+// Custom quote/thread-marker patterns loaded from settings (compiled RegExp[])
+let customQuotePatterns = [];
+
 function stripQuotedText(text) {
   // Remove lines starting with > (quoted), and common quote headers
   const lines = text.split('\n');
@@ -405,28 +408,31 @@ function stripQuotedText(text) {
     if (
       // Gmail/standard style
       /^On .+ wrote:$/i.test(trimmed) ||
-      
+
       // Outlook style - various formats
       /^-{3,}\s*Original Message\s*-{3,}/i.test(trimmed) ||
       /^_{3,}\s*Original Message\s*_{3,}/i.test(trimmed) ||
       /^From:.*Sent:.*To:/s.test(text.substring(text.indexOf(line))) ||
-      
+
       // "From: X, Sent: Y" block
       (/^From:/i.test(trimmed) && lines[i+1] && /^Sent:/i.test(lines[i+1].trim())) ||
-      
+
       // Reply separator lines
       /^={3,}$/i.test(trimmed) ||
       /^-{5,}$/i.test(trimmed) ||
-      
+
       // Common forwarded email markers
       /^Begin forwarded message:/i.test(trimmed) ||
       /^-{3,}\s*Forwarded message\s*-{3,}/i.test(trimmed) ||
-      
+
       // Additional Asian format patterns (common in SG/regional offices)
       /^发件人:|^寄件者:/i.test(trimmed) ||
-      
+
       // Outlook meeting/appointment footers
-      /^When:/i.test(trimmed) && /^Where:/i.test(lines[i+1]?.trim() || '')
+      /^When:/i.test(trimmed) && /^Where:/i.test(lines[i+1]?.trim() || '') ||
+
+      // User-defined custom quote patterns
+      customQuotePatterns.some(re => re.test(trimmed))
     ) {
       foundThreadMarker = true;
       break;
