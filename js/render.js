@@ -135,6 +135,7 @@ function selectEmail(id) {
 let _truncMatches = [];     // [{lineIndex, snippet}]
 let _truncCurrent = -1;     // which match is previewed (-1 = none)
 let _truncOrigBody = null;  // original textBody before any preview
+let _inlineImageUrls = [];  // blob URLs for inline CID images (revoked on close)
 
 function truncFindMatches() {
   const email = selectedEmail;
@@ -263,7 +264,43 @@ function truncReset() {
 }
 // ── End truncation controls ──────────────────────────────
 
+// Renders body text into `el`, replacing [cid:XXX] patterns with <img> elements
+// when cidMap (Map<contentId, blobUrl>) is provided. Safe: uses DOM, not innerHTML.
+function _renderBodyText(el, text, cidMap) {
+  el.textContent = '';
+  if (!cidMap || cidMap.size === 0) {
+    el.textContent = text;
+    return;
+  }
+  const cidPattern = /\[cid:([^\]]+)\]/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = cidPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      el.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+    const blobUrl = cidMap.get(match[1]);
+    if (blobUrl) {
+      const img = document.createElement('img');
+      img.src = blobUrl;
+      img.alt = match[1];
+      img.style.cssText = 'max-width:100%; display:block; margin:4px 0; border-radius:2px;';
+      el.appendChild(img);
+    } else {
+      el.appendChild(document.createTextNode(match[0]));
+    }
+    lastIndex = cidPattern.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    el.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+}
+
 function openDetail(email) {
+  // Revoke any previous inline image blob URLs
+  for (const url of _inlineImageUrls) URL.revokeObjectURL(url);
+  _inlineImageUrls = [];
+
   // Reset truncation state for new email
   _truncMatches = [];
   _truncCurrent = -1;
@@ -362,7 +399,7 @@ function openDetail(email) {
 
   const bodyTextEl = document.createElement('div');
   bodyTextEl.id = 'det-body-text';
-  bodyTextEl.textContent = email.textBody || '(no plain text body)';
+  _renderBodyText(bodyTextEl, email.textBody || '(no plain text body)', null);
   bodyEl.appendChild(bodyTextEl);
 
   // Attachments — show placeholder immediately, load in background
@@ -371,7 +408,7 @@ function openDetail(email) {
     attPanel.style.display = '';
     attPanel.innerHTML = `<div class="detail-attach-title">Attachments (loading…)</div>`;
     const emailIdAtLoad = email.id;
-    dbGetByIndex('attachments', 'emailId', email.id).then(atts => {
+    dbGetByIndex('attachments', 'emailId', email.id).then(async atts => {
       // Only update if the same email is still open
       if (!selectedEmail || selectedEmail.id !== emailIdAtLoad) return;
 
@@ -469,6 +506,28 @@ function openDetail(email) {
         <div class="detail-attach-title">Attachments (${visibleAtts.length}${blacklistedAtts.length > 0 ? `+${blacklistedAtts.length}` : ''})</div>
         <div class="attach-list">${visibleHtml}${overflowHtml}${blacklistedHtml}</div>
       `;
+
+      // Resolve inline CID images and re-render body with <img> elements
+      const bodyText = email.textBody || '';
+      if (bodyText.includes('[cid:')) {
+        const inlineImages = atts.filter(a => a.contentId && a.storedPath &&
+          a.contentType && a.contentType.startsWith('image/'));
+        if (inlineImages.length > 0) {
+          const cidMap = new Map();
+          for (const att of inlineImages) {
+            const file = await getAttachmentFileObject(att.storedPath);
+            if (!file) continue;
+            if (!selectedEmail || selectedEmail.id !== emailIdAtLoad) return;
+            const url = URL.createObjectURL(file);
+            _inlineImageUrls.push(url);
+            cidMap.set(att.contentId, url);
+          }
+          if (cidMap.size > 0 && selectedEmail && selectedEmail.id === emailIdAtLoad) {
+            const el = document.getElementById('det-body-text');
+            if (el) _renderBodyText(el, bodyText, cidMap);
+          }
+        }
+      }
     });
   } else {
     attPanel.style.display = 'none';
@@ -739,6 +798,8 @@ function renderDetailTags(email) {
 function closeDetail() {
   selectedEmail = null;
   selectedEmailIdx = -1;
+  for (const url of _inlineImageUrls) URL.revokeObjectURL(url);
+  _inlineImageUrls = [];
   document.getElementById('email-modal-overlay').classList.remove('open');
 }
 
