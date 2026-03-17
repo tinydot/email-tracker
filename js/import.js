@@ -410,6 +410,7 @@ async function processFilesForImport(fileArr) {
           contentType: att.contentType,
           size: att.size,
           hash: att.hash,
+          contentId: att.contentId || null,
           transmittalRef: '',
           sourceParty: '',
           documentType: '',
