@@ -2,7 +2,7 @@
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 5; // v5: seenIds store (tombstones for discarded emails)
+const DB_VERSION = 6; // v6: addressBook store
 let db = null;
 
 function openDB() {
@@ -65,6 +65,12 @@ function openDB() {
       // Seen IDs store (tombstones for discarded emails — prevents reimport)
       if (!db.objectStoreNames.contains('seenIds')) {
         db.createObjectStore('seenIds', { keyPath: 'id' });
+      }
+
+      // Address Book store (contact profiles: role, job scope, projects)
+      if (!db.objectStoreNames.contains('addressBook')) {
+        const abStore = db.createObjectStore('addressBook', { keyPath: 'email' });
+        abStore.createIndex('name', 'name', { unique: false });
       }
     };
     req.onsuccess = e => res(e.target.result);

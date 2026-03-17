@@ -15,7 +15,7 @@ let emailGroups    = []; // user-created email groups for smart view rules
 let autoTagRules   = []; // user-created auto-tag rules (applied on import)
 
 const AI_SYSTEM_PROMPT_DEFAULT = 'You tag and summarize project emails. Return 1–4 short lowercase tags (company names, topics, document types) and a one-sentence summary under 25 words. Tags must be single words or hyphenated, e.g. "rcy", "drawing-submission", "rfi".';
-const AI_USER_TEMPLATE_DEFAULT = 'Subject: {{subject}}\nFrom: {{from}}\nTo: {{to}}\n{{cc}}\n\n{{body}}';
+const AI_USER_TEMPLATE_DEFAULT = 'Subject: {{subject}}\nFrom: {{from}}\nTo: {{to}}\n{{cc}}\n{{contacts}}\n\n{{body}}';
 const AI_BODY_LIMIT_DEFAULT    = 2000;
 
 let aiSystemPrompt = AI_SYSTEM_PROMPT_DEFAULT;
@@ -33,6 +33,7 @@ const VIEW_LABELS = {
   lowvalue:     'Low Value',
   issues:       'Issues',
   transmittals: 'Transmittal Register',
+  addressbook:  'Address Book',
 };
 
 function showPanel(name) {

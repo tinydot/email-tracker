@@ -33,6 +33,13 @@ function switchView(view) {
     hideSvTabToggle();
     refreshBulkTagBar();
     showIssuesList();
+  } else if (view === 'addressbook') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    hideSvTabToggle();
+    document.querySelector('.toolbar').style.display = '';
+    document.querySelector('.email-list-header').style.display = 'none';
+    refreshBulkTagBar();
+    showAddressBook();
   } else {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     hideSvTabToggle();
