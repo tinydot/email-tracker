@@ -80,13 +80,21 @@ async function _loadClaudeKeyStatus() {
 
 // --- AI tagging functions ---
 
-function buildEmailPrompt(email) {
+async function buildEmailPrompt(email) {
+  const allAddrs = [
+    email.fromAddr,
+    ...(email.toAddrs || []),
+    ...(email.ccAddrs || []),
+  ].filter(Boolean);
+  const contactCtx = await getContactContextForAddresses(allAddrs);
+
   const vars = {
-    subject: email.subject || '(none)',
-    from:    email.fromName ? `${email.fromName} <${email.fromAddr}>` : (email.fromAddr || ''),
-    to:      (email.toAddrs || []).join(', '),
-    cc:      email.ccAddrs?.length ? `CC: ${email.ccAddrs.join(', ')}` : '',
-    body:    (email.textBody || '(no body)').slice(0, aiBodyLimit),
+    subject:  email.subject || '(none)',
+    from:     email.fromName ? `${email.fromName} <${email.fromAddr}>` : (email.fromAddr || ''),
+    to:       (email.toAddrs || []).join(', '),
+    cc:       email.ccAddrs?.length ? `CC: ${email.ccAddrs.join(', ')}` : '',
+    body:     (email.textBody || '(no body)').slice(0, aiBodyLimit),
+    contacts: contactCtx,
   };
   return aiUserTemplate.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
@@ -125,7 +133,7 @@ async function aiTagEmail(emailId) {
           },
         },
         system: aiSystemPrompt,
-        messages: [{ role: 'user', content: buildEmailPrompt(email) }],
+        messages: [{ role: 'user', content: await buildEmailPrompt(email) }],
       }),
     });
     if (!res.ok) {

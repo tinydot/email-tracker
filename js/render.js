@@ -186,6 +186,7 @@ function openDetail(email) {
     </button>` : ''}
     <button class="btn btn-danger" onclick="deleteEmail('${email.id}')">✕</button>
     <button class="btn" onclick="aiTagEmail('${email.id}')" title="Tag and summarize with Claude AI">✨ AI Tag</button>
+    <button class="btn" onclick="quickAddContact('${escHtml(email.fromAddr || '')}','${escHtml((email.fromName || '').replace(/'/g, "\\'"))}')" title="Add/edit sender in Address Book">👤 Contact</button>
   `;
 
   // Tags
