@@ -3,14 +3,17 @@
 // ═══════════════════════════════════════════════════════
 
 async function exportData() {
-  const emails = await dbGetAll('emails');
-  const atts   = await dbGetAll('attachments');
-  const blob   = new Blob([JSON.stringify({ emails, attachments: atts }, null, 2)],
-                           { type: 'application/json' });
-  const url    = URL.createObjectURL(blob);
-  const a      = document.createElement('a');
-  a.href       = url;
-  a.download   = `email-tracker-${new Date().toISOString().split('T')[0]}.json`;
+  const emails   = await dbGetAll('emails');
+  const atts     = await dbGetAll('attachments');
+  const allSettings = await dbGetAll('settings');
+  // Exclude sensitive keys from the JSON export
+  const settings = allSettings.filter(s => s.key !== 'claudeApiKey');
+  const blob = new Blob([JSON.stringify({ emails, attachments: atts, settings }, null, 2)],
+                         { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `email-tracker-${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -332,10 +335,24 @@ async function importData(input) {
 
   const emails      = Array.isArray(data.emails)      ? data.emails      : [];
   const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+  const settings    = Array.isArray(data.settings)    ? data.settings    : [];
 
-  if (emails.length === 0 && attachments.length === 0) {
+  if (emails.length === 0 && attachments.length === 0 && settings.length === 0) {
     toast('Nothing to import', 'err');
     return;
+  }
+
+  // Restore settings (skip sensitive keys; don't overwrite existing values)
+  for (const s of settings) {
+    if (!s.key || s.key === 'claudeApiKey') continue;
+    const existing = await dbGet('settings', s.key);
+    if (!existing) await dbPut('settings', s);
+  }
+  if (settings.length) {
+    await loadCustomPatterns();
+    await loadCustomQuotePatterns();
+    await loadAiPrompts();
+    await loadAttachTextLimit();
   }
 
   let emailsAdded = 0, emailsSkipped = 0;
