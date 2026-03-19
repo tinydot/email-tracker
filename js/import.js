@@ -844,6 +844,20 @@ async function openOriginalEml(emailId) {
   }
 }
 
+// Returns the File object for a stored attachment path, or null if unavailable.
+// Does NOT create an object URL — caller is responsible for that.
+async function getAttachmentFileObject(storedPath) {
+  if (!storedPath || !attachmentDirHandle) return null;
+  try {
+    const parts = storedPath.split('/');
+    const domainFolder = await attachmentDirHandle.getDirectoryHandle(parts[0]);
+    const fileHandle = await domainFolder.getFileHandle(parts[1]);
+    return await fileHandle.getFile();
+  } catch {
+    return null;
+  }
+}
+
 async function openAttachmentFromDisk(storedPath) {
   if (!storedPath) {
     toast('No file path stored for this attachment', 'err');
