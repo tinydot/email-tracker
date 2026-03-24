@@ -426,6 +426,30 @@ const DEFAULT_SIGNATURE_PATTERNS = [
 // Custom signature patterns loaded from settings (compiled RegExp[])
 let customSignaturePatterns = [];
 
+// Explicit start/end keyword ranges: [{ start, end }] (plain strings, case-insensitive)
+// Any occurrence of text from `start` up to (but not including) `end` is removed.
+let signatureRanges = [];
+
+function applySignatureRanges(text) {
+  if (!text || !signatureRanges.length) return text;
+  for (const { start, end } of signatureRanges) {
+    if (!start) continue;
+    const si = text.toLowerCase().indexOf(start.toLowerCase());
+    if (si === -1) continue;
+    if (!end) {
+      text = text.slice(0, si).trimEnd();
+    } else {
+      const ei = text.toLowerCase().indexOf(end.toLowerCase(), si + start.length);
+      if (ei === -1) {
+        text = text.slice(0, si).trimEnd();
+      } else {
+        text = text.slice(0, si) + text.slice(ei);
+      }
+    }
+  }
+  return text;
+}
+
 // Strip corporate/boilerplate signature from the bottom of an email body.
 // Removes only the signature block — content from the signature anchor up to
 // (but not including) the next thread/quote marker — so trailing quoted replies
@@ -456,12 +480,26 @@ function stripSignature(text) {
     }
   }
 
+  let result;
   if (quoteStart !== -1) {
     // Remove only the signature block; keep the quoted trail below
-    return [...lines.slice(0, sigStart), ...lines.slice(quoteStart)].join('\n').trim();
+    result = [...lines.slice(0, sigStart), ...lines.slice(quoteStart)].join('\n').trim();
+  } else {
+    // No quoted trail after signature — truncate at signature
+    result = lines.slice(0, sigStart).join('\n').trim();
   }
-  // No quoted trail after signature — truncate at signature
-  return lines.slice(0, sigStart).join('\n').trim();
+  // Apply any explicit start/end keyword ranges on top
+  return applySignatureRanges(result);
+}
+
+// Public entry point used by rerunSignatureStripping — applies both
+// pattern-based stripping and explicit ranges.
+function cleanSignatures(text) {
+  if (!text) return text;
+  let result = stripSignature(text);
+  // If pattern-based stripping didn't fire, still apply explicit ranges
+  if (result === text) result = applySignatureRanges(result);
+  return result;
 }
 
 // Shared helper: returns true if `trimmed` (line at index i in `lines`) matches

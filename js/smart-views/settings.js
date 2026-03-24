@@ -150,7 +150,7 @@ async function rerunSignatureStripping() {
 
   for (const email of emails) {
     if (!email.textBody) continue;
-    const stripped = stripSignature(email.textBody);
+    const stripped = cleanSignatures(email.textBody);
     if (stripped && stripped !== email.textBody) {
       email.textBody = stripped;
       await dbPut('emails', email);
@@ -161,6 +161,62 @@ async function rerunSignatureStripping() {
   if (btn) { btn.disabled = false; btn.textContent = 'Re-run signature stripping'; }
   toast(fixed ? `Stripped signatures from ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed stripping', fixed ? 'ok' : '');
   if (fixed) { await loadEmailList(); applyFilters(); }
+}
+
+// --- Signature ranges (explicit start/end keyword pairs) ---
+
+async function loadSignatureRanges() {
+  const saved = await dbGet('settings', 'signatureRanges');
+  signatureRanges = (saved && saved.ranges) ? saved.ranges : [];
+}
+
+async function saveSignatureRanges() {
+  await dbPut('settings', { key: 'signatureRanges', ranges: signatureRanges });
+}
+
+async function addSignatureRange() {
+  const startEl = document.getElementById('new-sig-range-start');
+  const endEl   = document.getElementById('new-sig-range-end');
+  if (!startEl) return;
+  const start = startEl.value.trim();
+  const end   = endEl ? endEl.value.trim() : '';
+  if (!start) { toast('Start keyword is required', 'warn'); return; }
+  signatureRanges.push({ start, end });
+  await saveSignatureRanges();
+  startEl.value = '';
+  if (endEl) endEl.value = '';
+  toast('Range added', 'ok');
+  showSettings();
+}
+
+async function removeSignatureRange(idx) {
+  signatureRanges.splice(idx, 1);
+  await saveSignatureRanges();
+  toast('Range removed', 'ok');
+  showSettings();
+}
+
+function renderSignatureRangesSection() {
+  const rows = signatureRanges.map((r, i) => `
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; padding:6px 8px;">
+      <span style="font-family:var(--mono); font-size:12px; flex:1; color:var(--accent);">${escHtml(r.start)}</span>
+      <span style="color:var(--muted); font-size:11px;">→</span>
+      <span style="font-family:var(--mono); font-size:12px; flex:1; color:var(--muted);">${r.end ? escHtml(r.end) : '<em>end of text</em>'}</span>
+      <button class="del-pat" onclick="removeSignatureRange(${i})" title="Remove">×</button>
+    </div>`).join('');
+  return `
+    ${rows || '<div style="color:var(--muted);font-size:12px;font-style:italic;margin-bottom:8px;">No ranges defined yet</div>'}
+    <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:6px; align-items:center;">
+      <input type="text" id="new-sig-range-start" class="search-input" placeholder="Start keyword…"
+             onkeydown="if(event.key==='Enter') addSignatureRange()">
+      <input type="text" id="new-sig-range-end" class="search-input" placeholder="End keyword (optional)…"
+             onkeydown="if(event.key==='Enter') addSignatureRange()">
+      <button class="btn" onclick="addSignatureRange()">+ Add</button>
+    </div>
+    <div style="color:var(--muted); font-size:11px; margin-top:6px;">
+      Everything from <em>Start keyword</em> up to (not including) <em>End keyword</em> is removed.
+      Leave End blank to remove from Start to end of text.
+    </div>`;
 }
 
 // --- Custom quote / thread-marker patterns ---
@@ -410,9 +466,17 @@ function showSettings() {
           Add custom patterns as plain text (substring match) or <code>/regex/</code>.
         </div>
         ${renderSignaturePatternSection()}
+        <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+          <div style="font-size:12px; font-weight:500; margin-bottom:6px;">Explicit start/end keyword ranges</div>
+          <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
+            Remove a specific block of text by defining where it starts and ends.
+            Useful for company taglines or boilerplate that doesn't match a line-based pattern.
+          </div>
+          ${renderSignatureRangesSection()}
+        </div>
         <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
           <div style="color:var(--muted); font-size:12px; margin-bottom:8px;">
-            Re-run signature stripping on all existing emails using the current patterns above.
+            Re-run signature stripping on all existing emails using the current patterns and ranges above.
           </div>
           <button id="btn-rerun-signatures" class="btn" onclick="rerunSignatureStripping()">Re-run signature stripping</button>
         </div>
