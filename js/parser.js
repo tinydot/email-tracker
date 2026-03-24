@@ -427,21 +427,59 @@ const DEFAULT_SIGNATURE_PATTERNS = [
 let customSignaturePatterns = [];
 
 // Strip corporate/boilerplate signature from the bottom of an email body.
-// Finds the first line matching a signature anchor and removes it plus everything after.
+// Removes only the signature block — content from the signature anchor up to
+// (but not including) the next thread/quote marker — so trailing quoted replies
+// are preserved intact.
 function stripSignature(text) {
   if (!text) return text;
   const lines = text.split('\n');
+
+  // Find the first signature anchor line
+  let sigStart = -1;
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
     if (!trimmed) continue;
-    const isAnchor =
-      DEFAULT_SIGNATURE_PATTERNS.some(re => re.test(trimmed)) ||
-      customSignaturePatterns.some(re => re.test(trimmed));
-    if (isAnchor) {
-      return lines.slice(0, i).join('\n').trim();
+    if (DEFAULT_SIGNATURE_PATTERNS.some(re => re.test(trimmed)) ||
+        customSignaturePatterns.some(re => re.test(trimmed))) {
+      sigStart = i;
+      break;
     }
   }
-  return text;
+  if (sigStart === -1) return text;
+
+  // Find the next thread/quote marker after the signature start
+  let quoteStart = -1;
+  for (let i = sigStart + 1; i < lines.length; i++) {
+    if (isThreadMarker(lines[i].trim(), lines, i)) {
+      quoteStart = i;
+      break;
+    }
+  }
+
+  if (quoteStart !== -1) {
+    // Remove only the signature block; keep the quoted trail below
+    return [...lines.slice(0, sigStart), ...lines.slice(quoteStart)].join('\n').trim();
+  }
+  // No quoted trail after signature — truncate at signature
+  return lines.slice(0, sigStart).join('\n').trim();
+}
+
+// Shared helper: returns true if `trimmed` (line at index i in `lines`) matches
+// any known thread/quote marker pattern.
+function isThreadMarker(trimmed, lines, i) {
+  return (
+    /^On .+ wrote:$/i.test(trimmed) ||
+    /^-{3,}\s*Original Message\s*-{3,}/i.test(trimmed) ||
+    /^_{3,}\s*Original Message\s*_{3,}/i.test(trimmed) ||
+    (/^From:/i.test(trimmed) && lines[i+1] && /^Sent:/i.test(lines[i+1].trim())) ||
+    /^={3,}$/i.test(trimmed) ||
+    /^-{5,}$/i.test(trimmed) ||
+    /^Begin forwarded message:/i.test(trimmed) ||
+    /^-{3,}\s*Forwarded message\s*-{3,}/i.test(trimmed) ||
+    /^发件人:|^寄件者:/i.test(trimmed) ||
+    (/^When:/i.test(trimmed) && /^Where:/i.test(lines[i+1]?.trim() || '')) ||
+    customQuotePatterns.some(re => re.test(trimmed))
+  );
 }
 
 // Returns all line indices where a truncation pattern matches (not just the first).
@@ -451,24 +489,8 @@ function findTruncationMatches(text) {
   const matches = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    const isMatch =
-      /^On .+ wrote:$/i.test(trimmed) ||
-      /^-{3,}\s*Original Message\s*-{3,}/i.test(trimmed) ||
-      /^_{3,}\s*Original Message\s*_{3,}/i.test(trimmed) ||
-      /^From:.*Sent:.*To:/s.test(text.substring(text.indexOf(line))) ||
-      (/^From:/i.test(trimmed) && lines[i+1] && /^Sent:/i.test(lines[i+1].trim())) ||
-      /^={3,}$/i.test(trimmed) ||
-      /^-{5,}$/i.test(trimmed) ||
-      /^Begin forwarded message:/i.test(trimmed) ||
-      /^-{3,}\s*Forwarded message\s*-{3,}/i.test(trimmed) ||
-      /^发件人:|^寄件者:/i.test(trimmed) ||
-      (/^When:/i.test(trimmed) && /^Where:/i.test(lines[i+1]?.trim() || '')) ||
-      customQuotePatterns.some(re => re.test(trimmed));
-
-    if (isMatch) {
+    const trimmed = lines[i].trim();
+    if (isThreadMarker(trimmed, lines, i)) {
       matches.push({ lineIndex: i, snippet: trimmed.slice(0, 80) });
     }
   }
@@ -491,36 +513,7 @@ function stripQuotedText(text) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Thread marker patterns (stop processing when we hit these)
-    if (
-      // Gmail/standard style
-      /^On .+ wrote:$/i.test(trimmed) ||
-
-      // Outlook style - various formats
-      /^-{3,}\s*Original Message\s*-{3,}/i.test(trimmed) ||
-      /^_{3,}\s*Original Message\s*_{3,}/i.test(trimmed) ||
-      /^From:.*Sent:.*To:/s.test(text.substring(text.indexOf(line))) ||
-
-      // "From: X, Sent: Y" block
-      (/^From:/i.test(trimmed) && lines[i+1] && /^Sent:/i.test(lines[i+1].trim())) ||
-
-      // Reply separator lines
-      /^={3,}$/i.test(trimmed) ||
-      /^-{5,}$/i.test(trimmed) ||
-
-      // Common forwarded email markers
-      /^Begin forwarded message:/i.test(trimmed) ||
-      /^-{3,}\s*Forwarded message\s*-{3,}/i.test(trimmed) ||
-
-      // Additional Asian format patterns (common in SG/regional offices)
-      /^发件人:|^寄件者:/i.test(trimmed) ||
-
-      // Outlook meeting/appointment footers
-      /^When:/i.test(trimmed) && /^Where:/i.test(lines[i+1]?.trim() || '') ||
-
-      // User-defined custom quote patterns
-      customQuotePatterns.some(re => re.test(trimmed))
-    ) {
+    if (isThreadMarker(trimmed, lines, i)) {
       foundThreadMarker = true;
       break;
     }
