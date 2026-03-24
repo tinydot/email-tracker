@@ -269,15 +269,31 @@ async function collectEmlFilesRecursively(dirHandle, path = '') {
   return files;
 }
 
+function toggleImportLog() {
+  const log = document.getElementById('ipb-log');
+  const btn = document.getElementById('ipb-toggle-btn');
+  const visible = log.style.display !== 'none';
+  log.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? '▲ Log' : '▼ Log';
+  // when log is shown, adjust bottom padding
+  document.getElementById('email-list-panel').style.paddingBottom =
+    visible ? '' : '168px';
+}
+
 async function processFilesForImport(fileArr) {
 
-  // Start progress immediately - no pre-checking
-  showPanel('progress');
-  const log   = document.getElementById('progress-log');
-  const fill  = document.getElementById('progress-fill');
-  const label = document.getElementById('progress-label');
-  const pct   = document.getElementById('progress-pct');
+  // Switch to list panel so user can browse while import runs
+  showPanel('list');
+  const bar    = document.getElementById('import-progress-bar');
+  const fill   = document.getElementById('ipb-fill');
+  const counts = document.getElementById('ipb-counts');
+  const pct    = document.getElementById('ipb-pct');
+  const log    = document.getElementById('ipb-log');
+  const title  = bar.querySelector('.ipb-title');
+
   log.innerHTML = '';
+  bar.style.display = '';
+  document.getElementById('email-list-panel').classList.add('import-running');
 
   const appendLog = (msg, cls = '') => {
     const d = document.createElement('div');
@@ -300,7 +316,7 @@ async function processFilesForImport(fileArr) {
     const file = fileArr[i];
     const prog = Math.round((i / fileArr.length) * 100);
     fill.style.width  = prog + '%';
-    label.textContent = `${i} / ${fileArr.length}`;
+    counts.textContent = `${i} / ${fileArr.length}`;
     pct.textContent   = prog + '%';
 
     try {
@@ -494,10 +510,12 @@ async function processFilesForImport(fileArr) {
       }
 
       ok++;
-      const totalAttachments = parsed.attachments.reduce((sum, att) => 
+      // Add to in-memory list immediately so user sees it while browsing
+      allEmails.push(emailRecord);
+      const totalAttachments = parsed.attachments.reduce((sum, att) =>
         sum + 1 + (att.nestedAttachments?.length || 0), 0);
       const attInfo = totalAttachments > 0
-        ? ` [${totalAttachments} attach${attachmentDirHandle ? ' → saved' : ''}]` 
+        ? ` [${totalAttachments} attach${attachmentDirHandle ? ' → saved' : ''}]`
         : '';
       appendLog(`✓ ${file.name}${attInfo}`, 'ok');
 
@@ -506,20 +524,37 @@ async function processFilesForImport(fileArr) {
       errs++;
     }
 
-    // Yield to UI every 5 emails
-    if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+    // Yield to UI every 5 emails and refresh the list so new emails appear live
+    if (i % 5 === 0) {
+      applyFilters();
+      updateHeaderStatsFast();
+      await new Promise(r => setTimeout(r, 0));
+    }
   }
 
+  fill.style.width  = '100%';
   pct.textContent   = '100%';
   const skipped = fileArr.length - ok - errs - updated;
-  appendLog(`Done — ${ok} imported${updated > 0 ? `, ${updated} recipients updated` : ''}${skipped > 0 ? `, ${skipped} skipped (duplicates)` : ''}, ${errs} errors.`, ok > 0 || updated > 0 ? 'ok' : 'err');
+  const doneMsg = `Done — ${ok} imported${updated > 0 ? `, ${updated} recipients updated` : ''}${skipped > 0 ? `, ${skipped} skipped (duplicates)` : ''}, ${errs} errors.`;
+  appendLog(doneMsg, ok > 0 || updated > 0 ? 'ok' : 'err');
+  title.textContent = 'Import complete';
 
   importedEmails += ok;
 
-  await new Promise(r => setTimeout(r, 800));
+  // Full reload to rebuild thread cache, nav counts etc.
   await loadEmailList();
   await updateHeaderStats();
-  showPanel('list');
+
+  // Hide the progress bar after a short delay so user can read the result
+  await new Promise(r => setTimeout(r, 2000));
+  bar.style.display = 'none';
+  document.getElementById('email-list-panel').classList.remove('import-running');
+  document.getElementById('email-list-panel').style.paddingBottom = '';
+  // Reset log toggle state for next import
+  document.getElementById('ipb-log').style.display = 'none';
+  document.getElementById('ipb-toggle-btn').textContent = '▲ Log';
+  title.textContent = 'Importing emails…';
+
   toast(`Imported ${ok} email(s)`, 'ok');
 }
 

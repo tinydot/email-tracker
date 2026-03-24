@@ -109,20 +109,8 @@
         </div>
       </div>
 
-      <!-- Progress panel -->
-      <div id="progress-panel">
-        <div class="progress-card">
-          <div class="progress-title">Parsing emails…</div>
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" id="progress-fill"></div>
-          </div>
-          <div class="progress-info">
-            <span id="progress-label">0 / 0</span>
-            <span id="progress-pct">0%</span>
-          </div>
-          <div class="progress-log" id="progress-log"></div>
-        </div>
-      </div>
+      <!-- Progress panel (kept for backward compat, no longer used as primary UI) -->
+      <div id="progress-panel"></div>
 
       <!-- Email list panel -->
       <div id="email-list-panel">
@@ -180,6 +168,20 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- Floating import progress bar -->
+<div id="import-progress-bar" style="display:none">
+  <div class="ipb-track">
+    <div class="ipb-fill" id="ipb-fill"></div>
+  </div>
+  <div class="ipb-row">
+    <span class="ipb-title">Importing emails…</span>
+    <span id="ipb-counts">0 / 0</span>
+    <span id="ipb-pct">0%</span>
+    <button class="ipb-toggle-btn" id="ipb-toggle-btn" onclick="toggleImportLog()" title="Show/hide log">▲ Log</button>
+  </div>
+  <div class="ipb-log" id="ipb-log"></div>
+</div>
 
 <!-- Smart View Editor Modal -->
 <div id="sv-modal-overlay" onclick="handleSvOverlayClick(event)">
