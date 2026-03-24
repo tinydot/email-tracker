@@ -662,6 +662,22 @@
     margin-bottom: 12px;
   }
 
+  .body-edit-textarea {
+    width: 100%;
+    min-height: 320px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    resize: vertical;
+    box-sizing: border-box;
+    outline: none;
+  }
+
   .detail-attachments {
     border-top: 1px solid var(--border);
     padding: 16px 24px;

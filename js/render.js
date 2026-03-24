@@ -264,6 +264,68 @@ function truncReset() {
 }
 // ── End truncation controls ──────────────────────────────
 
+// ── Manual body editing ──────────────────────────────────
+function editBodyText() {
+  const bodyTextEl = document.getElementById('det-body-text');
+  const editBtn = document.getElementById('body-edit-btn');
+  if (!bodyTextEl || !selectedEmail) return;
+
+  // Already in edit mode — cancel
+  if (bodyTextEl.querySelector('textarea')) {
+    cancelBodyEdit();
+    return;
+  }
+
+  const currentText = selectedEmail.textBody || '';
+  const ta = document.createElement('textarea');
+  ta.id = 'body-edit-textarea';
+  ta.value = currentText;
+  ta.className = 'body-edit-textarea';
+  ta.spellcheck = false;
+
+  const btnRow = document.createElement('div');
+  btnRow.id = 'body-edit-btn-row';
+  btnRow.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+  btnRow.innerHTML = `
+    <button class="btn" style="padding:2px 10px;font-size:11px;color:var(--accent);" onclick="saveBodyEdit()">Save</button>
+    <button class="btn" style="padding:2px 10px;font-size:11px;" onclick="cancelBodyEdit()">Cancel</button>
+  `;
+
+  bodyTextEl.textContent = '';
+  bodyTextEl.appendChild(ta);
+  bodyTextEl.appendChild(btnRow);
+  ta.focus();
+
+  if (editBtn) editBtn.textContent = '✏ Editing…';
+}
+
+async function saveBodyEdit() {
+  const ta = document.getElementById('body-edit-textarea');
+  const editBtn = document.getElementById('body-edit-btn');
+  if (!ta || !selectedEmail) return;
+
+  const newText = ta.value;
+  selectedEmail.textBody = newText;
+  await dbPut('emails', selectedEmail);
+  const idx = allEmails.findIndex(e => e.id === selectedEmail.id);
+  if (idx >= 0) allEmails[idx].textBody = newText;
+
+  const bodyTextEl = document.getElementById('det-body-text');
+  if (bodyTextEl) _renderBodyText(bodyTextEl, newText || '(no plain text body)', null);
+  if (editBtn) editBtn.textContent = '✏ Edit Body';
+  showToast('Body saved');
+}
+
+function cancelBodyEdit() {
+  const editBtn = document.getElementById('body-edit-btn');
+  const bodyTextEl = document.getElementById('det-body-text');
+  if (bodyTextEl && selectedEmail) {
+    _renderBodyText(bodyTextEl, selectedEmail.textBody || '(no plain text body)', null);
+  }
+  if (editBtn) editBtn.textContent = '✏ Edit Body';
+}
+// ── End manual body editing ──────────────────────────────
+
 // Renders body text into `el`, replacing [cid:XXX] patterns with <img> elements
 // when cidMap (Map<contentId, blobUrl>) is provided. Safe: uses DOM, not innerHTML.
 function _renderBodyText(el, text, cidMap) {
@@ -388,6 +450,7 @@ function openDetail(email) {
     <button class="btn" id="trunc-find-btn" onclick="truncFindMatches()" style="padding:2px 8px;font-size:11px;" title="Scan body for reply/quote markers and show truncation options">✂ Truncation</button>
     <button class="btn" onclick="reimportEmlBody('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Pick the original .eml file to reimport its full body text">↺ Reimport EML</button>
     <button class="btn" onclick="openOriginalEml('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Download the original .eml file to open in your email client">⬇ Open Original</button>
+    <button class="btn" id="body-edit-btn" onclick="editBodyText()" style="padding:2px 8px;font-size:11px;" title="Manually edit the body text">✏ Edit Body</button>
     <span id="trunc-status" style="color:var(--muted);"></span>
     <button class="btn" id="trunc-prev-btn" onclick="truncNav(-1)" style="display:none;padding:2px 6px;font-size:11px;">◀</button>
     <button class="btn" id="trunc-next-btn" onclick="truncNav(1)" style="display:none;padding:2px 6px;font-size:11px;">▶</button>
