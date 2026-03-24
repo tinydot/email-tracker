@@ -10,6 +10,7 @@ async function init() {
   await loadCustomPatterns();
   await loadCustomQuotePatterns();
   await loadCustomSignaturePatterns();
+  await loadSignatureRanges();
   await loadEmailGroups();
   await loadAutoTagRules();
   await loadAiPrompts();
