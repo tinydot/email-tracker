@@ -83,6 +83,86 @@ async function saveCustomPatterns() {
   mergeCustomPatterns();
 }
 
+// --- Custom signature patterns ---
+
+let customSignaturePatternSrcs = [];
+
+async function loadCustomSignaturePatterns() {
+  const saved = await dbGet('settings', 'customSignaturePatterns');
+  customSignaturePatternSrcs = (saved && saved.patterns) ? saved.patterns : [];
+  customSignaturePatterns = customSignaturePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
+}
+
+async function saveCustomSignaturePatterns() {
+  await dbPut('settings', { key: 'customSignaturePatterns', patterns: customSignaturePatternSrcs });
+  customSignaturePatterns = customSignaturePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
+}
+
+async function addCustomSignaturePattern() {
+  const input = document.getElementById('new-sig-pattern');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  const src = val.startsWith('/') && val.lastIndexOf('/') > 0
+    ? val.slice(1, val.lastIndexOf('/'))
+    : val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!safeRegex(src)) { toast('Invalid pattern', 'warn'); return; }
+  customSignaturePatternSrcs.push(src);
+  await saveCustomSignaturePatterns();
+  input.value = '';
+  toast('Pattern added', 'ok');
+  showSettings();
+}
+
+async function removeCustomSignaturePattern(idx) {
+  customSignaturePatternSrcs.splice(idx, 1);
+  await saveCustomSignaturePatterns();
+  toast('Pattern removed', 'ok');
+  showSettings();
+}
+
+function renderSignaturePatternSection() {
+  const defaultChips = DEFAULT_SIGNATURE_PATTERNS.map(re =>
+    `<span class="pattern-chip" title="Built-in (read-only)">${escHtml(re.source)}</span>`
+  ).join('');
+  const customChips = customSignaturePatternSrcs.map((p, i) =>
+    `<span class="pattern-chip custom">
+       ${escHtml(p)}
+       <button class="del-pat" onclick="removeCustomSignaturePattern(${i})" title="Remove">×</button>
+     </span>`
+  ).join('');
+  return `
+    <div style="margin-bottom:6px;">${defaultChips}${customChips}</div>
+    <div style="display:flex; gap:6px;">
+      <input type="text" id="new-sig-pattern" class="search-input"
+             placeholder="Add pattern (text or /regex/)…" style="flex:1;"
+             onkeydown="if(event.key==='Enter') addCustomSignaturePattern()">
+      <button class="btn" onclick="addCustomSignaturePattern()">+ Add</button>
+    </div>`;
+}
+
+async function rerunSignatureStripping() {
+  const btn = document.getElementById('btn-rerun-signatures');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+
+  const emails = await dbGetAll('emails');
+  let fixed = 0;
+
+  for (const email of emails) {
+    if (!email.textBody) continue;
+    const stripped = stripSignature(email.textBody);
+    if (stripped && stripped !== email.textBody) {
+      email.textBody = stripped;
+      await dbPut('emails', email);
+      fixed++;
+    }
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Re-run signature stripping'; }
+  toast(fixed ? `Stripped signatures from ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed stripping', fixed ? 'ok' : '');
+  if (fixed) { await loadEmailList(); applyFilters(); }
+}
+
 // --- Custom quote / thread-marker patterns ---
 
 // Source strings for the UI (raw regex source, same format as customPatterns)
@@ -319,6 +399,22 @@ function showSettings() {
             Only emails whose body contains a matching pattern will be updated.
           </div>
           <button id="btn-rerun-truncation" class="btn" onclick="rerunTruncation()">Re-run truncation</button>
+        </div>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Signature stripping patterns</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          When importing, corporate signature blocks (disclaimers, confidentiality notices, etc.) are removed from the bottom of
+          each email body when a line matches one of these patterns. Built-in patterns are shown in gray.
+          Add custom patterns as plain text (substring match) or <code>/regex/</code>.
+        </div>
+        ${renderSignaturePatternSection()}
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+          <div style="color:var(--muted); font-size:12px; margin-bottom:8px;">
+            Re-run signature stripping on all existing emails using the current patterns above.
+          </div>
+          <button id="btn-rerun-signatures" class="btn" onclick="rerunSignatureStripping()">Re-run signature stripping</button>
         </div>
       </div>
 
