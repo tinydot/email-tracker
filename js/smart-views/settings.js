@@ -492,6 +492,16 @@ function showSettings() {
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:8px;">Fix garbled characters (UTF-8 encoding repair)</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
+          Repairs text corrupted by an earlier import bug where UTF-8 characters were stored as raw bytes,
+          producing garbled output like <code>yesterdayâs</code> instead of <code>yesterday's</code>.
+          Safe to run multiple times — already-correct emails are skipped automatically.
+        </div>
+        <button id="btn-fix-mojibake" class="btn" onclick="fixMojibakeEmails()">Fix garbled characters</button>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:4px;">📄 Attachment text extraction limit</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
           Maximum amount of text extracted from each attachment (PDF, DOCX, XLSX, PPTX).
@@ -628,6 +638,32 @@ function toggleNestedAttachments(enabled) {
 function toggleOrganizeEml(enabled) {
   organizeEmlFiles = enabled;
   toast(enabled ? 'EML organization enabled' : 'EML organization disabled', 'ok');
+}
+
+async function fixMojibakeEmails() {
+  const btn = document.getElementById('btn-fix-mojibake');
+  if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
+
+  const emails = await dbGetAll('emails');
+  let fixed = 0;
+
+  for (const email of emails) {
+    let changed = false;
+    for (const field of ['textBody', 'subject', 'fromName']) {
+      const orig = email[field];
+      if (typeof orig !== 'string' || !/[\x80-\xFF]/.test(orig)) continue;
+      try {
+        const bytes = Uint8Array.from(orig, c => c.charCodeAt(0));
+        const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        if (repaired !== orig) { email[field] = repaired; changed = true; }
+      } catch { /* not mojibake — leave untouched */ }
+    }
+    if (changed) { await dbPut('emails', email); fixed++; }
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Fix garbled characters'; }
+  toast(fixed ? `Repaired ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No garbled emails found', fixed ? 'ok' : '');
+  if (fixed) { await loadEmailList(); applyFilters(); }
 }
 
 async function normalizeLineBreaks() {
