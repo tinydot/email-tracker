@@ -351,6 +351,7 @@ async function importData(input) {
   if (settings.length) {
     await loadCustomPatterns();
     await loadCustomQuotePatterns();
+    await loadCustomSignaturePatterns();
     await loadAiPrompts();
     await loadAttachTextLimit();
   }

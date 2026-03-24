@@ -110,10 +110,16 @@ function parseEML(raw) {
 
   // Clean quoted text from body for "first message" view
   let cleanText = textBody ? stripQuotedText(textBody) : '';
-  
+
   // If stripping removed everything, keep the original
   if (!cleanText && textBody) {
     cleanText = textBody.trim();
+  }
+
+  // Strip corporate/boilerplate signature block from the bottom
+  if (cleanText) {
+    const noSig = stripSignature(cleanText);
+    if (noSig) cleanText = noSig;
   }
   
   // If still no text, try HTML
@@ -402,6 +408,41 @@ function cleanMsgId(str) {
 
 // Custom quote/thread-marker patterns loaded from settings (compiled RegExp[])
 let customQuotePatterns = [];
+
+// ── Signature stripping ──────────────────────────────────────────────────────
+
+// Default patterns that anchor the start of a corporate email signature block.
+// Each pattern is tested against trimmed individual lines.
+const DEFAULT_SIGNATURE_PATTERNS = [
+  /^--\s*$/,                                                      // standard sig separator
+  /^CONFIDENTIALITY\s*(NOTE|NOTICE)?[:\s-]/i,                     // "CONFIDENTIALITY NOTE –"
+  /^DISCLAIMER[:\s-]/i,                                           // "DISCLAIMER –"
+  /^This\s+(e-?mail|message|communication)\s+(and\s+any\s+attach\S*\s+)?(is|are)\s+confidential/i,
+  /^If\s+you\s+(have\s+)?(received|are\s+not\s+the\s+intended)/i,
+  /^Please\s+consider\s+the\s+environment\s+before\s+printing/i,
+  /^Sent\s+from\s+my\s+(iPhone|iPad|Android|Samsung|BlackBerry|Galaxy)/i,
+];
+
+// Custom signature patterns loaded from settings (compiled RegExp[])
+let customSignaturePatterns = [];
+
+// Strip corporate/boilerplate signature from the bottom of an email body.
+// Finds the first line matching a signature anchor and removes it plus everything after.
+function stripSignature(text) {
+  if (!text) return text;
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    const isAnchor =
+      DEFAULT_SIGNATURE_PATTERNS.some(re => re.test(trimmed)) ||
+      customSignaturePatterns.some(re => re.test(trimmed));
+    if (isAnchor) {
+      return lines.slice(0, i).join('\n').trim();
+    }
+  }
+  return text;
+}
 
 // Returns all line indices where a truncation pattern matches (not just the first).
 // Each entry: { lineIndex, snippet } where snippet is the trimmed matching line.
