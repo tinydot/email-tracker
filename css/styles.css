@@ -837,6 +837,61 @@
     font-style: italic;
   }
 
+  .intent-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+    font-style: normal;
+  }
+  .intent-actionable { background: var(--danger-dim);  color: var(--danger);  }
+  .intent-statement   { background: var(--info-dim);    color: var(--info);    }
+  .intent-answer      { background: var(--accent-dim);  color: var(--accent);  }
+  .intent-actioned    { background: var(--surface2);    color: var(--muted);   }
+  .intent-fyi         { background: var(--surface2);    color: var(--muted);   }
+
+  .action-items-box {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    margin: 0 0 10px 0;
+    overflow: hidden;
+  }
+  .action-items-header {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    background: var(--danger-dim);
+    color: var(--danger);
+  }
+  .action-items-header-label { flex: 1; }
+  .action-items-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+  }
+  .action-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+  .action-item:not(:last-child) { border-bottom: 1px solid var(--border); }
+  .ai-status-open     { font-family: var(--mono); font-size: 10px; white-space: nowrap; color: var(--warn);   }
+  .ai-status-resolved { font-family: var(--mono); font-size: 10px; white-space: nowrap; color: var(--accent); }
+  .ai-status-deferred { font-family: var(--mono); font-size: 10px; white-space: nowrap; color: var(--muted);  }
+  .action-item-desc   { flex: 1; color: var(--text); }
+
   .atr-rule-row {
     display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
   }

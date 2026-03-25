@@ -421,7 +421,8 @@ function openDetail(email) {
       ${email.isSystemEmail ? '🤖 Unmark Automated' : '🤖 Re-mark Automated'}
     </button>` : ''}
     <button class="btn btn-danger" onclick="deleteEmail('${email.id}')">✕</button>
-    <button class="btn" onclick="aiTagEmail('${email.id}')" title="Tag and summarize with Claude AI">✨ AI Tag</button>
+    <button class="btn" onclick="aiAnalyzeEmail('${email.id}')" title="Analyze with Claude AI: intent, action items, summary, tags">✨ AI Analyze</button>
+    ${(threadDepth > 0 || emailHasReplies) ? `<button class="btn" onclick="aiAnalyzeThread('${email.id}')" title="Analyze thread action items with Claude AI — sends structured data only, no full bodies">🔗 AI Thread</button>` : ''}
     <button class="btn" onclick="quickAddContact('${escHtml(email.fromAddr || '')}','${escHtml((email.fromName || '').replace(/'/g, "\\'"))}')" title="Add/edit sender in Address Book">👤 Contact</button>
   `;
 
@@ -431,12 +432,38 @@ function openDetail(email) {
   // Body
   const bodyEl = document.getElementById('det-body');
   bodyEl.innerHTML = '';
-  if (email.aiSummary) {
+
+  if (email.aiIntent || email.aiSummary) {
     const summaryEl = document.createElement('div');
     summaryEl.className = 'ai-summary-box';
-    summaryEl.textContent = '✨ ' + email.aiSummary;
+    const intentBadge = email.aiIntent
+      ? `<span class="intent-badge intent-${email.aiIntent}">${email.aiIntent}</span>`
+      : '';
+    summaryEl.innerHTML = intentBadge + escHtml('✨ ' + (email.aiSummary || ''));
     bodyEl.appendChild(summaryEl);
   }
+
+  if ((email.actionItems || []).length > 0) {
+    const aiBox = document.createElement('div');
+    aiBox.className = 'action-items-box';
+    const openCount = email.actionItems.filter(a => a.status === 'open').length;
+    const headerLabel = `⚡ Action Items${openCount > 0 ? ` — ${openCount} open` : ' — all resolved'}`;
+    const itemsHtml = email.actionItems.map(a => {
+      const statusClass = `ai-status-${a.status}`;
+      const statusLabel = a.status === 'open' ? '● open' : a.status === 'resolved' ? '✓ resolved' : '⏸ deferred';
+      return `<li class="action-item">
+        <span class="${statusClass}">${statusLabel}</span>
+        <span class="action-item-desc">${escHtml(a.description)}</span>
+      </li>`;
+    }).join('');
+    aiBox.innerHTML = `
+      <div class="action-items-header">
+        <span class="action-items-header-label">${headerLabel}</span>
+      </div>
+      <ul class="action-items-list">${itemsHtml}</ul>`;
+    bodyEl.appendChild(aiBox);
+  }
+
   const labelEl = document.createElement('div');
   labelEl.className = 'detail-body-label';
   labelEl.textContent = 'Email Body';

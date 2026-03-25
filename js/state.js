@@ -14,7 +14,8 @@ let svSubView      = 'emails'; // 'emails' | 'attachments' — sub-view within s
 let emailGroups    = []; // user-created email groups for smart view rules
 let autoTagRules   = []; // user-created auto-tag rules (applied on import)
 
-const AI_SYSTEM_PROMPT_DEFAULT = 'You tag and summarize project emails. Return 1–4 short lowercase tags (company names, topics, document types) and a one-sentence summary under 25 words. Tags must be single words or hyphenated, e.g. "rcy", "drawing-submission", "rfi".';
+const AI_SYSTEM_PROMPT_DEFAULT = 'You analyze project emails. Return JSON with: intent (one of: "actionable" — requires action from recipient, "statement" — declares facts or updates, "answer" — responds to a prior question or request, "actioned" — confirms something was completed, "fyi" — informational only); summary (one sentence under 20 words matching the intent, e.g. "Requests drawing markup and site inspection confirmation by Friday"); tags (1–4 lowercase single-word or hyphenated tags: company names, topics, document types, e.g. "rcy", "drawing-submission", "rfi"); actionItems (array of {id: "a1"/"a2"/..., description: the specific action required in under 15 words} — only when intent is "actionable", otherwise empty array).';
+const AI_THREAD_SYSTEM_PROMPT = 'You analyze email thread action items. Given a thread as structured JSON (summaries and action items only — no full bodies), determine the current status of each action item. For each, return status "open" (not yet addressed), "resolved" (clearly completed in a later email), or "deferred" (acknowledged but postponed). Return JSON with "updates": array of {emailId, actionItemId, status}.';
 const AI_USER_TEMPLATE_DEFAULT = 'Subject: {{subject}}\nFrom: {{from}}\nTo: {{to}}\n{{cc}}\n{{contacts}}\n\n{{body}}';
 const AI_BODY_LIMIT_DEFAULT    = 2000;
 

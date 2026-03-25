@@ -78,7 +78,7 @@ async function _loadClaudeKeyStatus() {
   el.style.color = key ? 'var(--ok, #2a9d5c)' : 'var(--muted)';
 }
 
-// --- AI tagging functions ---
+// --- AI analysis functions ---
 
 async function buildEmailPrompt(email) {
   const allAddrs = [
@@ -99,53 +99,79 @@ async function buildEmailPrompt(email) {
   return aiUserTemplate.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
-async function aiTagEmail(emailId) {
+async function _callClaude(systemPrompt, userContent, schema, maxTokens = 500) {
+  const apiKey = await getClaudeApiKey();
+  if (!apiKey) { toast('Add Claude API key in Settings first', 'err'); return null; }
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5',
+      max_tokens: maxTokens,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema,
+        },
+      },
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    toast(`AI error ${res.status}: ${errText.slice(0, 100)}`, 'err');
+    return null;
+  }
+  const data = await res.json();
+  return JSON.parse(data.content[0].text);
+}
+
+async function aiAnalyzeEmail(emailId) {
   const email = allEmails.find(e => e.id === emailId);
   if (!email) return;
   const apiKey = await getClaudeApiKey();
   if (!apiKey) { toast('Add Claude API key in Settings first', 'err'); return; }
 
-  toast('Running AI tagging…', 'ok');
+  toast('Running AI analysis…', 'ok');
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 300,
-        output_config: {
-          format: {
-            type: 'json_schema',
-            schema: {
+    const parsed = await _callClaude(
+      aiSystemPrompt,
+      await buildEmailPrompt(email),
+      {
+        type: 'object',
+        properties: {
+          tags:        { type: 'array', items: { type: 'string' } },
+          intent:      { type: 'string', enum: ['actionable', 'statement', 'answer', 'actioned', 'fyi'] },
+          summary:     { type: 'string' },
+          actionItems: {
+            type: 'array',
+            items: {
               type: 'object',
               properties: {
-                tags:    { type: 'array', items: { type: 'string' } },
-                summary: { type: 'string' },
+                id:          { type: 'string' },
+                description: { type: 'string' },
               },
-              required: ['tags', 'summary'],
+              required: ['id', 'description'],
               additionalProperties: false,
             },
           },
         },
-        system: aiSystemPrompt,
-        messages: [{ role: 'user', content: await buildEmailPrompt(email) }],
-      }),
-    });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      toast(`AI error ${res.status}: ${errText.slice(0, 100)}`, 'err');
-      return;
-    }
-    const data = await res.json();
-    const parsed = JSON.parse(data.content[0].text);
-    const tags = parsed.tags || [];
-    const summary = parsed.summary || null;
+        required: ['tags', 'intent', 'summary', 'actionItems'],
+        additionalProperties: false,
+      },
+      500,
+    );
+    if (!parsed) return;
 
+    const tags = parsed.tags || [];
     if (!email.tags) email.tags = [];
     for (const tag of tags) {
       const clean = tag.trim().toLowerCase();
@@ -153,12 +179,116 @@ async function aiTagEmail(emailId) {
         email.tags.push(clean);
       }
     }
-    email.aiSummary = summary;
-    await dbPut('emails', email);
 
+    email.aiIntent  = parsed.intent  || null;
+    email.aiSummary = parsed.summary || null;
+
+    // Merge incoming action items with any existing ones (preserve resolved/deferred statuses)
+    const existing = email.actionItems || [];
+    const existingMap = new Map(existing.map(a => [a.id, a]));
+    email.actionItems = (parsed.actionItems || []).map(a => ({
+      id:          a.id,
+      description: a.description,
+      status:      existingMap.get(a.id)?.status || 'open',
+    }));
+
+    // Mark actionable if AI found action items (never unset a manual flag)
+    if (email.actionItems.length > 0) email.isActionable = true;
+
+    await dbPut('emails', email);
     if (selectedEmail?.id === emailId) openDetail(email);
     renderEmailList();
-    toast(`AI tagged: ${tags.join(', ')}`, 'ok');
+    toast(`AI: ${email.aiIntent}${tags.length ? ' · ' + tags.join(', ') : ''}`, 'ok');
+  } catch (e) {
+    toast(`AI error: ${e.message}`, 'err');
+  }
+}
+
+// Legacy alias so any external callers still work
+const aiTagEmail = aiAnalyzeEmail;
+
+async function aiAnalyzeThread(emailId) {
+  const email = emailIdIndex.get(emailId) || allEmails.find(e => e.id === emailId);
+  if (!email) return;
+  const apiKey = await getClaudeApiKey();
+  if (!apiKey) { toast('Add Claude API key in Settings first', 'err'); return; }
+
+  const root = getThreadRoot(email);
+  const threadEmails = getThreadEmails(root);
+  if (threadEmails.length < 2) { toast('Thread needs at least 2 emails', 'warn'); return; }
+
+  // Step 1: analyze any emails in the thread that haven't been analyzed yet
+  const unanalyzed = threadEmails.filter(e => !e.aiIntent);
+  if (unanalyzed.length > 0) {
+    toast(`Analyzing ${unanalyzed.length} unanalyzed email${unanalyzed.length !== 1 ? 's' : ''} first…`, 'ok');
+    for (const e of unanalyzed) {
+      await aiAnalyzeEmail(e.id);
+    }
+  }
+
+  // Check there's at least one actionable email in the thread
+  const hasActionable = threadEmails.some(e => (e.actionItems || []).length > 0);
+  if (!hasActionable) {
+    toast('No action items found in this thread', 'warn');
+    return;
+  }
+
+  // Step 2: build condensed thread JSON (no body text)
+  const threadData = threadEmails.map(e => ({
+    emailId:     e.id,
+    from:        e.fromName ? `${e.fromName} <${e.fromAddr}>` : (e.fromAddr || ''),
+    date:        e.date || '',
+    intent:      e.aiIntent || 'unknown',
+    summary:     e.aiSummary || '(not analyzed)',
+    actionItems: (e.actionItems || []).map(a => ({ id: a.id, description: a.description, status: a.status })),
+  }));
+
+  toast('Analyzing thread action items…', 'ok');
+  try {
+    const parsed = await _callClaude(
+      AI_THREAD_SYSTEM_PROMPT,
+      JSON.stringify(threadData, null, 2),
+      {
+        type: 'object',
+        properties: {
+          updates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                emailId:      { type: 'string' },
+                actionItemId: { type: 'string' },
+                status:       { type: 'string', enum: ['open', 'resolved', 'deferred'] },
+              },
+              required: ['emailId', 'actionItemId', 'status'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['updates'],
+        additionalProperties: false,
+      },
+      600,
+    );
+    if (!parsed) return;
+
+    let updatedCount = 0;
+    for (const upd of (parsed.updates || [])) {
+      const target = emailIdIndex.get(upd.emailId) || allEmails.find(e => e.id === upd.emailId);
+      if (!target || !target.actionItems) continue;
+      const item = target.actionItems.find(a => a.id === upd.actionItemId);
+      if (!item) continue;
+      item.status = upd.status;
+      await dbPut('emails', target);
+      updatedCount++;
+    }
+
+    // Re-open current detail if it's in this thread
+    if (selectedEmail && threadEmails.some(e => e.id === selectedEmail.id)) {
+      openDetail(selectedEmail);
+    }
+    renderEmailList();
+    toast(`Thread analysis complete: ${updatedCount} action item${updatedCount !== 1 ? 's' : ''} updated`, 'ok');
   } catch (e) {
     toast(`AI error: ${e.message}`, 'err');
   }
@@ -169,16 +299,16 @@ async function bulkAiTagView() {
   if (!apiKey) { toast('Add Claude API key in Settings first', 'err'); return; }
   const targets = [...filteredEmails];
   if (!targets.length) { toast('No emails in current view', 'warn'); return; }
-  if (!confirm(`Run AI tagging on ${targets.length} email${targets.length !== 1 ? 's' : ''}?\n\nThis will use Claude API credits (claude-haiku-4-5).`)) return;
+  if (!confirm(`Run AI analysis on ${targets.length} email${targets.length !== 1 ? 's' : ''}?\n\nThis will use Claude API credits (claude-haiku-4-5).`)) return;
 
   let done = 0, errors = 0;
   for (const email of targets) {
     try {
-      await aiTagEmail(email.id);
+      await aiAnalyzeEmail(email.id);
       done++;
-      if (done % 5 === 0) toast(`AI tagging: ${done}/${targets.length}…`, 'ok');
+      if (done % 5 === 0) toast(`AI analysis: ${done}/${targets.length}…`, 'ok');
     } catch { errors++; }
   }
   applyFilters();
-  toast(`AI tagging complete: ${done} tagged${errors ? ', ' + errors + ' errors' : ''}`, 'ok');
+  toast(`AI analysis complete: ${done} analyzed${errors ? ', ' + errors + ' errors' : ''}`, 'ok');
 }
