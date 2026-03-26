@@ -113,6 +113,7 @@ function updateNavCounts() {
   dbGetAll('issues').then(issues => {
     document.getElementById('n-issues').textContent = issues.filter(i => i.status !== 'resolved').length;
   });
+  document.getElementById('n-actionitems').textContent = countOpenActionItems();
   dbGetAll('attachments').then(atts => {
     document.getElementById('n-transmittals').textContent = atts.length;
   });

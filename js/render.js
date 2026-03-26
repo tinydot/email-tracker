@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════════════════
 
 function renderEmailList() {
+  // Delegate to action-items view when it's active
+  if (currentView === 'actionitems') { showActionItemsList(); return; }
   const container = document.getElementById('email-list');
 
   if (!filteredEmails.length) {

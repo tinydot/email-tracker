@@ -88,7 +88,7 @@ function refreshBulkTagBar() {
   if (!bar) return;
 
   // Hide in non-email-list views
-  if (currentView === 'transmittals' || currentView === 'issues') {
+  if (currentView === 'transmittals' || currentView === 'issues' || currentView === 'actionitems') {
     bar.style.display = 'none';
     return;
   }

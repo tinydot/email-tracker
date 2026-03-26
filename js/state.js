@@ -34,6 +34,7 @@ const VIEW_LABELS = {
   automated:    'Automated / System',
   lowvalue:     'Low Value',
   issues:       'Issues',
+  actionitems:  'Action Items',
   transmittals: 'Transmittal Register',
   addressbook:  'Address Book',
 };
