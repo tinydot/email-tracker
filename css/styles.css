@@ -892,6 +892,23 @@
   .ai-status-deferred { font-family: var(--mono); font-size: 10px; white-space: nowrap; color: var(--muted);  }
   .action-item-desc   { flex: 1; color: var(--text); }
 
+  /* ── Action Items view ────────────────────────────── */
+  .ai-view-list { display: flex; flex-direction: column; }
+  .ai-view-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 11px 20px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .ai-view-row:hover { background: var(--surface2); }
+  .ai-view-row-status { min-width: 80px; padding-top: 1px; }
+  .ai-view-row-body   { flex: 1; min-width: 0; }
+  .ai-view-row-desc   { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+  .ai-view-row-meta   { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
   .atr-rule-row {
     display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
   }

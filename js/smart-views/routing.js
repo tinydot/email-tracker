@@ -33,6 +33,11 @@ function switchView(view) {
     hideSvTabToggle();
     refreshBulkTagBar();
     showIssuesList();
+  } else if (view === 'actionitems') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    hideSvTabToggle();
+    refreshBulkTagBar();
+    showActionItemsList();
   } else if (view === 'addressbook') {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     hideSvTabToggle();
