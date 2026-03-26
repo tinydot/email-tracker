@@ -12,6 +12,7 @@ async function loadAiPrompts() {
     aiSystemPrompt = saved.systemPrompt ?? AI_SYSTEM_PROMPT_DEFAULT;
     aiUserTemplate = saved.userTemplate ?? AI_USER_TEMPLATE_DEFAULT;
     aiBodyLimit    = saved.bodyLimit    ?? AI_BODY_LIMIT_DEFAULT;
+    aiThreadPrompt = saved.threadPrompt ?? AI_THREAD_SYSTEM_PROMPT;
   }
 }
 
@@ -21,6 +22,7 @@ async function saveAiPrompts() {
     systemPrompt: aiSystemPrompt,
     userTemplate: aiUserTemplate,
     bodyLimit:    aiBodyLimit,
+    threadPrompt: aiThreadPrompt,
   });
 }
 
@@ -48,13 +50,16 @@ async function clearClaudeApiKey() {
 }
 
 async function saveAiPromptsFromUI() {
-  const sys  = document.getElementById('ai-system-prompt')?.value ?? '';
-  const tmpl = document.getElementById('ai-user-template')?.value ?? '';
-  const lim  = parseInt(document.getElementById('ai-body-limit')?.value, 10);
-  if (!sys.trim())  { toast('System prompt cannot be empty', 'warn'); return; }
-  if (!tmpl.trim()) { toast('User template cannot be empty', 'warn'); return; }
+  const sys    = document.getElementById('ai-system-prompt')?.value ?? '';
+  const tmpl   = document.getElementById('ai-user-template')?.value ?? '';
+  const thread = document.getElementById('ai-thread-prompt')?.value ?? '';
+  const lim    = parseInt(document.getElementById('ai-body-limit')?.value, 10);
+  if (!sys.trim())    { toast('System prompt cannot be empty', 'warn'); return; }
+  if (!tmpl.trim())   { toast('User template cannot be empty', 'warn'); return; }
+  if (!thread.trim()) { toast('Thread prompt cannot be empty', 'warn'); return; }
   aiSystemPrompt = sys;
   aiUserTemplate = tmpl;
+  aiThreadPrompt = thread;
   aiBodyLimit    = Number.isFinite(lim) && lim > 0 ? lim : AI_BODY_LIMIT_DEFAULT;
   await saveAiPrompts();
   toast('AI prompt settings saved', 'ok');
@@ -68,6 +73,11 @@ function resetAiSystemPrompt() {
 function resetAiUserTemplate() {
   const el = document.getElementById('ai-user-template');
   if (el) el.value = AI_USER_TEMPLATE_DEFAULT;
+}
+
+function resetAiThreadPrompt() {
+  const el = document.getElementById('ai-thread-prompt');
+  if (el) el.value = AI_THREAD_SYSTEM_PROMPT;
 }
 
 async function _loadClaudeKeyStatus() {
@@ -246,7 +256,7 @@ async function aiAnalyzeThread(emailId) {
   toast('Analyzing thread action items…', 'ok');
   try {
     const parsed = await _callClaude(
-      AI_THREAD_SYSTEM_PROMPT,
+      aiThreadPrompt,
       JSON.stringify(threadData, null, 2),
       {
         type: 'object',

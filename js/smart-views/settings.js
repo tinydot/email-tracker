@@ -576,6 +576,17 @@ function showSettings() {
                     placeholder="User message template…">${escHtml(aiUserTemplate)}</textarea>
         </div>
 
+        <div style="margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <label style="font-size:12px; font-weight:500; flex:1;">Thread Analysis Prompt</label>
+            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiThreadPrompt()">Reset to default</button>
+          </div>
+          <div style="color:var(--muted); font-size:11px; margin-bottom:6px;">Used by <b>AI Thread</b> — receives condensed thread JSON (no body text). Must instruct Claude to return <code>{"updates":[{emailId,actionItemId,status}]}</code>.</div>
+          <textarea id="ai-thread-prompt" class="search-input"
+                    style="width:100%; height:90px; resize:vertical; font-size:12px; font-family:inherit; box-sizing:border-box;"
+                    placeholder="Thread analysis instructions for Claude…">${escHtml(aiThreadPrompt)}</textarea>
+        </div>
+
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
           <label style="font-size:12px; font-weight:500; white-space:nowrap;">Body character limit:</label>
           <input type="number" id="ai-body-limit" class="search-input" value="${aiBodyLimit}" min="100" max="10000" step="100"
