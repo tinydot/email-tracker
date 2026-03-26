@@ -19,9 +19,10 @@ const AI_THREAD_SYSTEM_PROMPT = 'You analyze email thread action items. Given a 
 const AI_USER_TEMPLATE_DEFAULT = 'Subject: {{subject}}\nFrom: {{from}}\nTo: {{to}}\n{{cc}}\n{{contacts}}\n\n{{body}}';
 const AI_BODY_LIMIT_DEFAULT    = 2000;
 
-let aiSystemPrompt = AI_SYSTEM_PROMPT_DEFAULT;
-let aiUserTemplate = AI_USER_TEMPLATE_DEFAULT;
-let aiBodyLimit    = AI_BODY_LIMIT_DEFAULT;
+let aiSystemPrompt  = AI_SYSTEM_PROMPT_DEFAULT;
+let aiUserTemplate  = AI_USER_TEMPLATE_DEFAULT;
+let aiBodyLimit     = AI_BODY_LIMIT_DEFAULT;
+let aiThreadPrompt  = AI_THREAD_SYSTEM_PROMPT;
 
 const VIEW_LABELS = {
   all:          'All Emails',
