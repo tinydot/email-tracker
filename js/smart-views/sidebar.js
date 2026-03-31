@@ -43,10 +43,10 @@ async function showSvAttachments() {
   const atts = allAtts.filter(a => emailIds.has(a.emailId));
 
   const emailMap = new Map(filteredEmails.map(e => [e.id, e]));
-  const rows = atts.map(a => ({ ...a, email: emailMap.get(a.emailId) }));
-  rows.sort((a, b) => (b.email?.date || '').localeCompare(a.email?.date || ''));
+  const rawRows = atts.map(a => ({ ...a, email: emailMap.get(a.emailId) }));
+  rawRows.sort((a, b) => (b.email?.date || '').localeCompare(a.email?.date || ''));
 
-  if (!rows.length) {
+  if (!rawRows.length) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">📎</div>
@@ -55,6 +55,7 @@ async function showSvAttachments() {
     return;
   }
 
+  const rows = deduplicateAttachmentsByHash(rawRows);
   window._txRows = rows; // allows editCellInline to locate and update rows
 
   container.innerHTML = `
@@ -74,10 +75,22 @@ async function showSvAttachments() {
           const hasFile = !!r.storedPath;
           const fileIcon = hasFile ? '📎' : '📋';
           const fileAction = hasFile ? `onclick="openAttachmentFromDisk('${escHtml(r.storedPath)}')" style="cursor:pointer; color:var(--accent);"` : '';
-          const dateStr = r.email?.date ? formatDate(r.email.date) : '—';
+          const dupCount = r._allEmails ? r._allEmails.length : 1;
+          // Show earliest date across all duplicate emails
+          const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
+          const dateStr = allDates.length ? formatDate(allDates[0]) : '—';
           const subject = r.email?.subject || '—';
           const emailId = r.email?.id ? escHtml(r.email.id) : '';
           const subjectTrunc = subject.length > 45 ? subject.slice(0, 45) + '…' : subject;
+          // For subject cell: if multiple emails, show count instead of link
+          const subjectTitle = dupCount > 1
+            ? (r._allEmails || []).map(e => e?.subject || '?').join('\n')
+            : subject;
+          const subjectDisplay = dupCount > 1
+            ? `<span style="color:var(--muted);" title="${escHtml(subjectTitle)}">${dupCount} emails</span>`
+            : (emailId
+                ? `<a href="#" onclick="selectEmail('${emailId}');return false;" style="color:var(--accent); text-decoration:none;" title="${escHtml(subject)}">${escHtml(subjectTrunc)}</a>`
+                : escHtml(subjectTrunc));
           return `
             <tr style="border-bottom:1px solid var(--border); height:38px;"
                 onmouseover="this.style.background='var(--surface2)'"
@@ -85,12 +98,11 @@ async function showSvAttachments() {
               <td style="padding:8px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                 <span ${fileAction} title="${escHtml(r.filename)}" style="display:flex; align-items:center; gap:4px;">
                   ${fileIcon} ${escHtml(r.filename)}
+                  ${dupCount > 1 ? `<span style="background:var(--surface2);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;font-size:10px;color:var(--muted);margin-left:4px;white-space:nowrap;" title="${dupCount} emails contain this file">${dupCount}×</span>` : ''}
                 </span>
               </td>
               <td style="padding:8px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                ${emailId
-                  ? `<a href="#" onclick="selectEmail('${emailId}');return false;" style="color:var(--accent); text-decoration:none;" title="${escHtml(subject)}">${escHtml(subjectTrunc)}</a>`
-                  : escHtml(subjectTrunc)}
+                ${subjectDisplay}
               </td>
               <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'sourceParty')" title="Click to edit">
                 <div style="padding:4px; cursor:text; min-height:20px; ${!r.sourceParty ? 'color:var(--muted);' : ''}">
