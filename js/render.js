@@ -947,10 +947,21 @@ function toggleBlacklistedSection(btn) {
 async function updateAttachment(attId, field, value) {
   const att = await dbGet('attachments', attId);
   if (!att) return;
-  
+
   att[field] = value.trim();
   await dbPut('attachments', att);
-  
+
+  // Sync metadata fields to all other attachment records sharing the same file (by hash)
+  if (att.hash && ['transmittalRef', 'sourceParty', 'documentType'].includes(field)) {
+    const dupes = await dbGetByIndex('attachments', 'hash', att.hash);
+    for (const dupe of dupes) {
+      if (dupe.id !== attId) {
+        dupe[field] = value.trim();
+        await dbPut('attachments', dupe);
+      }
+    }
+  }
+
   toast(`Updated ${field}`, 'ok');
 }
 
@@ -1070,7 +1081,7 @@ async function showTransmittalRegister() {
   
   // Store rows for filtering (exclude blacklisted by default)
   window._txAllRows = rows;
-  window._txRows = rows.filter(r => !r.isBlacklisted);
+  window._txRows = deduplicateAttachmentsByHash(rows.filter(r => !r.isBlacklisted));
 
   // Render initial table
   renderTransmittalTable(window._txRows);
@@ -1085,7 +1096,8 @@ function filterTransmittalRegister() {
 
   const source = showBlacklisted ? window._txAllRows : (window._txAllRows || window._txRows).filter(r => !r.isBlacklisted);
 
-  let filtered = source.filter(r => {
+  // Filter the full (non-deduped) source first so dedup groups properly
+  const filtered = source.filter(r => {
     if (search && !(
       (r.filename || '').toLowerCase().includes(search) ||
       (r.transmittalRef || '').toLowerCase().includes(search)
@@ -1097,7 +1109,30 @@ function filterTransmittalRegister() {
     return true;
   });
 
-  renderTransmittalTable(filtered);
+  window._txRows = deduplicateAttachmentsByHash(filtered);
+  renderTransmittalTable(window._txRows);
+}
+
+// Deduplicate attachment rows by hash, merging rows with identical file content into one.
+// The representative row (first/most-recent) is kept; duplicate rows are folded in.
+// The result row gains _allEmails (array) and _allIds (array of all attachment IDs sharing the hash).
+function deduplicateAttachmentsByHash(rows) {
+  const hashMap = new Map();
+  for (const r of rows) {
+    const key = r.hash || `__no_hash__${r.id}`;
+    if (!hashMap.has(key)) {
+      hashMap.set(key, { ...r, _allEmails: [r.email], _allIds: [r.id] });
+    } else {
+      const rep = hashMap.get(key);
+      rep._allEmails.push(r.email);
+      rep._allIds.push(r.id);
+      // Prefer metadata from whichever record has it (representative wins if it has a value)
+      if (!rep.transmittalRef && r.transmittalRef) rep.transmittalRef = r.transmittalRef;
+      if (!rep.sourceParty && r.sourceParty) rep.sourceParty = r.sourceParty;
+      if (!rep.documentType && r.documentType) rep.documentType = r.documentType;
+    }
+  }
+  return [...hashMap.values()];
 }
 
 function renderTransmittalTable(rows) {
@@ -1127,9 +1162,17 @@ function renderTransmittalTable(rows) {
           const hasFile = !!r.storedPath;
           const fileIcon = hasFile ? '📎' : '📋';
           const fileAction = hasFile ? `onclick="openAttachmentFromDisk('${r.storedPath}')" style="cursor:pointer; color:var(--accent);"` : '';
-          const dateStr = r.email?.date ? formatDate(r.email.date) : '—';
-          const from = r.email?.fromName || r.email?.fromAddr || '—';
-          
+          const dupCount = r._allEmails ? r._allEmails.length : 1;
+          // For date: show the earliest email date across all duplicates
+          const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
+          const dateStr = allDates.length ? formatDate(allDates[0]) : '—';
+          // For from: show primary sender; if multiple, indicate count
+          const primaryFrom = r.email?.fromName || r.email?.fromAddr || '—';
+          const fromStr = dupCount > 1 ? `${truncate(primaryFrom, 18)} +${dupCount - 1}` : truncate(primaryFrom, 24);
+          const fromTitle = dupCount > 1
+            ? (r._allEmails || []).map(e => e?.fromName || e?.fromAddr || '?').join('\n')
+            : primaryFrom;
+
           return `
             <tr style="border-bottom:1px solid var(--border); height:38px;${r.isBlacklisted ? ' opacity:0.45;' : ''}" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
               <td style="padding:8px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
@@ -1138,6 +1181,7 @@ function renderTransmittalTable(rows) {
                   ${r.isNested ? '<span style="color:var(--muted);margin-right:8px;">↳</span>' : ''}
                   ${fileIcon} ${escHtml(truncate(r.filename, r.isNested ? 35 : 40))}
                   ${r.isNested ? `<span style="color:var(--muted);font-size:10px;margin-left:4px;" title="From: ${escHtml(r.parentFilename)}">(nested)</span>` : ''}
+                  ${dupCount > 1 ? `<span style="background:var(--surface2);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;font-size:10px;color:var(--muted);margin-left:4px;white-space:nowrap;" title="${dupCount} emails contain this file">${dupCount}×</span>` : ''}
                 </span>
               </td>
               <td style="padding:4px;" onclick="editCellInline(this, '${r.id}', 'transmittalRef')" title="Click to edit">
@@ -1161,8 +1205,8 @@ function renderTransmittalTable(rows) {
               <td style="padding:8px; font-family:var(--mono); font-size:11px; color:var(--muted);">
                 ${dateStr}
               </td>
-              <td style="padding:8px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escHtml(from)}">
-                ${escHtml(truncate(from, 24))}
+              <td style="padding:8px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escHtml(fromTitle)}">
+                ${escHtml(fromStr)}
               </td>
               <td style="padding:8px; text-align:center;">
                 ${hasFile ? '<span style="color:var(--accent)">●</span>' : '<span style="color:var(--muted)">○</span>'}
@@ -1263,11 +1307,19 @@ function editCellInline(cell, attId, field) {
   const save = async () => {
     const newValue = input.value.trim();
     await updateAttachment(attId, field, newValue);
-    
-    // Update the row data
-    const row = window._txRows.find(r => r.id === attId);
-    if (row) row[field] = newValue;
-    
+
+    // Update the row data (and any same-hash rows in the current view)
+    const row = window._txRows ? window._txRows.find(r => r.id === attId) : null;
+    if (row) {
+      row[field] = newValue;
+      // Also update sibling rows sharing the same hash (if _txRows isn't deduped)
+      if (row.hash) {
+        (window._txRows || []).forEach(r => {
+          if (r.hash === row.hash && r.id !== attId) r[field] = newValue;
+        });
+      }
+    }
+
     // Refresh the display
     div.textContent = newValue || 'Click to edit';
     div.style.color = newValue ? 'var(--text)' : 'var(--muted)';

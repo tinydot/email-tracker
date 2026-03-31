@@ -436,10 +436,16 @@ async function processFilesForImport(fileArr) {
           importedAt: new Date().toISOString(),
         };
 
-        // Inherit blacklist status from any existing attachment with the same hash
+        // Inherit blacklist status and metadata from any existing attachment with the same hash
         const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
         if (existingForBlacklist.some(a => a.isBlacklisted)) {
           attRecord.isBlacklisted = true;
+        }
+        const existingWithMeta = existingForBlacklist.find(a => a.transmittalRef || a.sourceParty || a.documentType);
+        if (existingWithMeta) {
+          if (existingWithMeta.transmittalRef) attRecord.transmittalRef = existingWithMeta.transmittalRef;
+          if (existingWithMeta.sourceParty) attRecord.sourceParty = existingWithMeta.sourceParty;
+          if (existingWithMeta.documentType) attRecord.documentType = existingWithMeta.documentType;
         }
 
         // Save attachment to disk if storage is available
@@ -481,10 +487,16 @@ async function processFilesForImport(fileArr) {
               importedAt: new Date().toISOString(),
             };
             
-            // Inherit blacklist status from any existing attachment with the same hash
+            // Inherit blacklist status and metadata from any existing attachment with the same hash
             const existingNested = await dbGetByIndex('attachments', 'hash', nested.hash);
             if (existingNested.some(a => a.isBlacklisted)) {
               nestedRecord.isBlacklisted = true;
+            }
+            const existingNestedWithMeta = existingNested.find(a => a.transmittalRef || a.sourceParty || a.documentType);
+            if (existingNestedWithMeta) {
+              if (existingNestedWithMeta.transmittalRef) nestedRecord.transmittalRef = existingNestedWithMeta.transmittalRef;
+              if (existingNestedWithMeta.sourceParty) nestedRecord.sourceParty = existingNestedWithMeta.sourceParty;
+              if (existingNestedWithMeta.documentType) nestedRecord.documentType = existingNestedWithMeta.documentType;
             }
 
             // Save nested attachment to disk
