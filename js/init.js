@@ -15,6 +15,7 @@ async function init() {
   await loadAutoTagRules();
   await loadAiPrompts();
   await loadAttachTextLimit();
+  await loadDocumentTypes();
   await loadSmartViews();
 
   const emails = await dbGetAll('emails');

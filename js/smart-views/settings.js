@@ -56,6 +56,41 @@ async function renameEmailGroup(groupId) {
   showSettings();
 }
 
+// --- Document types ---
+
+const DEFAULT_DOCUMENT_TYPES = ['Certificate', 'Drawing', 'Minutes', 'Other', 'Report', 'RFI', 'Specification', 'Submittal'];
+let documentTypes = [...DEFAULT_DOCUMENT_TYPES];
+
+async function loadDocumentTypes() {
+  const saved = await dbGet('settings', 'documentTypes');
+  if (saved && Array.isArray(saved.types)) documentTypes = saved.types;
+}
+
+async function saveDocumentTypes() {
+  await dbPut('settings', { key: 'documentTypes', types: documentTypes });
+}
+
+async function addDocumentType() {
+  const input = document.getElementById('new-doc-type-input');
+  const val = input.value.trim();
+  if (!val) return;
+  if (documentTypes.map(t => t.toLowerCase()).includes(val.toLowerCase())) {
+    toast('Type already exists', 'warn'); return;
+  }
+  documentTypes = [...documentTypes, val].sort((a, b) => a.localeCompare(b));
+  await saveDocumentTypes();
+  input.value = '';
+  toast(`Added "${val}"`, 'ok');
+  showSettings();
+}
+
+async function removeDocumentType(type) {
+  documentTypes = documentTypes.filter(t => t !== type);
+  await saveDocumentTypes();
+  toast(`Removed "${type}"`, 'ok');
+  showSettings();
+}
+
 // --- Custom automation patterns ---
 
 async function loadCustomPatterns() {
@@ -521,6 +556,26 @@ function showSettings() {
             ).join('')}
           </div>
           <button class="btn btn-primary" style="margin-left:auto;" onclick="saveAttachTextLimitFromUI()">Save</button>
+        </div>
+      </div>
+
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">Document Types</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
+          The list of document types available when classifying attachments in the transmittal register.
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+          ${documentTypes.map(t => `
+            <span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:var(--surface3); border:1px solid var(--border); border-radius:4px; font-size:12px;">
+              ${escHtml(t)}
+              <button onclick="removeDocumentType('${escHtml(t)}')" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 2px;" title="Remove">&times;</button>
+            </span>
+          `).join('')}
+        </div>
+        <div style="display:flex; gap:6px;">
+          <input id="new-doc-type-input" type="text" class="search-input" placeholder="New type name…" style="flex:1;"
+                 onkeydown="if(event.key==='Enter') addDocumentType()">
+          <button class="btn btn-primary" onclick="addDocumentType()">Add</button>
         </div>
       </div>
 
