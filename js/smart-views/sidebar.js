@@ -55,15 +55,18 @@ async function showSvAttachments() {
     return;
   }
 
+  window._txRows = rows; // allows editCellInline to locate and update rows
+
   container.innerHTML = `
     <table style="width:100%; border-collapse:collapse; font-size:12px;">
       <thead style="position:sticky; top:0; background:var(--surface); border-bottom:1px solid var(--border2); z-index:1;">
         <tr style="height:34px;">
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">File</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Subject</th>
-          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">From</th>
-          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Date</th>
+          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Source Party</th>
+          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Type</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Size</th>
+          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Date</th>
         </tr>
       </thead>
       <tbody>
@@ -72,7 +75,6 @@ async function showSvAttachments() {
           const fileIcon = hasFile ? '📎' : '📋';
           const fileAction = hasFile ? `onclick="openAttachmentFromDisk('${escHtml(r.storedPath)}')" style="cursor:pointer; color:var(--accent);"` : '';
           const dateStr = r.email?.date ? formatDate(r.email.date) : '—';
-          const from = r.email?.fromName || r.email?.fromAddr || '—';
           const subject = r.email?.subject || '—';
           const emailId = r.email?.id ? escHtml(r.email.id) : '';
           const subjectTrunc = subject.length > 45 ? subject.slice(0, 45) + '…' : subject;
@@ -90,14 +92,21 @@ async function showSvAttachments() {
                   ? `<a href="#" onclick="selectEmail('${emailId}');return false;" style="color:var(--accent); text-decoration:none;" title="${escHtml(subject)}">${escHtml(subjectTrunc)}</a>`
                   : escHtml(subjectTrunc)}
               </td>
-              <td style="padding:8px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted);">
-                ${escHtml(from)}
+              <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'sourceParty')" title="Click to edit">
+                <div style="padding:4px; cursor:text; min-height:20px; ${!r.sourceParty ? 'color:var(--muted);' : ''}">
+                  ${escHtml(r.sourceParty || 'Click to edit')}
+                </div>
               </td>
-              <td style="padding:8px; font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap;">
-                ${dateStr}
+              <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'documentType')" title="Click to edit">
+                <div style="padding:4px; cursor:text; min-height:20px; ${!r.documentType ? 'color:var(--muted);' : ''}">
+                  ${escHtml(r.documentType || 'Click to edit')}
+                </div>
               </td>
               <td style="padding:8px; font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap;">
                 ${formatSize(r.size)}
+              </td>
+              <td style="padding:8px; font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap;">
+                ${dateStr}
               </td>
             </tr>`;
         }).join('')}
