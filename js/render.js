@@ -556,14 +556,7 @@ function openDetail(email) {
               <label style="color:var(--muted); padding-top:4px;">Document Type:</label>
               <select class="btn" onchange="updateAttachment('${a.id}', 'documentType', this.value)" style="width:100%;">
                 <option value="">—</option>
-                <option value="Drawing" ${a.documentType === 'Drawing' ? 'selected' : ''}>Drawing</option>
-                <option value="Specification" ${a.documentType === 'Specification' ? 'selected' : ''}>Specification</option>
-                <option value="Report" ${a.documentType === 'Report' ? 'selected' : ''}>Report</option>
-                <option value="Minutes" ${a.documentType === 'Minutes' ? 'selected' : ''}>Minutes</option>
-                <option value="RFI" ${a.documentType === 'RFI' ? 'selected' : ''}>RFI</option>
-                <option value="Submittal" ${a.documentType === 'Submittal' ? 'selected' : ''}>Submittal</option>
-                <option value="Certificate" ${a.documentType === 'Certificate' ? 'selected' : ''}>Certificate</option>
-                <option value="Other" ${a.documentType === 'Other' ? 'selected' : ''}>Other</option>
+                ${documentTypes.map(t => `<option value="${escHtml(t)}" ${a.documentType === t ? 'selected' : ''}>${escHtml(t)}</option>`).join('')}
               </select>
 
               <label style="color:var(--muted); padding-top:4px;">Hash:</label>
@@ -1278,17 +1271,8 @@ function editCellInline(cell, attId, field) {
     input = document.createElement('select');
     input.className = 'search-input';
     input.style.cssText = 'width:100%; padding:4px; font-size:12px;';
-    input.innerHTML = `
-      <option value="">—</option>
-      <option value="Drawing" ${value === 'Drawing' ? 'selected' : ''}>Drawing</option>
-      <option value="Specification" ${value === 'Specification' ? 'selected' : ''}>Specification</option>
-      <option value="Report" ${value === 'Report' ? 'selected' : ''}>Report</option>
-      <option value="Minutes" ${value === 'Minutes' ? 'selected' : ''}>Minutes</option>
-      <option value="RFI" ${value === 'RFI' ? 'selected' : ''}>RFI</option>
-      <option value="Submittal" ${value === 'Submittal' ? 'selected' : ''}>Submittal</option>
-      <option value="Certificate" ${value === 'Certificate' ? 'selected' : ''}>Certificate</option>
-      <option value="Other" ${value === 'Other' ? 'selected' : ''}>Other</option>
-    `;
+    input.innerHTML = `<option value="">—</option>` +
+      documentTypes.map(t => `<option value="${escHtml(t)}" ${value === t ? 'selected' : ''}>${escHtml(t)}</option>`).join('');
   } else {
     input = document.createElement('input');
     input.type = 'text';
