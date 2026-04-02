@@ -65,6 +65,12 @@ async function showSvAttachments() {
   window._txRows = rows; // allows editCellInline to locate and update rows
 
   container.innerHTML = `
+    <div style="display:flex; flex-direction:column; height:100%;">
+      <div style="padding:8px 12px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; background:var(--surface); flex-shrink:0;">
+        <span style="font-size:12px; color:var(--muted);">${rows.length} attachment${rows.length !== 1 ? 's' : ''}</span>
+        <button class="btn" onclick="exportSvAttachmentsExcel()" style="margin-left:auto;">⬇ Export to Excel</button>
+      </div>
+      <div style="overflow:auto; flex:1;">
     <table style="width:100%; border-collapse:collapse; font-size:12px;">
       <thead style="position:sticky; top:0; background:var(--surface); border-bottom:1px solid var(--border2); z-index:1;">
         <tr style="height:34px;">
@@ -133,10 +139,69 @@ async function showSvAttachments() {
             </tr>`;
         }).join('')}
       </tbody>
-    </table>`;
+    </table>
+      </div>
+    </div>`;
 
   // Asynchronously load image thumbnails
   _loadSvThumbnails(container);
+}
+
+function exportSvAttachmentsExcel() {
+  const rows = window._txRows;
+  if (!rows || !rows.length) {
+    toast('No data to export', 'warn');
+    return;
+  }
+
+  const escXml = s => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  const headers = ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size (bytes)', 'Date'];
+
+  const dataRows = rows.map(r => {
+    const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
+    const dateStr = allDates.length ? allDates[0].split('T')[0] : '';
+    const subject = r._allEmails && r._allEmails.length > 1
+      ? `${r._allEmails.length} emails`
+      : (r.email?.subject || '');
+    return [r.filename, subject, r.sourceParty || '', r.documentType || '', r.size, dateStr];
+  });
+
+  const cell = (v) => {
+    const isNum = typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)) && !/^0\d/.test(v));
+    const type = isNum ? 'Number' : 'String';
+    return `<Cell><Data ss:Type="${type}">${escXml(v)}</Data></Cell>`;
+  };
+
+  const xml = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<?mso-application progid="Excel.Sheet"?>`,
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`,
+    `  <Styles>`,
+    `    <Style ss:ID="h"><Font ss:Bold="1"/></Style>`,
+    `  </Styles>`,
+    `  <Worksheet ss:Name="Attachments">`,
+    `    <Table>`,
+    `      <Row>${headers.map(h => `<Cell ss:StyleID="h"><Data ss:Type="String">${escXml(h)}</Data></Cell>`).join('')}</Row>`,
+    ...dataRows.map(row => `      <Row>${row.map(cell).join('')}</Row>`),
+    `    </Table>`,
+    `  </Worksheet>`,
+    `</Workbook>`
+  ].join('\n');
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `attachments-${new Date().toISOString().split('T')[0]}.xls`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  toast(`Exported ${rows.length} attachment${rows.length !== 1 ? 's' : ''}`, 'ok');
 }
 
 async function _loadSvThumbnails(container) {
