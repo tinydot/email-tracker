@@ -509,7 +509,7 @@ function openDetail(email) {
       const renderAttachItem = (a, showingBlacklisted = false) => {
         const hasFile = !!a.storedPath;
         const action = hasFile
-          ? `onclick="openAttachmentFromDisk('${a.storedPath}')" title="Click to open"`
+          ? `onclick="openAttachmentFromDisk('${escHtml(a.storedPath)}')" title="Click to open"`
           : 'title="File not stored on disk"';
         const icon = hasFile ? '📎' : '📋';
         const blacklistBtn = `<button class="btn" onclick="toggleAttachmentBlacklist('${a.id}')" style="padding:2px 6px; font-size:10px; ${a.isBlacklisted ? 'color:var(--accent);' : 'color:var(--muted);'}" title="${a.isBlacklisted ? 'Unblacklist (show in list)' : 'Blacklist (hide from list)'}">${a.isBlacklisted ? '🚫' : '○'}</button>`;
@@ -1154,7 +1154,7 @@ function renderTransmittalTable(rows) {
         ${rows.map(r => {
           const hasFile = !!r.storedPath;
           const fileIcon = hasFile ? '📎' : '📋';
-          const fileAction = hasFile ? `onclick="openAttachmentFromDisk('${r.storedPath}')" style="cursor:pointer; color:var(--accent);"` : '';
+          const fileAction = hasFile ? `onclick="openAttachmentFromDisk('${escHtml(r.storedPath)}')" style="cursor:pointer; color:var(--accent);"` : '';
           const dupCount = r._allEmails ? r._allEmails.length : 1;
           // For date: show the earliest email date across all duplicates
           const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
