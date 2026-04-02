@@ -34,7 +34,13 @@ function setSvSubView(sub) {
   }
 }
 
+let _svThumbUrls = [];
+
 async function showSvAttachments() {
+  // Revoke any previous thumbnail blob URLs
+  for (const url of _svThumbUrls) URL.revokeObjectURL(url);
+  _svThumbUrls = [];
+
   const container = document.getElementById('email-list');
   container.innerHTML = '<div style="padding:20px; color:var(--muted); font-size:12px;">Loading attachments…</div>';
 
@@ -73,8 +79,12 @@ async function showSvAttachments() {
       <tbody>
         ${rows.map(r => {
           const hasFile = !!r.storedPath;
-          const fileIcon = hasFile ? '📎' : '📋';
+          const isImage = r.contentType && r.contentType.startsWith('image/');
+          const fileIcon = isImage ? '🖼' : (hasFile ? '📎' : '📋');
           const fileAction = hasFile ? `onclick="openAttachmentFromDisk('${escHtml(r.storedPath)}')" style="cursor:pointer; color:var(--accent);"` : '';
+          const thumbHtml = isImage && hasFile
+            ? `<img data-thumb="${escHtml(r.storedPath)}" style="width:36px;height:36px;object-fit:cover;border-radius:3px;border:1px solid var(--border2);flex-shrink:0;background:var(--surface2);" alt="">`
+            : '';
           const dupCount = r._allEmails ? r._allEmails.length : 1;
           // Show earliest date across all duplicate emails
           const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
@@ -95,9 +105,9 @@ async function showSvAttachments() {
             <tr style="border-bottom:1px solid var(--border); height:38px;"
                 onmouseover="this.style.background='var(--surface2)'"
                 onmouseout="this.style.background=''">
-              <td style="padding:8px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                <span ${fileAction} title="${escHtml(r.filename)}" style="display:flex; align-items:center; gap:4px;">
-                  ${fileIcon} ${escHtml(r.filename)}
+              <td style="padding:6px 8px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                <span ${fileAction} title="${escHtml(r.filename)}" style="display:flex; align-items:center; gap:6px;">
+                  ${thumbHtml || fileIcon} <span style="overflow:hidden; text-overflow:ellipsis;">${escHtml(r.filename)}</span>
                   ${dupCount > 1 ? `<span style="background:var(--surface2);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;font-size:10px;color:var(--muted);margin-left:4px;white-space:nowrap;" title="${dupCount} emails contain this file">${dupCount}×</span>` : ''}
                 </span>
               </td>
@@ -124,6 +134,23 @@ async function showSvAttachments() {
         }).join('')}
       </tbody>
     </table>`;
+
+  // Asynchronously load image thumbnails
+  _loadSvThumbnails(container);
+}
+
+async function _loadSvThumbnails(container) {
+  const imgs = container.querySelectorAll('img[data-thumb]');
+  for (const img of imgs) {
+    const file = await getAttachmentFileObject(img.dataset.thumb);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      _svThumbUrls.push(url);
+      img.src = url;
+    } else {
+      img.style.display = 'none';
+    }
+  }
 }
 
 function renderSmartViewsSidebar() {
