@@ -154,14 +154,6 @@ function exportSvAttachmentsExcel() {
     return;
   }
 
-  const escXml = s => String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-  const headers = ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size', 'Date'];
-
   const fmtSize = bytes => {
     if (!bytes) return '';
     if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
@@ -169,44 +161,22 @@ function exportSvAttachmentsExcel() {
     return bytes + ' B';
   };
 
-  const dataRows = rows.map(r => {
-    const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
-    const dateStr = allDates.length ? allDates[0].split('T')[0] : '';
-    const subject = r._allEmails && r._allEmails.length > 1
-      ? `${r._allEmails.length} emails`
-      : (r.email?.subject || '');
-    return [r.filename, subject, r.sourceParty || '', r.documentType || '', fmtSize(r.size), dateStr];
-  });
+  const data = [
+    ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size', 'Date'],
+    ...rows.map(r => {
+      const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
+      const dateStr = allDates.length ? allDates[0].split('T')[0] : '';
+      const subject = r._allEmails && r._allEmails.length > 1
+        ? `${r._allEmails.length} emails`
+        : (r.email?.subject || '');
+      return [r.filename, subject, r.sourceParty || '', r.documentType || '', fmtSize(r.size), dateStr];
+    })
+  ];
 
-  const cell = (v) => {
-    const isNum = typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)) && !/^0\d/.test(v));
-    const type = isNum ? 'Number' : 'String';
-    return `<Cell><Data ss:Type="${type}">${escXml(v)}</Data></Cell>`;
-  };
-
-  const xml = [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<?mso-application progid="Excel.Sheet"?>`,
-    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`,
-    `  <Styles>`,
-    `    <Style ss:ID="h"><Font ss:Bold="1"/></Style>`,
-    `  </Styles>`,
-    `  <Worksheet ss:Name="Attachments">`,
-    `    <Table>`,
-    `      <Row>${headers.map(h => `<Cell ss:StyleID="h"><Data ss:Type="String">${escXml(h)}</Data></Cell>`).join('')}</Row>`,
-    ...dataRows.map(row => `      <Row>${row.map(cell).join('')}</Row>`),
-    `    </Table>`,
-    `  </Worksheet>`,
-    `</Workbook>`
-  ].join('\n');
-
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `attachments-${new Date().toISOString().split('T')[0]}.xls`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Attachments');
+  XLSX.writeFile(wb, `attachments-${new Date().toISOString().split('T')[0]}.xlsx`);
 
   toast(`Exported ${rows.length} attachment${rows.length !== 1 ? 's' : ''}`, 'ok');
 }
