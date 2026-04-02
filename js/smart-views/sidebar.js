@@ -165,7 +165,8 @@ function exportSvAttachmentsExcel() {
     ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size', 'Date'],
     ...rows.map(r => {
       const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
-      const dateStr = allDates.length ? allDates[0].split('T')[0] : '';
+      const rawDate = allDates.length ? new Date(allDates[0]) : null;
+      const dateStr = rawDate ? rawDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ') : '';
       const subject = r._allEmails && r._allEmails.length > 1
         ? `${r._allEmails.length} emails`
         : (r.email?.subject || '');
