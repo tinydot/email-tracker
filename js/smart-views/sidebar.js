@@ -160,7 +160,14 @@ function exportSvAttachmentsExcel() {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-  const headers = ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size (bytes)', 'Date'];
+  const headers = ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size', 'Date'];
+
+  const fmtSize = bytes => {
+    if (!bytes) return '';
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return bytes + ' B';
+  };
 
   const dataRows = rows.map(r => {
     const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
@@ -168,7 +175,7 @@ function exportSvAttachmentsExcel() {
     const subject = r._allEmails && r._allEmails.length > 1
       ? `${r._allEmails.length} emails`
       : (r.email?.subject || '');
-    return [r.filename, subject, r.sourceParty || '', r.documentType || '', r.size, dateStr];
+    return [r.filename, subject, r.sourceParty || '', r.documentType || '', fmtSize(r.size), dateStr];
   });
 
   const cell = (v) => {
