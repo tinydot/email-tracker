@@ -660,6 +660,23 @@ function showSettings() {
         ${renderAutoTagRulesSection()}
       </div>
 
+      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+        <div style="font-weight:500; margin-bottom:4px;">🤖 Local AI (Ollama)</div>
+        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
+          Import an <code>insights.json</code> file produced by <code>tools/analyze.py</code> to see
+          AI-generated summaries, issues, milestones and design changes directly in each email's detail panel.
+          See <code>tools/README.md</code> for setup instructions (requires a local Ollama instance).
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label class="btn btn-primary" style="cursor:pointer;">
+            Import insights.json
+            <input type="file" accept=".json" style="display:none;"
+                   onchange="if(this.files[0]) importInsightsFile(this.files[0])">
+          </label>
+          <button class="btn btn-danger" onclick="clearAllInsights()">Clear all insights</button>
+        </div>
+      </div>
+
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
