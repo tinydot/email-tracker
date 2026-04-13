@@ -218,8 +218,8 @@ def parse_eml(path: Path) -> dict:
 
 def analyze_with_llm(
     email: dict,
+    client,
     model: str,
-    ollama_url: str,
     body_limit: int,
 ) -> dict:
     """
@@ -236,8 +236,6 @@ def analyze_with_llm(
         f"Date: {email.get('date') or email.get('dateRaw') or 'unknown'}\n\n"
         f"{body}"
     )
-
-    client = ollama_client.Client(host=ollama_url)
 
     for attempt in range(3):
         sys_prompt = SYSTEM_PROMPT
@@ -271,12 +269,11 @@ def analyze_with_llm(
 
 def get_embedding(
     text: str,
+    client,
     model: str,
-    ollama_url: str,
     body_limit: int,
 ) -> list[float]:
     """Call Ollama /api/embed for a single text, return list of floats."""
-    client = ollama_client.Client(host=ollama_url)
     truncated = text[:body_limit]
     resp = client.embed(model=model, input=truncated)
     # ollama Python client returns resp.embeddings as list-of-list
@@ -285,7 +282,53 @@ def get_embedding(
     raise RuntimeError("Empty embedding response from Ollama")
 
 
-# ── Insights file I/O ────────────────────────────────────
+# ── Preflight checks ────────────────────────────────────
+
+def preflight(client, model: str, embed_model: str) -> bool:
+    """
+    Validate that Ollama is reachable and both requested models are available.
+    Prints a clear diagnostic and returns False if anything is wrong.
+    """
+    # 1. Connectivity
+    try:
+        available = client.list()
+    except Exception as e:
+        print(f"\nERROR: Cannot connect to Ollama — {e}")
+        print("Make sure Ollama is running:  ollama serve")
+        return False
+
+    # Build a set of available model names (handle both attribute and dict access)
+    model_names = set()
+    for m in (available.models if hasattr(available, "models") else available.get("models", [])):
+        name = m.model if hasattr(m, "model") else m.get("model", "")
+        # Normalise: strip digest suffix if present (e.g. "gemma3:4b:abc123" → "gemma3:4b")
+        base = name.split(":")[0] + (":" + name.split(":")[1] if name.count(":") >= 1 else "")
+        model_names.add(name)
+        model_names.add(base)
+
+    ok = True
+    for label, requested in [("--model", model), ("--embed-model", embed_model)]:
+        if requested not in model_names:
+            print(f"\nERROR: Model '{requested}' is not available in your Ollama instance.")
+            print(f"  Pull it first:  ollama pull {requested}")
+            # Suggest fallback for the analysis model
+            if label == "--model" and "4b" in requested:
+                fallback = "gemma3:4b"
+                if fallback in model_names:
+                    print(f"  Or use the already-pulled fallback:  --model {fallback}")
+                else:
+                    print(f"  Fallback suggestion:  --model gemma3:4b  (also needs pulling)")
+            ok = False
+
+    if model_names and not ok:
+        pulled = sorted(m for m in model_names if ":" in m)
+        if pulled:
+            print(f"\nModels currently pulled: {', '.join(pulled[:10])}")
+
+    return ok
+
+
+
 
 def load_existing(out_path: Path) -> dict:
     """Load existing insights.json if present; returns the top-level dict."""
@@ -330,6 +373,11 @@ def main():
 
     if not eml_dir.is_dir():
         print(f"ERROR: --eml-dir '{eml_dir}' is not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    # Preflight: verify Ollama is reachable and both models are pulled
+    client = ollama_client.Client(host=args.ollama_url)
+    if not preflight(client, args.model, args.embed_model):
         sys.exit(1)
 
     # Find EML files recursively
@@ -394,7 +442,7 @@ def main():
 
             # Analyze with LLM
             try:
-                insight = analyze_with_llm(email, args.model, args.ollama_url, args.body_limit)
+                insight = analyze_with_llm(email, client, args.model, args.body_limit)
             except Exception as e:
                 tqdm.write(f"  LLM ERROR {eml_path.name}: {e}")
                 errors[email_id] = {"error": str(e), "file": eml_path.name}
@@ -405,7 +453,7 @@ def main():
             # Get embedding
             try:
                 body_for_embed = (email.get("textBody") or "")[:args.body_limit]
-                embedding = get_embedding(body_for_embed, args.embed_model, args.ollama_url, args.body_limit)
+                embedding = get_embedding(body_for_embed, client, args.embed_model, args.body_limit)
                 if embed_dim is None and embedding:
                     embed_dim = len(embedding)
                     top["embedDim"] = embed_dim
