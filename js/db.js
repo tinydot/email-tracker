@@ -2,7 +2,7 @@
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 6; // v6: addressBook store
+const DB_VERSION = 7; // v7: insights + embeddings stores for local AI
 let db = null;
 
 function openDB() {
@@ -71,6 +71,16 @@ function openDB() {
       if (!db.objectStoreNames.contains('addressBook')) {
         const abStore = db.createObjectStore('addressBook', { keyPath: 'email' });
         abStore.createIndex('name', 'name', { unique: false });
+      }
+
+      // Local AI insights (keyed by emailId) — from analyze.py output
+      if (!db.objectStoreNames.contains('insights')) {
+        db.createObjectStore('insights', { keyPath: 'emailId' });
+      }
+
+      // Local AI embeddings (keyed by emailId) — Float32Array vectors
+      if (!db.objectStoreNames.contains('embeddings')) {
+        db.createObjectStore('embeddings', { keyPath: 'emailId' });
       }
     };
     req.onsuccess = e => res(e.target.result);
