@@ -1289,3 +1289,190 @@
     transition: color 0.1s;
   }
   .pattern-chip .del-pat:hover { color: var(--danger); }
+
+/* ── Local AI insights panel ──────────────────────────── */
+
+  .lai-panel {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface2);
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .lai-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lai-header-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .lai-header-meta {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .lai-summary {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    font-style: italic;
+  }
+
+  .lai-section {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lai-section:last-of-type {
+    border-bottom: none;
+  }
+
+  .lai-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+
+  .lai-issue {
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lai-issue:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .lai-issue-title {
+    font-size: 12px;
+    font-weight: 500;
+    margin-left: 6px;
+  }
+
+  .lai-sev-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .lai-sev-high { background: var(--danger-dim); color: var(--danger); }
+  .lai-sev-med  { background: var(--warn-dim);   color: var(--warn);   }
+  .lai-sev-low  { background: var(--accent-dim); color: var(--accent); }
+
+  .lai-party {
+    font-size: 11px;
+    color: var(--info);
+    margin-left: 6px;
+  }
+
+  .lai-quote {
+    margin: 4px 0 0 0;
+    padding: 4px 8px;
+    border-left: 3px solid var(--border2);
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .lai-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .lai-row:last-child { margin-bottom: 0; }
+
+  .lai-type-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--info-dim);
+    color: var(--info);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .lai-scope {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .lai-muted {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .lai-similar-wrap {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .lai-similar-list {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .lai-similar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lai-similar-row:last-child { border-bottom: none; }
+
+  .lai-similar-row:hover { background: var(--surface2); color: var(--text); }
+
+  .lai-similar-score {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    width: 38px;
+    flex-shrink: 0;
+  }
+
+  .lai-similar-from {
+    width: 120px;
+    flex-shrink: 0;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lai-similar-subj {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
