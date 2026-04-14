@@ -1,6 +1,13 @@
 # Email Tracker — Local AI Analysis Tool
 
-`analyze.py` runs entirely on your laptop. It reads `.eml` files, sends each one to a local [Ollama](https://ollama.com/) instance, and writes an `insights.json` file that you then import into the web app.
+`analyze.py` runs entirely on your laptop. It reads an email export produced by the
+web app, sends each email to a local [Ollama](https://ollama.com/) instance, and
+writes an `insights.json` file that you then import back into the web app.
+
+Sourcing from the web app's export (rather than raw `.eml` files) means the
+script uses the exact same `textBody` you see in the UI — signatures already
+truncated, quotes stripped — and automatically skips anything flagged as a
+system or low-value email.
 
 No data leaves your machine. No CORS issues. No API keys.
 
@@ -11,36 +18,62 @@ No data leaves your machine. No CORS issues. No API keys.
 1. **Python 3.11+**
 2. **Ollama** — install from [ollama.com](https://ollama.com/), then pull the models:
 
-```bash
-ollama pull gemma3:4b          # ~3 GB — primary analysis model
-ollama pull nomic-embed-text   # ~270 MB — embeddings
-```
+   ```bash
+   ollama pull gemma3:4b          # ~3 GB — primary analysis model
+   ollama pull nomic-embed-text   # ~270 MB — embeddings
+   ```
 
-> **Gemma 4 4B** (`gemma4:4b`) is preferred if your Ollama version supports it.
-> Fall back to `gemma3:4b` if the pull fails.
+   > **Gemma 4 4B** (`gemma4:4b`) is preferred if your Ollama version supports it.
+   > Fall back to `gemma3:4b` if the pull fails.
 
 3. **Python dependencies:**
 
-```bash
-pip install -r tools/requirements.txt
+   ```bash
+   pip install -r tools/requirements.txt
+   ```
+
+---
+
+## Workflow
+
 ```
+Web app                                        Laptop (terminal)            Web app
+─────────                                      ─────────────────            ─────────
+Filter to the emails you want analyzed         analyze.py --emails …        Settings → Local AI
+Settings → Local AI → Export current view ──►  insights.json is produced ──► Import insights.json
+```
+
+1. In the web app, narrow the email list to the scope you want analyzed (a
+   smart view, an unread view, a date filter, etc.).
+2. Open **Settings → Local AI** and click **Export current view for AI**. This
+   downloads `emails-for-ai-YYYY-MM-DD.json` — only the current view, with
+   system/low-value emails already excluded.
+3. Run the script:
+
+   ```bash
+   python tools/analyze.py --emails ~/Downloads/emails-for-ai-2026-04-13.json
+   ```
+
+4. Back in the web app, click **Import insights.json**.
+5. Open any analyzed email — the **Local AI Insights** panel appears above the
+   body.
 
 ---
 
 ## Usage
 
 ```bash
-# Basic — analyze all EML files in a folder
-python tools/analyze.py --eml-dir path/to/emails/
+# Basic
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json
 
-# Limit to 5 files (good for a quick test)
-python tools/analyze.py --eml-dir path/to/emails/ --limit 5
+# Limit to 5 emails (good for a quick test)
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json --limit 5
 
 # Custom output path
-python tools/analyze.py --eml-dir path/to/emails/ --out ~/Desktop/insights.json
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json --out ~/Desktop/insights.json
 
 # Use a different model
-python tools/analyze.py --eml-dir path/to/emails/ --model gemma4:4b
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json --model gemma4:4b
 
 # All options
 python tools/analyze.py --help
@@ -50,7 +83,7 @@ python tools/analyze.py --help
 
 | Flag | Default | Description |
 |---|---|---|
-| `--eml-dir PATH` | *(required)* | Folder of `.eml` files (searches recursively) |
+| `--emails PATH` | *(required)* | Path to `emails-for-ai-*.json` from the web app |
 | `--out PATH` | `./insights.json` | Output file |
 | `--model NAME` | `gemma3:4b` | Ollama model for analysis |
 | `--embed-model NAME` | `nomic-embed-text` | Ollama model for embeddings |
@@ -63,19 +96,12 @@ python tools/analyze.py --help
 
 ## Resumable runs
 
-If the output file already exists, the script **skips** any email IDs already present in it. This means you can safely:
+If the output file already exists, the script **skips** any email IDs already
+present in it (unless the previous entry recorded an `_error`, in which case
+it retries). This means you can safely:
 
 - Ctrl-C mid-run and restart — only unprocessed emails are analyzed.
-- Add new `.eml` files and re-run — existing results are preserved.
-
----
-
-## Importing into the web app
-
-1. Run the script and confirm `insights.json` is generated.
-2. Open the web app → **Settings** → **Local AI** section.
-3. Click **Import insights.json** and select the file.
-4. Open any analyzed email — you'll see the **Local AI Insights** panel above the email body.
+- Re-export a bigger view and re-run — existing results are preserved.
 
 ---
 
@@ -115,4 +141,5 @@ With a small GPU (e.g. 8 GB VRAM): roughly 3–5× faster.
 }
 ```
 
-The `embedding` field holds 768 floats (nomic-embed-text). It is used by the web app's **Find Similar** feature.
+The `embedding` field holds 768 floats (nomic-embed-text). It is used by the
+web app's **Find Similar** feature.
