@@ -134,10 +134,10 @@ def build_user_msg(email: dict, body_limit: int) -> str:
     )
 
 
-def analyze_with_llm(email: dict, model: str, ollama_url: str, body_limit: int) -> dict:
+def analyze_with_llm(email: dict, model: str, ollama_url: str, body_limit: int, timeout: int) -> dict:
     """Call Ollama /api/chat with structured output. Retries up to 2× on bad JSON."""
     user_msg = build_user_msg(email, body_limit)
-    client = ollama_client.Client(host=ollama_url)
+    client = ollama_client.Client(host=ollama_url, timeout=timeout)
 
     for attempt in range(3):
         sys_prompt = SYSTEM_PROMPT if attempt == 0 else SYSTEM_PROMPT + " " + STRICT_JSON_REMINDER
@@ -160,16 +160,45 @@ def analyze_with_llm(email: dict, model: str, ollama_url: str, body_limit: int) 
             if attempt == 2:
                 raise RuntimeError(f"LLM returned invalid JSON after 3 attempts: {e}") from e
             continue
+        except Exception as e:
+            if attempt == 2:
+                raise RuntimeError(f"Ollama chat failed after 3 attempts: {e}") from e
+            continue
 
     raise RuntimeError("LLM analysis failed after 3 attempts")
 
 
-def get_embedding(text: str, model: str, ollama_url: str, body_limit: int) -> list[float]:
-    client = ollama_client.Client(host=ollama_url)
+def get_embedding(text: str, model: str, ollama_url: str, body_limit: int, timeout: int) -> list[float]:
+    client = ollama_client.Client(host=ollama_url, timeout=timeout)
     resp = client.embed(model=model, input=text[:body_limit])
     if hasattr(resp, "embeddings") and resp.embeddings:
         return resp.embeddings[0]
     raise RuntimeError("Empty embedding response from Ollama")
+
+
+# ── Pre-flight checks ────────────────────────────────────
+
+def preflight_check(model: str, embed_model: str, ollama_url: str, timeout: int):
+    """Verify Ollama is reachable and both models are available locally. Exits on failure."""
+    client = ollama_client.Client(host=ollama_url, timeout=10)
+    try:
+        available = {m.model for m in client.list().models}
+    except Exception as e:
+        print(f"ERROR: Cannot reach Ollama at {ollama_url}: {e}", file=sys.stderr)
+        print("Make sure Ollama is running (ollama serve) and the URL is correct.", file=sys.stderr)
+        sys.exit(1)
+
+    missing = []
+    for name in (model, embed_model):
+        # Ollama model names may or may not include a tag; check both bare name and with :latest
+        if name not in available and f"{name}:latest" not in available:
+            missing.append(name)
+
+    if missing:
+        print(f"ERROR: Model(s) not found locally: {', '.join(missing)}", file=sys.stderr)
+        print(f"Available models: {', '.join(sorted(available)) or '(none)'}", file=sys.stderr)
+        print("Pull missing models with: ollama pull <model>", file=sys.stderr)
+        sys.exit(1)
 
 
 # ── Insights file I/O ────────────────────────────────────
@@ -234,6 +263,8 @@ def main():
                         help="Max body chars sent to model (default: 2000)")
     parser.add_argument("--save-every",   type=int, default=5,
                         help="Save insights.json every N emails (default: 5)")
+    parser.add_argument("--timeout",      type=int, default=120,
+                        help="Ollama request timeout in seconds (default: 120)")
     args = parser.parse_args()
 
     emails_path = Path(args.emails)
@@ -258,6 +289,8 @@ def main():
 
     print(f"Loaded {len(emails)} email(s) from {emails_path}. "
           f"Model: {args.model} | Embed: {args.embed_model}")
+
+    preflight_check(args.model, args.embed_model, args.ollama_url, args.timeout)
 
     existing       = load_existing(out_path)
     existing_insights = existing.get("insights", {})
@@ -291,7 +324,7 @@ def main():
                 continue
 
             try:
-                insight = analyze_with_llm(email, args.model, args.ollama_url, args.body_limit)
+                insight = analyze_with_llm(email, args.model, args.ollama_url, args.body_limit, args.timeout)
             except Exception as e:
                 tqdm.write(f"  LLM ERROR {email_id}: {e}")
                 n_errored += 1
@@ -303,7 +336,7 @@ def main():
 
             try:
                 body_for_embed = (email.get("textBody") or "")[: args.body_limit]
-                embedding = get_embedding(body_for_embed, args.embed_model, args.ollama_url, args.body_limit)
+                embedding = get_embedding(body_for_embed, args.embed_model, args.ollama_url, args.body_limit, args.timeout)
                 if embed_dim is None and embedding:
                     embed_dim = len(embedding)
                     top["embedDim"] = embed_dim
