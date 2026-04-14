@@ -18,6 +18,51 @@ async function exportData() {
   URL.revokeObjectURL(url);
 }
 
+// Slim export for the local AI pipeline (tools/analyze.py).
+// Exports the *current filtered view*, excludes system/low-value emails,
+// and keeps only the fields the analysis script needs. Uses the textBody
+// as already processed at import time (signature-stripped).
+async function exportForAI() {
+  const src = (filteredEmails || []).filter(e => !e.isSystemEmail && !e.isLowValue);
+  if (!src.length) {
+    toast('No emails in current view after excluding system/low-value', 'warn');
+    return;
+  }
+
+  const slim = src.map(e => ({
+    id:              e.id,
+    subject:         e.subject || '',
+    fromAddr:        e.fromAddr || '',
+    fromName:        e.fromName || '',
+    toAddrs:         e.toAddrs || [],
+    ccAddrs:         e.ccAddrs || [],
+    date:            e.date || null,
+    textBody:        e.textBody || '',
+    tags:            e.tags || [],
+    threadId:        e.threadId || null,
+    status:          e.status || null,
+    existingSummary: e.aiSummary || null,
+    existingIntent:  e.aiIntent  || null,
+  }));
+
+  const payload = {
+    schemaVersion: 1,
+    exportedAt:    new Date().toISOString(),
+    view:          currentView,
+    count:         slim.length,
+    emails:        slim,
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `emails-for-ai-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${slim.length} email(s) for AI analysis`, 'ok');
+}
+
 async function exportSQLite() {
   toast('Building SQLite export…', '');
 

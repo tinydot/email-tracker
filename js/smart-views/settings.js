@@ -663,11 +663,13 @@ function showSettings() {
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:4px;">🤖 Local AI (Ollama)</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
-          Import an <code>insights.json</code> file produced by <code>tools/analyze.py</code> to see
-          AI-generated summaries, issues, milestones and design changes directly in each email's detail panel.
-          See <code>tools/README.md</code> for setup instructions (requires a local Ollama instance).
+          Workflow: filter the email list to the scope you want analyzed, click <b>Export current view for AI</b>,
+          run <code>tools/analyze.py</code> against that file, then import the resulting <code>insights.json</code>
+          below. The export excludes system/low-value emails and uses the signature-stripped body.
+          See <code>tools/README.md</code> for setup (requires a local Ollama instance).
         </div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="btn" onclick="exportForAI()">Export current view for AI</button>
           <label class="btn btn-primary" style="cursor:pointer;">
             Import insights.json
             <input type="file" accept=".json" style="display:none;"
