@@ -8,12 +8,21 @@
 #  Usage:
 #    python tools/analyze.py --emails emails-for-ai-2026-04-13.json
 #
+#  Multi-GPU usage (run two ollama instances first):
+#    CUDA_VISIBLE_DEVICES=0 OLLAMA_HOST=0.0.0.0:11434 ollama serve &
+#    CUDA_VISIBLE_DEVICES=1 OLLAMA_HOST=0.0.0.0:11435 ollama serve &
+#    python tools/analyze.py --emails export.json \
+#      --ollama-urls http://localhost:11434,http://localhost:11435 \
+#      --workers 2
+#
 #  See tools/README.md for full setup instructions.
 # ═══════════════════════════════════════════════════════
 
 import argparse
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -176,29 +185,72 @@ def get_embedding(text: str, model: str, ollama_url: str, body_limit: int, timeo
     raise RuntimeError("Empty embedding response from Ollama")
 
 
+# ── Per-email worker ─────────────────────────────────────
+
+def _process_one(
+    idx: int,
+    email: dict,
+    ollama_url: str,
+    model: str,
+    embed_model: str,
+    body_limit: int,
+    timeout: int,
+) -> tuple[str | None, dict]:
+    """Analyze one email (LLM + embedding). Returns (email_id, result_dict).
+    result_dict has '_error' key on failure, otherwise full insight dict."""
+    email_id = email.get("id")
+    if not email_id:
+        return None, {"_error": f"export entry #{idx} has no id"}
+
+    try:
+        insight = analyze_with_llm(email, model, ollama_url, body_limit, timeout)
+    except Exception as e:
+        return email_id, {
+            "_error":     str(e),
+            "analyzedAt": datetime.now(timezone.utc).isoformat(),
+        }
+
+    try:
+        body_for_embed = (email.get("textBody") or "")[:body_limit]
+        embedding = get_embedding(body_for_embed, embed_model, ollama_url, body_limit, timeout)
+    except Exception:
+        embedding = []
+
+    return email_id, {
+        "analyzedAt":    datetime.now(timezone.utc).isoformat(),
+        "summary":       insight.get("summary", ""),
+        "issues":        insight.get("issues", []),
+        "milestones":    insight.get("milestones", []),
+        "designChanges": insight.get("designChanges", []),
+        "resolutions":   insight.get("resolutions", []),
+        "interfaces":    insight.get("interfaces", []),
+        "embedding":     embedding,
+    }
+
+
 # ── Pre-flight checks ────────────────────────────────────
 
-def preflight_check(model: str, embed_model: str, ollama_url: str, timeout: int):
-    """Verify Ollama is reachable and both models are available locally. Exits on failure."""
-    client = ollama_client.Client(host=ollama_url, timeout=10)
-    try:
-        available = {m.model for m in client.list().models}
-    except Exception as e:
-        print(f"ERROR: Cannot reach Ollama at {ollama_url}: {e}", file=sys.stderr)
-        print("Make sure Ollama is running (ollama serve) and the URL is correct.", file=sys.stderr)
-        sys.exit(1)
+def preflight_check(model: str, embed_model: str, url_list: list[str], timeout: int):
+    """Verify all Ollama instances are reachable and both models are available. Exits on failure."""
+    for ollama_url in url_list:
+        client = ollama_client.Client(host=ollama_url, timeout=10)
+        try:
+            available = {m.model for m in client.list().models}
+        except Exception as e:
+            print(f"ERROR: Cannot reach Ollama at {ollama_url}: {e}", file=sys.stderr)
+            print("Make sure Ollama is running (ollama serve) and the URL is correct.", file=sys.stderr)
+            sys.exit(1)
 
-    missing = []
-    for name in (model, embed_model):
-        # Ollama model names may or may not include a tag; check both bare name and with :latest
-        if name not in available and f"{name}:latest" not in available:
-            missing.append(name)
+        missing = []
+        for name in (model, embed_model):
+            if name not in available and f"{name}:latest" not in available:
+                missing.append(name)
 
-    if missing:
-        print(f"ERROR: Model(s) not found locally: {', '.join(missing)}", file=sys.stderr)
-        print(f"Available models: {', '.join(sorted(available)) or '(none)'}", file=sys.stderr)
-        print("Pull missing models with: ollama pull <model>", file=sys.stderr)
-        sys.exit(1)
+        if missing:
+            print(f"ERROR: Model(s) not found locally at {ollama_url}: {', '.join(missing)}", file=sys.stderr)
+            print(f"Available models: {', '.join(sorted(available)) or '(none)'}", file=sys.stderr)
+            print("Pull missing models with: ollama pull <model>", file=sys.stderr)
+            sys.exit(1)
 
 
 # ── Insights file I/O ────────────────────────────────────
@@ -256,13 +308,20 @@ def main():
     parser.add_argument("--embed-model",  default="nomic-embed-text",
                         help="Embedding model (default: nomic-embed-text)")
     parser.add_argument("--ollama-url",   default="http://localhost:11434",
-                        help="Ollama base URL")
+                        help="Ollama base URL (single instance)")
+    parser.add_argument("--ollama-urls",  default=None,
+                        help="Comma-separated Ollama URLs for multi-GPU "
+                             "(e.g. http://localhost:11434,http://localhost:11435). "
+                             "Overrides --ollama-url. Workers are assigned round-robin.")
+    parser.add_argument("--workers",      type=int, default=1,
+                        help="Parallel worker threads (default: 1). Set to match number "
+                             "of Ollama instances / GPUs for best throughput.")
     parser.add_argument("--limit",        type=int, default=None,
                         help="Max emails to process (for testing)")
     parser.add_argument("--body-limit",   type=int, default=2000,
                         help="Max body chars sent to model (default: 2000)")
     parser.add_argument("--save-every",   type=int, default=5,
-                        help="Save insights.json every N emails (default: 5)")
+                        help="Save insights.json every N completions (default: 5)")
     parser.add_argument("--timeout",      type=int, default=120,
                         help="Ollama request timeout in seconds (default: 120)")
     args = parser.parse_args()
@@ -287,14 +346,25 @@ def main():
     if args.limit:
         emails = emails[: args.limit]
 
-    print(f"Loaded {len(emails)} email(s) from {emails_path}. "
-          f"Model: {args.model} | Embed: {args.embed_model}")
+    # Build URL list (--ollama-urls takes precedence over --ollama-url)
+    if args.ollama_urls:
+        url_list = [u.strip() for u in args.ollama_urls.split(",") if u.strip()]
+    else:
+        url_list = [args.ollama_url]
 
-    preflight_check(args.model, args.embed_model, args.ollama_url, args.timeout)
+    workers = max(1, args.workers)
 
-    existing       = load_existing(out_path)
+    print(
+        f"Loaded {len(emails)} email(s) from {emails_path}. "
+        f"Model: {args.model} | Embed: {args.embed_model} | "
+        f"Workers: {workers} | Ollama: {', '.join(url_list)}"
+    )
+
+    preflight_check(args.model, args.embed_model, url_list, args.timeout)
+
+    existing          = load_existing(out_path)
     existing_insights = existing.get("insights", {})
-    embed_dim      = existing.get("embedDim", None)
+    embed_dim         = existing.get("embedDim", None)
 
     top = {
         "modelVersion": f"{args.model}@{datetime.now(timezone.utc).date().isoformat()}",
@@ -304,66 +374,104 @@ def main():
         "insights":     existing_insights,
     }
 
+    # Separate already-cached emails from those that need processing
+    to_process = [
+        (idx, email) for idx, email in enumerate(emails)
+        if email.get("id")
+        and (
+            email["id"] not in existing_insights
+            or "_error" in existing_insights[email["id"]]
+        )
+    ]
+    n_skipped  = len(emails) - len(to_process)
     n_analyzed = 0
-    n_skipped  = 0
     n_errored  = 0
 
-    with tqdm(emails, unit="email", ncols=90) as pbar:
-        for idx, email in enumerate(pbar):
-            email_id = email.get("id")
-            if not email_id:
-                tqdm.write(f"  WARN: export entry #{idx} has no id — skipped")
-                n_errored += 1
-                continue
+    if n_skipped:
+        print(f"Skipping {n_skipped} already-cached email(s).")
 
-            pbar.set_description((email.get("subject") or email_id)[:40])
+    save_lock = threading.Lock()
 
-            if email_id in existing_insights and "_error" not in existing_insights[email_id]:
-                n_skipped += 1
+    def _maybe_save(force: bool = False):
+        nonlocal n_analyzed
+        if force or (n_analyzed + n_errored) % args.save_every == 0:
+            top["generatedAt"] = datetime.now(timezone.utc).isoformat()
+            save_insights(out_path, top)
+
+    if workers == 1:
+        # ── Sequential path (original behaviour) ──────────
+        with tqdm(to_process, unit="email", ncols=90) as pbar:
+            for idx, email in pbar:
+                pbar.set_description((email.get("subject") or email.get("id", ""))[:40])
+                url = url_list[idx % len(url_list)]
+                email_id, result = _process_one(
+                    idx, email, url,
+                    args.model, args.embed_model,
+                    args.body_limit, args.timeout,
+                )
+                if email_id is None:
+                    tqdm.write(f"  WARN: {result.get('_error', 'unknown error')}")
+                    n_errored += 1
+                elif "_error" in result:
+                    tqdm.write(f"  LLM ERROR {email_id}: {result['_error']}")
+                    n_errored += 1
+                    top["insights"][email_id] = result
+                else:
+                    if result["embedding"] and top["embedDim"] is None:
+                        top["embedDim"] = len(result["embedding"])
+                    top["insights"][email_id] = result
+                    n_analyzed += 1
+
                 pbar.set_postfix(skip=n_skipped, ok=n_analyzed, err=n_errored)
-                continue
+                _maybe_save()
 
-            try:
-                insight = analyze_with_llm(email, args.model, args.ollama_url, args.body_limit, args.timeout)
-            except Exception as e:
-                tqdm.write(f"  LLM ERROR {email_id}: {e}")
-                n_errored += 1
-                top["insights"][email_id] = {
-                    "_error":     str(e),
-                    "analyzedAt": datetime.now(timezone.utc).isoformat(),
-                }
-                continue
-
-            try:
-                body_for_embed = (email.get("textBody") or "")[: args.body_limit]
-                embedding = get_embedding(body_for_embed, args.embed_model, args.ollama_url, args.body_limit, args.timeout)
-                if embed_dim is None and embedding:
-                    embed_dim = len(embedding)
-                    top["embedDim"] = embed_dim
-            except Exception as e:
-                tqdm.write(f"  EMBED ERROR {email_id}: {e}")
-                embedding = []
-
-            top["insights"][email_id] = {
-                "analyzedAt":    datetime.now(timezone.utc).isoformat(),
-                "summary":       insight.get("summary", ""),
-                "issues":        insight.get("issues", []),
-                "milestones":    insight.get("milestones", []),
-                "designChanges": insight.get("designChanges", []),
-                "resolutions":   insight.get("resolutions", []),
-                "interfaces":    insight.get("interfaces", []),
-                "embedding":     embedding,
+    else:
+        # ── Parallel path ──────────────────────────────────
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    _process_one,
+                    idx, email,
+                    url_list[idx % len(url_list)],
+                    args.model, args.embed_model,
+                    args.body_limit, args.timeout,
+                ): email
+                for idx, email in to_process
             }
 
-            n_analyzed += 1
-            pbar.set_postfix(skip=n_skipped, ok=n_analyzed, err=n_errored)
+            with tqdm(total=len(futures), unit="email", ncols=90) as pbar:
+                for future in as_completed(futures):
+                    email = futures[future]
+                    try:
+                        email_id, result = future.result()
+                    except Exception as e:
+                        email_id = email.get("id")
+                        tqdm.write(f"  WORKER ERROR {email_id}: {e}")
+                        n_errored += 1
+                        pbar.update(1)
+                        pbar.set_postfix(skip=n_skipped, ok=n_analyzed, err=n_errored)
+                        continue
 
-            if (idx + 1) % args.save_every == 0:
-                top["generatedAt"] = datetime.now(timezone.utc).isoformat()
-                save_insights(out_path, top)
+                    if email_id is None:
+                        tqdm.write(f"  WARN: {result.get('_error', 'unknown error')}")
+                        n_errored += 1
+                    elif "_error" in result:
+                        tqdm.write(f"  LLM ERROR {email_id}: {result['_error']}")
+                        n_errored += 1
+                        with save_lock:
+                            top["insights"][email_id] = result
+                    else:
+                        with save_lock:
+                            if result["embedding"] and top["embedDim"] is None:
+                                top["embedDim"] = len(result["embedding"])
+                            top["insights"][email_id] = result
+                            n_analyzed += 1
+                            _maybe_save()
 
-    top["generatedAt"] = datetime.now(timezone.utc).isoformat()
-    save_insights(out_path, top)
+                    pbar.update(1)
+                    pbar.set_postfix(skip=n_skipped, ok=n_analyzed, err=n_errored)
+
+    _maybe_save(force=True)
 
     print(
         f"\nDone. Analyzed: {n_analyzed} | Skipped (cached): {n_skipped} | Errors: {n_errored}"
