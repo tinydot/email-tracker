@@ -75,6 +75,14 @@ python tools/analyze.py --emails emails-for-ai-2026-04-13.json --out ~/Desktop/i
 # Use a different model
 python tools/analyze.py --emails emails-for-ai-2026-04-13.json --model gemma4:4b
 
+# Parallel workers (single GPU, multiple concurrent requests)
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json --workers 4
+
+# Multi-GPU (see section below)
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json \
+  --ollama-urls http://localhost:11434,http://localhost:11435 \
+  --workers 2
+
 # All options
 python tools/analyze.py --help
 ```
@@ -87,10 +95,65 @@ python tools/analyze.py --help
 | `--out PATH` | `./insights.json` | Output file |
 | `--model NAME` | `gemma3:4b` | Ollama model for analysis |
 | `--embed-model NAME` | `nomic-embed-text` | Ollama model for embeddings |
-| `--ollama-url URL` | `http://localhost:11434` | Ollama server URL |
+| `--ollama-url URL` | `http://localhost:11434` | Ollama server URL (single instance) |
+| `--ollama-urls URLs` | *(none)* | Comma-separated URLs for multi-GPU; overrides `--ollama-url` |
+| `--workers N` | `1` | Parallel worker threads; set to match number of GPUs/instances |
 | `--limit N` | *(none)* | Process at most N emails (for testing) |
 | `--body-limit N` | `2000` | Max body characters sent to the model |
-| `--save-every N` | `5` | Write output every N emails (progress saving) |
+| `--save-every N` | `5` | Write output every N completions (progress saving) |
+
+---
+
+## Multi-GPU setup
+
+Running one Ollama instance per GPU roughly halves analysis time when you have
+two GPUs.
+
+**Step 1 — Start one Ollama instance per GPU.**
+
+Open two terminal windows and run one command in each:
+
+```bash
+# Terminal 1 — GPU 0
+CUDA_VISIBLE_DEVICES=0 OLLAMA_HOST=0.0.0.0:11434 ollama serve
+
+# Terminal 2 — GPU 1
+CUDA_VISIBLE_DEVICES=1 OLLAMA_HOST=0.0.0.0:11435 ollama serve
+```
+
+Or run both in the background from a single terminal:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OLLAMA_HOST=0.0.0.0:11434 ollama serve &
+CUDA_VISIBLE_DEVICES=1 OLLAMA_HOST=0.0.0.0:11435 ollama serve &
+```
+
+**Step 2 — Pull models on both instances.**
+
+```bash
+OLLAMA_HOST=localhost:11434 ollama pull gemma3:4b
+OLLAMA_HOST=localhost:11435 ollama pull gemma3:4b
+OLLAMA_HOST=localhost:11434 ollama pull nomic-embed-text
+OLLAMA_HOST=localhost:11435 ollama pull nomic-embed-text
+```
+
+**Step 3 — Run the script.**
+
+```bash
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json \
+  --ollama-urls http://localhost:11434,http://localhost:11435 \
+  --workers 2
+```
+
+Workers are distributed across the URLs round-robin. The script's preflight
+check verifies both instances are reachable and have the required models before
+starting.
+
+> **Verify your GPUs are visible first:**
+> ```bash
+> nvidia-smi
+> ```
+> You should see both GPUs listed (GPU 0 and GPU 1).
 
 ---
 
@@ -109,12 +172,15 @@ it retries). This means you can safely:
 
 On a modest laptop (CPU only, no GPU):
 
-| Model | Per email | 100 emails |
+| Setup | Per email | 100 emails |
 |---|---|---|
-| gemma3:4b | ~2–5 s | ~4–8 min |
-| gemma4:4b | ~3–7 s | ~5–12 min |
+| CPU only | ~2–5 s | ~4–8 min |
+| Single GPU (8 GB VRAM) | ~0.5–1.5 s | ~1–3 min |
+| Two GPUs (`--workers 2`) | ~0.3–0.8 s | ~0.5–1.5 min |
 
-With a small GPU (e.g. 8 GB VRAM): roughly 3–5× faster.
+Times are for `gemma3:4b`. Larger models are proportionally slower.
+With `--workers 2` and two GPUs, emails are processed in parallel so
+throughput roughly doubles.
 
 ---
 
