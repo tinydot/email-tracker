@@ -83,6 +83,8 @@ python tools/analyze.py --emails emails-for-ai-2026-04-13.json \
   --ollama-urls http://localhost:11434,http://localhost:11435 \
   --workers 2
 
+python tools/analyze.py --emails ./emails-for-ai-2026-04-14.json --model gemma4 --ollama-urls http://localhost:11434,http://localhost:11435 --workers 2
+
 # All options
 python tools/analyze.py --help
 ```
@@ -136,6 +138,8 @@ OLLAMA_HOST=localhost:11435 ollama pull gemma3:4b
 OLLAMA_HOST=localhost:11434 ollama pull nomic-embed-text
 OLLAMA_HOST=localhost:11435 ollama pull nomic-embed-text
 ```
+
+$env:OLLAMA_HOST="localhost:11434"; ollama pull gemma4:e4b
 
 **Step 3 — Run the script.**
 
