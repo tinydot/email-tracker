@@ -935,13 +935,7 @@ function renderLocalAiInsights(insight, emailId) {
     return `<span class="lai-sev-badge ${cls}">${escHtml(s)}</span>`;
   };
 
-  const issuesHtml = (insight.issues || []).map(i => `
-    <div class="lai-issue">
-      ${sev(i.severity || 'low')}
-      <span class="lai-issue-title">${escHtml(i.title || '')}</span>
-      ${i.party ? `<span class="lai-party">${escHtml(i.party)}</span>` : ''}
-      ${i.quote  ? `<blockquote class="lai-quote">${escHtml(i.quote)}</blockquote>` : ''}
-    </div>`).join('');
+  const issuesHtml = (insight.issues || []).map(i => `<div class="lai-issue"><div class="lai-issue-head">${sev(i.severity || 'low')}<span class="lai-issue-title">${escHtml(i.title || '')}</span>${i.party ? `<span class="lai-party">${escHtml(i.party)}</span>` : ''}</div>${i.quote ? `<blockquote class="lai-quote">${escHtml(i.quote)}</blockquote>` : ''}</div>`).join('');
 
   const milestonesHtml = (insight.milestones || []).map(m => `
     <div class="lai-row">
