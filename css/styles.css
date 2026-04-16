@@ -1347,6 +1347,9 @@
   }
 
   .lai-issue {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     margin-bottom: 6px;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--border);
@@ -1358,10 +1361,15 @@
     border-bottom: none;
   }
 
+  .lai-issue-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .lai-issue-title {
     font-size: 12px;
     font-weight: 500;
-    margin-left: 6px;
   }
 
   .lai-sev-badge {
@@ -1381,11 +1389,10 @@
   .lai-party {
     font-size: 11px;
     color: var(--info);
-    margin-left: 6px;
   }
 
   .lai-quote {
-    margin: 4px 0 0 0;
+    margin: 0;
     padding: 4px 8px;
     border-left: 3px solid var(--border2);
     font-size: 11px;
