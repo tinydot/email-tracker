@@ -436,9 +436,8 @@ function openDetail(email) {
   bodyEl.innerHTML = '';
 
   // Local AI insights (from tools/analyze.py import) — load async, inject if present
-  const localAiPlaceholder = document.createElement('div');
-  localAiPlaceholder.id = 'det-local-ai';
-  bodyEl.appendChild(localAiPlaceholder);
+  const localAiEl = document.getElementById('det-local-ai');
+  localAiEl.innerHTML = '';
   const emailIdAtDetailLoad = email.id;
   dbGet('insights', email.id).then(insight => {
     if (!selectedEmail || selectedEmail.id !== emailIdAtDetailLoad) return;

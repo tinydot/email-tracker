@@ -684,6 +684,11 @@
     flex-shrink: 0;
   }
 
+  #det-local-ai:not(:empty) {
+    border-top: 1px solid var(--border);
+    padding: 12px 24px;
+  }
+
   .detail-attach-title {
     font-family: var(--mono);
     font-size: 10px;
