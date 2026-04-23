@@ -29,7 +29,18 @@ async function exportForAI() {
     return;
   }
 
-  const slim = src.map(e => ({
+  const existingInsights = await dbGetAll('insights');
+  const analyzedIds = new Set(existingInsights.map(r => r.emailId));
+  const unanalyzed = src.filter(e => !analyzedIds.has(e.id));
+  const skipped = src.length - unanalyzed.length;
+
+  if (!unanalyzed.length) {
+    toast(`All ${src.length} email(s) already have insights — nothing to export`, 'warn');
+    return;
+  }
+  if (skipped) toast(`Skipping ${skipped} already-analyzed email(s)`, 'ok');
+
+  const slim = unanalyzed.map(e => ({
     id:              e.id,
     subject:         e.subject || '',
     fromAddr:        e.fromAddr || '',
@@ -50,6 +61,7 @@ async function exportForAI() {
     exportedAt:    new Date().toISOString(),
     view:          currentView,
     count:         slim.length,
+    skippedAlreadyAnalyzed: skipped,
     emails:        slim,
   };
 
@@ -60,7 +72,7 @@ async function exportForAI() {
   a.download = `emails-for-ai-${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  toast(`Exported ${slim.length} email(s) for AI analysis`, 'ok');
+  toast(`Exported ${slim.length} email(s) for AI analysis${skipped ? ` (${skipped} skipped — already analyzed)` : ''}`, 'ok');
 }
 
 async function exportSQLite() {
