@@ -78,12 +78,10 @@ python tools/analyze.py --emails emails-for-ai-2026-04-13.json --model gemma4:4b
 # Parallel workers (single GPU, multiple concurrent requests)
 python tools/analyze.py --emails emails-for-ai-2026-04-13.json --workers 4
 
-# Multi-GPU (see section below)
+# Multi-GPU with high concurrency (see section below for setup)
 python tools/analyze.py --emails emails-for-ai-2026-04-13.json \
   --ollama-urls http://localhost:11434,http://localhost:11435 \
-  --workers 2
-
-python tools/analyze.py --emails ./emails-for-ai-2026-04-14.json --model gemma4 --ollama-urls http://localhost:11434,http://localhost:11435 --workers 2
+  --workers 16
 
 # All options
 python tools/analyze.py --help
@@ -108,27 +106,35 @@ python tools/analyze.py --help
 
 ## Multi-GPU setup
 
-Running one Ollama instance per GPU roughly halves analysis time when you have
-two GPUs.
+Running one Ollama instance per GPU lets the script spread work across both
+cards. For maximum throughput, also raise each instance's parallel-request
+slots so a single GPU processes several emails at once — small models like
+`gemma3:4b` leave plenty of spare VRAM for extra KV caches.
 
-**Step 1 — Start one Ollama instance per GPU.**
+**Step 1 — Start one Ollama instance per GPU with parallel slots enabled.**
 
 Open two terminal windows and run one command in each:
 
 ```bash
 # Terminal 1 — GPU 0
-CUDA_VISIBLE_DEVICES=0 OLLAMA_HOST=0.0.0.0:11434 ollama serve
+CUDA_VISIBLE_DEVICES=0 OLLAMA_NUM_PARALLEL=8 OLLAMA_KEEP_ALIVE=24h \
+  OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 # Terminal 2 — GPU 1
-CUDA_VISIBLE_DEVICES=1 OLLAMA_HOST=0.0.0.0:11435 ollama serve
+CUDA_VISIBLE_DEVICES=1 OLLAMA_NUM_PARALLEL=8 OLLAMA_KEEP_ALIVE=24h \
+  OLLAMA_HOST=0.0.0.0:11435 ollama serve
 ```
 
 Or run both in the background from a single terminal:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 OLLAMA_HOST=0.0.0.0:11434 ollama serve &
-CUDA_VISIBLE_DEVICES=1 OLLAMA_HOST=0.0.0.0:11435 ollama serve &
+CUDA_VISIBLE_DEVICES=0 OLLAMA_NUM_PARALLEL=8 OLLAMA_KEEP_ALIVE=24h OLLAMA_HOST=0.0.0.0:11434 ollama serve &
+CUDA_VISIBLE_DEVICES=1 OLLAMA_NUM_PARALLEL=8 OLLAMA_KEEP_ALIVE=24h OLLAMA_HOST=0.0.0.0:11435 ollama serve &
 ```
+
+- `OLLAMA_NUM_PARALLEL=8` lets each server handle 8 concurrent requests.
+- `OLLAMA_KEEP_ALIVE=24h` keeps the model resident so it isn't unloaded
+  between batches.
 
 **Step 2 — Pull models on both instances.**
 
@@ -139,19 +145,38 @@ OLLAMA_HOST=localhost:11434 ollama pull nomic-embed-text
 OLLAMA_HOST=localhost:11435 ollama pull nomic-embed-text
 ```
 
-$env:OLLAMA_HOST="localhost:11434"; ollama pull gemma4:e4b
+PowerShell equivalent:
 
-**Step 3 — Run the script.**
+```powershell
+$env:OLLAMA_HOST="localhost:11434"; ollama pull gemma3:4b
+```
+
+**Step 3 — Run the script with matching client-side workers.**
+
+Set `--workers` to roughly `2 × OLLAMA_NUM_PARALLEL` so both GPUs stay fully
+fed:
 
 ```bash
 python tools/analyze.py --emails emails-for-ai-2026-04-13.json \
   --ollama-urls http://localhost:11434,http://localhost:11435 \
-  --workers 2
+  --workers 16
 ```
 
 Workers are distributed across the URLs round-robin. The script's preflight
 check verifies both instances are reachable and have the required models before
 starting.
+
+**Tuning guidance.** Start at `--workers 8` (4 per GPU) and watch `nvidia-smi`:
+
+- GPU utilisation well under 100% and VRAM not full → raise `--workers`
+  (try 12, then 16).
+- Request timeouts or VRAM near the limit → lower `OLLAMA_NUM_PARALLEL`
+  and `--workers` in step.
+
+**Reference sizing — dual NVIDIA RTX 4500 Ada (24 GB each) with `gemma3:4b`:**
+`OLLAMA_NUM_PARALLEL=8` per server and `--workers 16` is a safe high-throughput
+starting point. The 4B model weights occupy ~3 GB, leaving ~18 GB per card for
+KV cache across 8 parallel slots.
 
 > **Verify your GPUs are visible first:**
 > ```bash
@@ -180,11 +205,12 @@ On a modest laptop (CPU only, no GPU):
 |---|---|---|
 | CPU only | ~2–5 s | ~4–8 min |
 | Single GPU (8 GB VRAM) | ~0.5–1.5 s | ~1–3 min |
-| Two GPUs (`--workers 2`) | ~0.3–0.8 s | ~0.5–1.5 min |
+| Two GPUs, `--workers 2` (one request per GPU) | ~0.3–0.8 s | ~0.5–1.5 min |
+| Two GPUs, `OLLAMA_NUM_PARALLEL=8` + `--workers 16` | ~0.1–0.3 s | ~10–30 s |
 
-Times are for `gemma3:4b`. Larger models are proportionally slower.
-With `--workers 2` and two GPUs, emails are processed in parallel so
-throughput roughly doubles.
+Times are for `gemma3:4b`. Larger models are proportionally slower. Raising
+`OLLAMA_NUM_PARALLEL` and `--workers` together keeps both GPUs saturated,
+since one request doesn't use all of a GPU's compute.
 
 ---
 
