@@ -303,8 +303,8 @@ def main():
                         help="Path to emails-for-ai-*.json exported from the web app")
     parser.add_argument("--out",          default="./insights.json",
                         help="Output path (default: ./insights.json)")
-    parser.add_argument("--model",        default="gemma3:4b",
-                        help="Ollama model (default: gemma3:4b)")
+    parser.add_argument("--model",        default="gemma4:4b",
+                        help="Ollama model (default: gemma4:4b)")
     parser.add_argument("--embed-model",  default="nomic-embed-text",
                         help="Embedding model (default: nomic-embed-text)")
     parser.add_argument("--ollama-url",   default="http://localhost:11434",

@@ -19,12 +19,12 @@ No data leaves your machine. No CORS issues. No API keys.
 2. **Ollama** — install from [ollama.com](https://ollama.com/), then pull the models:
 
    ```bash
-   ollama pull gemma3:4b          # ~3 GB — primary analysis model
+   ollama pull gemma4:4b          # ~3 GB — primary analysis model
    ollama pull nomic-embed-text   # ~270 MB — embeddings
    ```
 
-   > **Gemma 4 4B** (`gemma4:4b`) is preferred if your Ollama version supports it.
-   > Fall back to `gemma3:4b` if the pull fails.
+   > If your Ollama version doesn't yet have `gemma4:4b`, fall back to
+   > `gemma3:4b` (pass it via `--model gemma3:4b`).
 
 3. **Python dependencies:**
 
@@ -73,7 +73,7 @@ python tools/analyze.py --emails emails-for-ai-2026-04-13.json --limit 5
 python tools/analyze.py --emails emails-for-ai-2026-04-13.json --out ~/Desktop/insights.json
 
 # Use a different model
-python tools/analyze.py --emails emails-for-ai-2026-04-13.json --model gemma4:4b
+python tools/analyze.py --emails emails-for-ai-2026-04-13.json --model gemma3:4b
 
 # Parallel workers (single GPU, multiple concurrent requests)
 python tools/analyze.py --emails emails-for-ai-2026-04-13.json --workers 4
@@ -93,7 +93,7 @@ python tools/analyze.py --help
 |---|---|---|
 | `--emails PATH` | *(required)* | Path to `emails-for-ai-*.json` from the web app |
 | `--out PATH` | `./insights.json` | Output file |
-| `--model NAME` | `gemma3:4b` | Ollama model for analysis |
+| `--model NAME` | `gemma4:4b` | Ollama model for analysis |
 | `--embed-model NAME` | `nomic-embed-text` | Ollama model for embeddings |
 | `--ollama-url URL` | `http://localhost:11434` | Ollama server URL (single instance) |
 | `--ollama-urls URLs` | *(none)* | Comma-separated URLs for multi-GPU; overrides `--ollama-url` |
@@ -109,7 +109,7 @@ python tools/analyze.py --help
 Running one Ollama instance per GPU lets the script spread work across both
 cards. For maximum throughput, also raise each instance's parallel-request
 slots so a single GPU processes several emails at once — small models like
-`gemma3:4b` leave plenty of spare VRAM for extra KV caches.
+`gemma4:4b` leave plenty of spare VRAM for extra KV caches.
 
 **Step 1 — Start one Ollama instance per GPU with parallel slots enabled.**
 
@@ -139,8 +139,8 @@ CUDA_VISIBLE_DEVICES=1 OLLAMA_NUM_PARALLEL=8 OLLAMA_KEEP_ALIVE=24h OLLAMA_HOST=0
 **Step 2 — Pull models on both instances.**
 
 ```bash
-OLLAMA_HOST=localhost:11434 ollama pull gemma3:4b
-OLLAMA_HOST=localhost:11435 ollama pull gemma3:4b
+OLLAMA_HOST=localhost:11434 ollama pull gemma4:4b
+OLLAMA_HOST=localhost:11435 ollama pull gemma4:4b
 OLLAMA_HOST=localhost:11434 ollama pull nomic-embed-text
 OLLAMA_HOST=localhost:11435 ollama pull nomic-embed-text
 ```
@@ -148,7 +148,7 @@ OLLAMA_HOST=localhost:11435 ollama pull nomic-embed-text
 PowerShell equivalent:
 
 ```powershell
-$env:OLLAMA_HOST="localhost:11434"; ollama pull gemma3:4b
+$env:OLLAMA_HOST="localhost:11434"; ollama pull gemma4:4b
 ```
 
 **Step 3 — Run the script with matching client-side workers.**
@@ -173,7 +173,7 @@ starting.
 - Request timeouts or VRAM near the limit → lower `OLLAMA_NUM_PARALLEL`
   and `--workers` in step.
 
-**Reference sizing — dual NVIDIA RTX 4500 Ada (24 GB each) with `gemma3:4b`:**
+**Reference sizing — dual NVIDIA RTX 4500 Ada (24 GB each) with `gemma4:4b`:**
 `OLLAMA_NUM_PARALLEL=8` per server and `--workers 16` is a safe high-throughput
 starting point. The 4B model weights occupy ~3 GB, leaving ~18 GB per card for
 KV cache across 8 parallel slots.
@@ -208,7 +208,7 @@ On a modest laptop (CPU only, no GPU):
 | Two GPUs, `--workers 2` (one request per GPU) | ~0.3–0.8 s | ~0.5–1.5 min |
 | Two GPUs, `OLLAMA_NUM_PARALLEL=8` + `--workers 16` | ~0.1–0.3 s | ~10–30 s |
 
-Times are for `gemma3:4b`. Larger models are proportionally slower. Raising
+Times are for `gemma4:4b`. Larger models are proportionally slower. Raising
 `OLLAMA_NUM_PARALLEL` and `--workers` together keeps both GPUs saturated,
 since one request doesn't use all of a GPU's compute.
 
@@ -218,7 +218,7 @@ since one request doesn't use all of a GPU's compute.
 
 ```json
 {
-  "modelVersion": "gemma3:4b@2026-04-13",
+  "modelVersion": "gemma4:4b@2026-04-13",
   "embedModel":   "nomic-embed-text",
   "embedDim":     768,
   "generatedAt":  "2026-04-13T...",
