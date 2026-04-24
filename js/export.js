@@ -2,14 +2,58 @@
 //  EXPORT / CLEAR
 // ═══════════════════════════════════════════════════════
 
+// Keys that must never leave the browser in a plaintext JSON export.
+const SENSITIVE_SETTING_KEYS = new Set(['claudeApiKey']);
+
 async function exportData() {
-  const emails   = await dbGetAll('emails');
-  const atts     = await dbGetAll('attachments');
-  const allSettings = await dbGetAll('settings');
-  // Exclude sensitive keys from the JSON export
-  const settings = allSettings.filter(s => s.key !== 'claudeApiKey');
-  const blob = new Blob([JSON.stringify({ emails, attachments: atts, settings }, null, 2)],
-                         { type: 'application/json' });
+  const [
+    emails, attachments, tags, msgIndex, issues,
+    smartViews, allSettings, emailGroups, seenIds,
+    addressBook, insights, embeddings,
+  ] = await Promise.all([
+    dbGetAll('emails'),
+    dbGetAll('attachments'),
+    dbGetAll('tags'),
+    dbGetAll('msgIndex'),
+    dbGetAll('issues'),
+    dbGetAll('smartViews'),
+    dbGetAll('settings'),
+    dbGetAll('emailGroups'),
+    dbGetAll('seenIds'),
+    dbGetAll('addressBook'),
+    dbGetAll('insights'),
+    dbGetAll('embeddings'),
+  ]);
+
+  const settings = allSettings.filter(s => !SENSITIVE_SETTING_KEYS.has(s.key));
+
+  // Float32Array doesn't JSON-serialize to a usable form — convert to a plain
+  // array; importData rehydrates back into Float32Array.
+  const embeddingsPlain = embeddings.map(e => ({
+    emailId: e.emailId,
+    vector:  e.vector ? Array.from(e.vector) : [],
+    dim:     e.dim ?? (e.vector ? e.vector.length : 0),
+    model:   e.model ?? null,
+  }));
+
+  const payload = {
+    schemaVersion: 2,
+    exportedAt:    new Date().toISOString(),
+    emails,
+    attachments,
+    tags,
+    msgIndex,
+    issues,
+    smartViews,
+    settings,
+    emailGroups,
+    seenIds,
+    addressBook,
+    insights,
+    embeddings: embeddingsPlain,
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
@@ -206,6 +250,26 @@ async function exportSQLite() {
       id  TEXT PRIMARY KEY
     );
 
+    CREATE TABLE address_book (
+      email     TEXT PRIMARY KEY,
+      name      TEXT,
+      raw_json  TEXT
+    );
+
+    -- Local AI insights per email (from tools/analyze.py)
+    CREATE TABLE insights (
+      email_id  TEXT PRIMARY KEY,
+      raw_json  TEXT
+    );
+
+    -- Local AI embeddings per email (Float32Array stored as JSON array)
+    CREATE TABLE embeddings (
+      email_id    TEXT PRIMARY KEY,
+      dim         INTEGER,
+      model       TEXT,
+      vector_json TEXT
+    );
+
     -- Indexes
     CREATE INDEX idx_emails_message_id  ON emails(message_id);
     CREATE INDEX idx_emails_thread_id   ON emails(thread_id);
@@ -221,18 +285,23 @@ async function exportSQLite() {
   `);
 
   // ── Load all stores in parallel ────────────────────────────────────────────
-  const [emails, atts, tags, msgIdx, issues, smartViews, settings, emailGroups, seenIds] =
-    await Promise.all([
-      dbGetAll('emails'),
-      dbGetAll('attachments'),
-      dbGetAll('tags'),
-      dbGetAll('msgIndex'),
-      dbGetAll('issues'),
-      dbGetAll('smartViews'),
-      dbGetAll('settings'),
-      dbGetAll('emailGroups'),
-      dbGetAll('seenIds'),
-    ]);
+  const [
+    emails, atts, tags, msgIdx, issues, smartViews, settings,
+    emailGroups, seenIds, addressBook, insightRecs, embeddingRecs,
+  ] = await Promise.all([
+    dbGetAll('emails'),
+    dbGetAll('attachments'),
+    dbGetAll('tags'),
+    dbGetAll('msgIndex'),
+    dbGetAll('issues'),
+    dbGetAll('smartViews'),
+    dbGetAll('settings'),
+    dbGetAll('emailGroups'),
+    dbGetAll('seenIds'),
+    dbGetAll('addressBook'),
+    dbGetAll('insights'),
+    dbGetAll('embeddings'),
+  ]);
 
   // ── emails ─────────────────────────────────────────────────────────────────
   const insertEmail = db.prepare(`INSERT INTO emails VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
@@ -339,7 +408,10 @@ async function exportSQLite() {
   // ── settings ───────────────────────────────────────────────────────────────
   const insertSetting = db.prepare(`INSERT INTO settings VALUES (?,?)`);
   db.run('BEGIN');
-  for (const s of settings) insertSetting.run([s.key ?? null, JSON.stringify(s)]);
+  for (const s of settings) {
+    if (SENSITIVE_SETTING_KEYS.has(s.key)) continue;
+    insertSetting.run([s.key ?? null, JSON.stringify(s)]);
+  }
   db.run('COMMIT');
   insertSetting.free();
 
@@ -362,6 +434,39 @@ async function exportSQLite() {
   for (const s of seenIds) insertSeen.run([s.id ?? null]);
   db.run('COMMIT');
   insertSeen.free();
+
+  // ── addressBook ────────────────────────────────────────────────────────────
+  const insertContact = db.prepare(`INSERT OR IGNORE INTO address_book VALUES (?,?,?)`);
+  db.run('BEGIN');
+  for (const c of addressBook) {
+    insertContact.run([c.email ?? null, c.name ?? null, JSON.stringify(c)]);
+  }
+  db.run('COMMIT');
+  insertContact.free();
+
+  // ── insights (local AI) ────────────────────────────────────────────────────
+  const insertInsight = db.prepare(`INSERT OR IGNORE INTO insights VALUES (?,?)`);
+  db.run('BEGIN');
+  for (const i of insightRecs) {
+    insertInsight.run([i.emailId ?? null, JSON.stringify(i)]);
+  }
+  db.run('COMMIT');
+  insertInsight.free();
+
+  // ── embeddings (local AI) ──────────────────────────────────────────────────
+  const insertEmb = db.prepare(`INSERT OR IGNORE INTO embeddings VALUES (?,?,?,?)`);
+  db.run('BEGIN');
+  for (const e of embeddingRecs) {
+    const vec = e.vector ? Array.from(e.vector) : [];
+    insertEmb.run([
+      e.emailId ?? null,
+      e.dim ?? vec.length,
+      e.model ?? null,
+      JSON.stringify(vec),
+    ]);
+  }
+  db.run('COMMIT');
+  insertEmb.free();
 
   // ── Export ─────────────────────────────────────────────────────────────────
   const bytes = db.export();
@@ -390,28 +495,35 @@ async function importData(input) {
     return;
   }
 
-  const emails      = Array.isArray(data.emails)      ? data.emails      : [];
-  const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-  const settings    = Array.isArray(data.settings)    ? data.settings    : [];
+  const arr = k => (Array.isArray(data[k]) ? data[k] : []);
+  const emails        = arr('emails');
+  const attachments   = arr('attachments');
+  const tagsReg       = arr('tags');
+  const msgIndex      = arr('msgIndex');
+  const issues        = arr('issues');
+  const smartViewsIn  = arr('smartViews');
+  const settings      = arr('settings');
+  const emailGroupsIn = arr('emailGroups');
+  const seenIds       = arr('seenIds');
+  const addressBook   = arr('addressBook');
+  const insights      = arr('insights');
+  const embeddings    = arr('embeddings');
 
-  if (emails.length === 0 && attachments.length === 0 && settings.length === 0) {
+  const totalRecords =
+    emails.length + attachments.length + tagsReg.length + msgIndex.length +
+    issues.length + smartViewsIn.length + settings.length + emailGroupsIn.length +
+    seenIds.length + addressBook.length + insights.length + embeddings.length;
+
+  if (totalRecords === 0) {
     toast('Nothing to import', 'err');
     return;
   }
 
   // Restore settings (skip sensitive keys; don't overwrite existing values)
   for (const s of settings) {
-    if (!s.key || s.key === 'claudeApiKey') continue;
+    if (!s.key || SENSITIVE_SETTING_KEYS.has(s.key)) continue;
     const existing = await dbGet('settings', s.key);
     if (!existing) await dbPut('settings', s);
-  }
-  if (settings.length) {
-    await loadCustomPatterns();
-    await loadCustomQuotePatterns();
-    await loadCustomSignaturePatterns();
-    await loadSignatureRanges();
-    await loadAiPrompts();
-    await loadAttachTextLimit();
   }
 
   let emailsAdded = 0, emailsSkipped = 0;
@@ -437,15 +549,82 @@ async function importData(input) {
     attsAdded++;
   }
 
+  // Skip-if-existing upserts for the remaining config/AI stores so a restore
+  // never silently clobbers the user's current state.
+  const upsertSkip = async (store, key, records) => {
+    let added = 0;
+    for (const r of records) {
+      const k = r?.[key];
+      if (k == null) continue;
+      const existing = await dbGet(store, k);
+      if (existing) continue;
+      await dbPut(store, r);
+      added++;
+    }
+    return added;
+  };
+
+  const tagsAdded   = await upsertSkip('tags',        'name',      tagsReg);
+  const msgAdded    = await upsertSkip('msgIndex',    'messageId', msgIndex);
+  const issuesAdded = await upsertSkip('issues',      'id',        issues);
+  const svAdded     = await upsertSkip('smartViews',  'id',        smartViewsIn);
+  const groupsAdded = await upsertSkip('emailGroups', 'id',        emailGroupsIn);
+  const seenAdded   = await upsertSkip('seenIds',     'id',        seenIds);
+  const abAdded     = await upsertSkip('addressBook', 'email',     addressBook);
+  const insAdded    = await upsertSkip('insights',    'emailId',   insights);
+
+  // Embeddings were exported with a plain array; rehydrate to Float32Array.
+  let embAdded = 0;
+  for (const e of embeddings) {
+    if (!e?.emailId) continue;
+    const existing = await dbGet('embeddings', e.emailId);
+    if (existing) continue;
+    const vec = Array.isArray(e.vector) ? new Float32Array(e.vector) : null;
+    if (!vec || !vec.length) continue;
+    await dbPut('embeddings', {
+      emailId: e.emailId,
+      vector:  vec,
+      dim:     e.dim ?? vec.length,
+      model:   e.model ?? null,
+    });
+    embAdded++;
+  }
+
+  // Reload in-memory caches and redraw affected UI.
+  if (settings.length) {
+    await loadCustomPatterns();
+    await loadCustomQuotePatterns();
+    await loadCustomSignaturePatterns();
+    await loadSignatureRanges();
+    await loadAiPrompts();
+    await loadAttachTextLimit();
+    await loadAutoTagRules();
+    await loadDocumentTypes();
+  }
+  if (emailGroupsIn.length) await loadEmailGroups();
+  if (smartViewsIn.length || settings.length || emailGroupsIn.length) await loadSmartViews();
+
   await loadEmailList();
   await updateHeaderStats();
   showPanel('list');
 
   const parts = [];
-  if (emailsAdded)   parts.push(`${emailsAdded} email${emailsAdded !== 1 ? 's' : ''} imported`);
+  if (emailsAdded)   parts.push(`${emailsAdded} email${emailsAdded !== 1 ? 's' : ''}`);
   if (emailsSkipped) parts.push(`${emailsSkipped} skipped`);
-  if (attsAdded)     parts.push(`${attsAdded} attachment${attsAdded !== 1 ? 's' : ''} imported`);
-  toast(parts.length ? parts.join(', ') : 'Nothing new to import', emailsAdded || attsAdded ? 'ok' : '');
+  if (attsAdded)     parts.push(`${attsAdded} attachment${attsAdded !== 1 ? 's' : ''}`);
+  if (issuesAdded)   parts.push(`${issuesAdded} issue${issuesAdded !== 1 ? 's' : ''}`);
+  if (svAdded)       parts.push(`${svAdded} smart view${svAdded !== 1 ? 's' : ''}`);
+  if (groupsAdded)   parts.push(`${groupsAdded} email group${groupsAdded !== 1 ? 's' : ''}`);
+  if (abAdded)       parts.push(`${abAdded} contact${abAdded !== 1 ? 's' : ''}`);
+  if (tagsAdded)     parts.push(`${tagsAdded} tag${tagsAdded !== 1 ? 's' : ''}`);
+  if (seenAdded)     parts.push(`${seenAdded} tombstone${seenAdded !== 1 ? 's' : ''}`);
+  if (msgAdded)      parts.push(`${msgAdded} msgId`);
+  if (insAdded)      parts.push(`${insAdded} AI insight${insAdded !== 1 ? 's' : ''}`);
+  if (embAdded)      parts.push(`${embAdded} embedding${embAdded !== 1 ? 's' : ''}`);
+
+  const anyAdded = emailsAdded || attsAdded || issuesAdded || svAdded || groupsAdded ||
+                   abAdded || tagsAdded || seenAdded || msgAdded || insAdded || embAdded;
+  toast(parts.length ? parts.join(', ') : 'Nothing new to import', anyAdded ? 'ok' : '');
 }
 
 async function clearDB() {
