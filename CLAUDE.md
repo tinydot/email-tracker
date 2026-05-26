@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Email Tracker — Claude Context
 
 ## Project at a glance
@@ -24,14 +28,35 @@ email-tracker/
     │   ├── auto-tag.js    ← auto-tag rules engine + CRUD UI
     │   ├── ai.js          ← Claude API key, aiTagEmail, bulkAiTagView, prompt config
     │   └── settings.js    ← showSettings, email groups, custom patterns, maintenance
+    ├── ai/           ← local-AI insights (offline pipeline output)
+    │   ├── import-insights.js ← parse + store insights.json from tools/analyze.py
+    │   └── similar.js         ← cosine-similarity search over local embeddings
     ├── render.js     ← renderEmailList, openDetail, transmittal register
     ├── actions.js    ← email actions + bulk tagging
     ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts
     ├── export.js     ← JSON export/import, clearDB, danger zone
+    ├── address-book.js ← contact profiles (used to enrich AI prompts)
     ├── issues.js     ← issue tracker CRUD, email↔issue linking
+    ├── action-items.js ← flat action-items view (open/resolved/deferred)
     ├── helpers.js    ← drag & drop, formatDate, escHtml, toast
     └── init.js       ← init(), keyboard shortcuts
 ```
+
+Script load order matters — all files share global scope via `<script src>` tags
+in `index.html`. The only external runtime dep is the SheetJS CDN bundle
+(`xlsx.full.min.js`) used by `export.js` for spreadsheet export.
+
+### Companion scripts (outside the web app)
+
+- `pst_to_eml.py` — Windows-only; uses Outlook COM to export a `.pst` archive
+  to `.eml` files importable by the web app. See `pst_to_eml_README.md`.
+- `imap_sync.py` — Python stdlib only; incrementally syncs an IMAP account to
+  `.eml` files. See `imap_sync_README.md`.
+- `tools/analyze.py` — runs locally against an Ollama instance. Reads an
+  emails-for-ai export from the web app, produces `insights.json` (+ embeddings)
+  which is imported back via Settings → Local AI. See `tools/README.md`.
+- `fix-mojibake.js` — one-off DevTools console script to repair mis-decoded
+  UTF-8 bodies in an existing IndexedDB. Paste into the console; safe to re-run.
 
 All JS files share a single global scope (loaded via `<script src>`), so there are no module imports. The section banners (`// ═══…`) within each file mark sub-sections.
 
@@ -70,13 +95,17 @@ All JS files share a single global scope (loaded via `<script src>`), so there a
 - `issues` — issue tracker records
 - `smartViews` — user-defined filter views (keyPath: `id`)
 - `settings` — key-value store (e.g. `customAutomationPatterns`)
+- `addressBook` — contact profiles (name, role, projects) injected into AI prompts
+- `insights` — per-email AI-generated summary/action items (output of `tools/analyze.py`)
+- `embeddings` — per-email vector (Float32Array) for similarity search
 
 ## Key global state variables
 ```js
 allEmails      // full email array loaded from DB
 filteredEmails // currently displayed subset (result of applyFilters())
 currentView    // 'all' | 'unread' | 'actionable' | 'awaiting' | 'threads' |
-               // 'attachments' | 'automated' | 'issues' | 'transmittals' | 'sv-<id>'
+               // 'attachments' | 'automated' | 'issues' | 'transmittals' |
+               // 'action-items' | 'address-book' | 'sv-<id>'
 currentSort    // 'date-desc' | 'date-asc' | 'from' | 'subject'
 searchTerm     // active search string
 selectedEmail  // currently open email object
