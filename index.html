@@ -58,7 +58,6 @@
         <div class="sidebar-label">Actions</div>
         <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
-        <button class="nav-item" onclick="exportSQLite()">⬇ Export SQLite</button>
         <input type="file" id="json-import-input" accept=".json" style="display:none" onchange="importData(this)">
         <button class="nav-item" onclick="document.getElementById('json-import-input').click()">⬆ Import JSON</button>
         <button class="nav-item" onclick="showSettings()">⚙ Settings</button>
@@ -171,7 +170,6 @@
 </div>
 
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/db.js"></script>
 <script src="js/parser.js"></script>
 <script src="js/detection.js"></script>

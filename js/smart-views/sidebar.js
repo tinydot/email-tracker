@@ -66,7 +66,6 @@ async function showSvAttachments() {
     <div style="display:flex; flex-direction:column; height:100%;">
       <div style="padding:8px 12px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; background:var(--surface); flex-shrink:0;">
         <span style="font-size:12px; color:var(--muted);">${rows.length} attachment${rows.length !== 1 ? 's' : ''}</span>
-        <button class="btn" onclick="exportSvAttachmentsExcel()" style="margin-left:auto;">⬇ Export to Excel</button>
       </div>
       <div style="overflow:auto; flex:1;">
     <table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -131,41 +130,6 @@ async function showSvAttachments() {
 
   // Asynchronously load image thumbnails
   _loadSvThumbnails(container);
-}
-
-function exportSvAttachmentsExcel() {
-  const rows = window._txRows;
-  if (!rows || !rows.length) {
-    toast('No data to export', 'warn');
-    return;
-  }
-
-  const fmtSize = bytes => {
-    if (!bytes) return '';
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
-    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return bytes + ' B';
-  };
-
-  const data = [
-    ['Filename', 'Subject', 'Size', 'Date'],
-    ...rows.map(r => {
-      const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
-      const rawDate = allDates.length ? new Date(allDates[0]) : null;
-      const dateStr = rawDate ? rawDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ') : '';
-      const subject = r._allEmails && r._allEmails.length > 1
-        ? `${r._allEmails.length} emails`
-        : (r.email?.subject || '');
-      return [r.filename, subject, fmtSize(r.size), dateStr];
-    })
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Attachments');
-  XLSX.writeFile(wb, `attachments-${new Date().toISOString().split('T')[0]}.xlsx`);
-
-  toast(`Exported ${rows.length} attachment${rows.length !== 1 ? 's' : ''}`, 'ok');
 }
 
 async function _loadSvThumbnails(container) {
