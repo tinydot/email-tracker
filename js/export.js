@@ -7,7 +7,7 @@ const SENSITIVE_SETTING_KEYS = new Set(['claudeApiKey']);
 
 async function exportData() {
   const [
-    emails, attachments, tags, msgIndex, issues,
+    emails, attachments, tags, msgIndex,
     smartViews, allSettings, emailGroups, seenIds,
     addressBook, insights, embeddings,
   ] = await Promise.all([
@@ -15,7 +15,6 @@ async function exportData() {
     dbGetAll('attachments'),
     dbGetAll('tags'),
     dbGetAll('msgIndex'),
-    dbGetAll('issues'),
     dbGetAll('smartViews'),
     dbGetAll('settings'),
     dbGetAll('emailGroups'),
@@ -43,7 +42,6 @@ async function exportData() {
     attachments,
     tags,
     msgIndex,
-    issues,
     smartViews,
     settings,
     emailGroups,
@@ -167,8 +165,7 @@ async function exportSQLite() {
       to_addrs_json        TEXT,
       cc_addrs_json        TEXT,
       references_json      TEXT,
-      tags_json            TEXT,
-      linked_issues_json   TEXT
+      tags_json            TEXT
     );
 
     -- Normalized email arrays (convenient for querying)
@@ -181,10 +178,6 @@ async function exportSQLite() {
       role      TEXT,   -- 'to' | 'cc' | 'ref'
       address   TEXT
     );
-    CREATE TABLE email_issue_links (
-      email_id  TEXT,
-      issue_id  TEXT
-    );
 
     CREATE TABLE attachments (
       id               TEXT PRIMARY KEY,
@@ -194,9 +187,6 @@ async function exportSQLite() {
       mime_type        TEXT,
       hash             TEXT,
       stored_path      TEXT,
-      transmittal_ref  TEXT,
-      source_party     TEXT,
-      document_type    TEXT,
       is_nested        INTEGER,
       parent_filename  TEXT
     );
@@ -208,20 +198,6 @@ async function exportSQLite() {
     CREATE TABLE msg_index (
       message_id  TEXT PRIMARY KEY,
       email_id    TEXT
-    );
-
-    CREATE TABLE issues (
-      id            TEXT PRIMARY KEY,
-      title         TEXT,
-      description   TEXT,
-      status        TEXT,
-      created_date  TEXT,
-      updated_date  TEXT,
-      linked_emails_json TEXT
-    );
-    CREATE TABLE issue_email_links (
-      issue_id  TEXT,
-      email_id  TEXT
     );
 
     CREATE TABLE smart_views (
@@ -280,20 +256,17 @@ async function exportSQLite() {
     CREATE INDEX idx_email_tags_tag     ON email_tags(tag);
     CREATE INDEX idx_email_addr_email   ON email_addresses(email_id);
     CREATE INDEX idx_att_email          ON attachments(email_id);
-    CREATE INDEX idx_issues_status      ON issues(status);
-    CREATE INDEX idx_issues_email       ON issue_email_links(email_id);
   `);
 
   // ── Load all stores in parallel ────────────────────────────────────────────
   const [
-    emails, atts, tags, msgIdx, issues, smartViews, settings,
+    emails, atts, tags, msgIdx, smartViews, settings,
     emailGroups, seenIds, addressBook, insightRecs, embeddingRecs,
   ] = await Promise.all([
     dbGetAll('emails'),
     dbGetAll('attachments'),
     dbGetAll('tags'),
     dbGetAll('msgIndex'),
-    dbGetAll('issues'),
     dbGetAll('smartViews'),
     dbGetAll('settings'),
     dbGetAll('emailGroups'),
@@ -304,10 +277,9 @@ async function exportSQLite() {
   ]);
 
   // ── emails ─────────────────────────────────────────────────────────────────
-  const insertEmail = db.prepare(`INSERT INTO emails VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const insertEmail = db.prepare(`INSERT INTO emails VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const insertTag   = db.prepare(`INSERT INTO email_tags VALUES (?,?)`);
   const insertAddr  = db.prepare(`INSERT INTO email_addresses VALUES (?,?,?)`);
-  const insertEIL   = db.prepare(`INSERT INTO email_issue_links VALUES (?,?)`);
 
   db.run('BEGIN');
   for (const e of emails) {
@@ -336,26 +308,23 @@ async function exportSQLite() {
       JSON.stringify(e.ccAddrs ?? []),
       JSON.stringify(e.references ?? []),
       JSON.stringify(e.tags ?? []),
-      JSON.stringify(e.linkedIssues ?? []),
     ]);
-    for (const tag     of (e.tags         || [])) insertTag.run([e.id, tag]);
-    for (const addr    of (e.toAddrs      || [])) insertAddr.run([e.id, 'to',  addr]);
-    for (const addr    of (e.ccAddrs      || [])) insertAddr.run([e.id, 'cc',  addr]);
-    for (const ref     of (e.references   || [])) insertAddr.run([e.id, 'ref', ref]);
-    for (const issueId of (e.linkedIssues || [])) insertEIL.run([e.id, issueId]);
+    for (const tag  of (e.tags       || [])) insertTag.run([e.id, tag]);
+    for (const addr of (e.toAddrs    || [])) insertAddr.run([e.id, 'to',  addr]);
+    for (const addr of (e.ccAddrs    || [])) insertAddr.run([e.id, 'cc',  addr]);
+    for (const ref  of (e.references || [])) insertAddr.run([e.id, 'ref', ref]);
   }
   db.run('COMMIT');
-  insertEmail.free(); insertTag.free(); insertAddr.free(); insertEIL.free();
+  insertEmail.free(); insertTag.free(); insertAddr.free();
 
   // ── attachments ────────────────────────────────────────────────────────────
-  const insertAtt = db.prepare(`INSERT INTO attachments VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const insertAtt = db.prepare(`INSERT INTO attachments VALUES (?,?,?,?,?,?,?,?,?)`);
   db.run('BEGIN');
   for (const a of atts) {
     insertAtt.run([
       a.id ?? null, a.emailId ?? null, a.filename ?? null,
       a.size ?? null, a.mimeType ?? null, a.hash ?? null,
-      a.storedPath ?? null, a.transmittalRef ?? null,
-      a.sourceParty ?? null, a.documentType ?? null,
+      a.storedPath ?? null,
       a.isNested ? 1 : 0, a.parentFilename ?? null,
     ]);
   }
@@ -375,21 +344,6 @@ async function exportSQLite() {
   for (const m of msgIdx) insertMsg.run([m.messageId ?? null, m.emailId ?? null]);
   db.run('COMMIT');
   insertMsg.free();
-
-  // ── issues ─────────────────────────────────────────────────────────────────
-  const insertIssue = db.prepare(`INSERT INTO issues VALUES (?,?,?,?,?,?,?)`);
-  const insertIEL   = db.prepare(`INSERT INTO issue_email_links VALUES (?,?)`);
-  db.run('BEGIN');
-  for (const i of issues) {
-    insertIssue.run([
-      i.id ?? null, i.title ?? null, i.description ?? null,
-      i.status ?? null, i.createdDate ?? null, i.updatedDate ?? null,
-      JSON.stringify(i.linkedEmails ?? []),
-    ]);
-    for (const emailId of (i.linkedEmails || [])) insertIEL.run([i.id, emailId]);
-  }
-  db.run('COMMIT');
-  insertIssue.free(); insertIEL.free();
 
   // ── smartViews ─────────────────────────────────────────────────────────────
   const insertSV = db.prepare(`INSERT INTO smart_views VALUES (?,?,?,?,?,?)`);
@@ -479,7 +433,7 @@ async function exportSQLite() {
   a.download = `email-tracker-${new Date().toISOString().split('T')[0]}.sqlite`;
   a.click();
   URL.revokeObjectURL(url);
-  toast(`SQLite exported — ${emails.length} emails, ${issues.length} issues, ${atts.length} attachments`, 'ok');
+  toast(`SQLite exported — ${emails.length} emails, ${atts.length} attachments`, 'ok');
 }
 
 async function importData(input) {
@@ -500,7 +454,6 @@ async function importData(input) {
   const attachments   = arr('attachments');
   const tagsReg       = arr('tags');
   const msgIndex      = arr('msgIndex');
-  const issues        = arr('issues');
   const smartViewsIn  = arr('smartViews');
   const settings      = arr('settings');
   const emailGroupsIn = arr('emailGroups');
@@ -511,7 +464,7 @@ async function importData(input) {
 
   const totalRecords =
     emails.length + attachments.length + tagsReg.length + msgIndex.length +
-    issues.length + smartViewsIn.length + settings.length + emailGroupsIn.length +
+    smartViewsIn.length + settings.length + emailGroupsIn.length +
     seenIds.length + addressBook.length + insights.length + embeddings.length;
 
   if (totalRecords === 0) {
@@ -566,7 +519,6 @@ async function importData(input) {
 
   const tagsAdded   = await upsertSkip('tags',        'name',      tagsReg);
   const msgAdded    = await upsertSkip('msgIndex',    'messageId', msgIndex);
-  const issuesAdded = await upsertSkip('issues',      'id',        issues);
   const svAdded     = await upsertSkip('smartViews',  'id',        smartViewsIn);
   const groupsAdded = await upsertSkip('emailGroups', 'id',        emailGroupsIn);
   const seenAdded   = await upsertSkip('seenIds',     'id',        seenIds);
@@ -599,7 +551,6 @@ async function importData(input) {
     await loadAiPrompts();
     await loadAttachTextLimit();
     await loadAutoTagRules();
-    await loadDocumentTypes();
   }
   if (emailGroupsIn.length) await loadEmailGroups();
   if (smartViewsIn.length || settings.length || emailGroupsIn.length) await loadSmartViews();
@@ -612,7 +563,6 @@ async function importData(input) {
   if (emailsAdded)   parts.push(`${emailsAdded} email${emailsAdded !== 1 ? 's' : ''}`);
   if (emailsSkipped) parts.push(`${emailsSkipped} skipped`);
   if (attsAdded)     parts.push(`${attsAdded} attachment${attsAdded !== 1 ? 's' : ''}`);
-  if (issuesAdded)   parts.push(`${issuesAdded} issue${issuesAdded !== 1 ? 's' : ''}`);
   if (svAdded)       parts.push(`${svAdded} smart view${svAdded !== 1 ? 's' : ''}`);
   if (groupsAdded)   parts.push(`${groupsAdded} email group${groupsAdded !== 1 ? 's' : ''}`);
   if (abAdded)       parts.push(`${abAdded} contact${abAdded !== 1 ? 's' : ''}`);
@@ -622,7 +572,7 @@ async function importData(input) {
   if (insAdded)      parts.push(`${insAdded} AI insight${insAdded !== 1 ? 's' : ''}`);
   if (embAdded)      parts.push(`${embAdded} embedding${embAdded !== 1 ? 's' : ''}`);
 
-  const anyAdded = emailsAdded || attsAdded || issuesAdded || svAdded || groupsAdded ||
+  const anyAdded = emailsAdded || attsAdded || svAdded || groupsAdded ||
                    abAdded || tagsAdded || seenAdded || msgAdded || insAdded || embAdded;
   toast(parts.length ? parts.join(', ') : 'Nothing new to import', anyAdded ? 'ok' : '');
 }
@@ -633,7 +583,6 @@ async function clearDB() {
   await dbClear('attachments');
   await dbClear('msgIndex');
   await dbClear('tags');
-  await dbClear('issues');
   await dbClear('seenIds');
   allEmails = [];
   filteredEmails = [];

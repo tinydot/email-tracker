@@ -23,21 +23,6 @@ function switchView(view) {
     document.querySelector('.email-list-header').style.display = '';
     showPanel('list');
     applyFilters();
-  } else if (view === 'transmittals') {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-    hideSvTabToggle();
-    refreshBulkTagBar();
-    showTransmittalRegister();
-  } else if (view === 'issues') {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-    hideSvTabToggle();
-    refreshBulkTagBar();
-    showIssuesList();
-  } else if (view === 'actionitems') {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-    hideSvTabToggle();
-    refreshBulkTagBar();
-    showActionItemsList();
   } else if (view === 'addressbook') {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     hideSvTabToggle();

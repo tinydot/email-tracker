@@ -2,7 +2,7 @@
 //  DB — IndexedDB via lightweight wrapper
 // ═══════════════════════════════════════════════════════
 const DB_NAME    = 'EmailTracker';
-const DB_VERSION = 7; // v7: insights + embeddings stores for local AI
+const DB_VERSION = 9; // v9: removed issues store (legacy already dropped in v8)
 let db = null;
 
 function openDB() {
@@ -39,12 +39,10 @@ function openDB() {
       if (!db.objectStoreNames.contains('msgIndex')) {
         db.createObjectStore('msgIndex', { keyPath: 'messageId' }); // → emailId
       }
-      
-      // Issues store (for issue management)
-      if (!db.objectStoreNames.contains('issues')) {
-        const istore = db.createObjectStore('issues', { keyPath: 'id' });
-        istore.createIndex('status', 'status', { unique: false });
-        istore.createIndex('createdDate', 'createdDate', { unique: false });
+
+      // Drop legacy issues store if present (v8 removal)
+      if (db.objectStoreNames.contains('issues')) {
+        db.deleteObjectStore('issues');
       }
 
       // Smart Views store (user-defined filter views)

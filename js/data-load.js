@@ -109,15 +109,6 @@ function updateNavCounts() {
   document.getElementById('n-automated').textContent  = allEmails.filter(e => e.isSystemEmail).length;
   document.getElementById('n-lowvalue').textContent   = allEmails.filter(e => e.isLowValue).length;
 
-  // Update issues and transmittals count asynchronously
-  dbGetAll('issues').then(issues => {
-    document.getElementById('n-issues').textContent = issues.filter(i => i.status !== 'resolved').length;
-  });
-  document.getElementById('n-actionitems').textContent = countOpenActionItems();
-  dbGetAll('attachments').then(atts => {
-    document.getElementById('n-transmittals').textContent = atts.length;
-  });
-
   // Refresh smart view counts in sidebar
   renderSmartViewsSidebar();
 }

@@ -46,7 +46,7 @@ async function showSvAttachments() {
 
   const emailIds = new Set(filteredEmails.map(e => e.id));
   const allAtts = await dbGetAll('attachments');
-  const atts = allAtts.filter(a => emailIds.has(a.emailId));
+  const atts = allAtts.filter(a => emailIds.has(a.emailId) && !a.isBlacklisted);
 
   const emailMap = new Map(filteredEmails.map(e => [e.id, e]));
   const rawRows = atts.map(a => ({ ...a, email: emailMap.get(a.emailId) }));
@@ -62,7 +62,6 @@ async function showSvAttachments() {
   }
 
   const rows = deduplicateAttachmentsByHash(rawRows);
-  window._txRows = rows; // allows editCellInline to locate and update rows
 
   container.innerHTML = `
     <div style="display:flex; flex-direction:column; height:100%;">
@@ -76,8 +75,6 @@ async function showSvAttachments() {
         <tr style="height:34px;">
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">File</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Subject</th>
-          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Source Party</th>
-          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Type</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Size</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Date</th>
         </tr>
@@ -120,16 +117,6 @@ async function showSvAttachments() {
               <td style="padding:8px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                 ${subjectDisplay}
               </td>
-              <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'sourceParty')" title="Click to edit">
-                <div style="padding:4px; cursor:text; min-height:20px; ${!r.sourceParty ? 'color:var(--muted);' : ''}">
-                  ${escHtml(r.sourceParty || 'Click to edit')}
-                </div>
-              </td>
-              <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'documentType')" title="Click to edit">
-                <div style="padding:4px; cursor:text; min-height:20px; ${!r.documentType ? 'color:var(--muted);' : ''}">
-                  ${escHtml(r.documentType || 'Click to edit')}
-                </div>
-              </td>
               <td style="padding:8px; font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap;">
                 ${formatSize(r.size)}
               </td>
@@ -162,7 +149,7 @@ function exportSvAttachmentsExcel() {
   };
 
   const data = [
-    ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size', 'Date'],
+    ['Filename', 'Subject', 'Size', 'Date'],
     ...rows.map(r => {
       const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
       const rawDate = allDates.length ? new Date(allDates[0]) : null;
@@ -170,7 +157,7 @@ function exportSvAttachmentsExcel() {
       const subject = r._allEmails && r._allEmails.length > 1
         ? `${r._allEmails.length} emails`
         : (r.email?.subject || '');
-      return [r.filename, subject, r.sourceParty || '', r.documentType || '', fmtSize(r.size), dateStr];
+      return [r.filename, subject, fmtSize(r.size), dateStr];
     })
   ];
 

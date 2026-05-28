@@ -87,11 +87,6 @@ function refreshBulkTagBar() {
   const bar = document.getElementById('bulk-tag-bar');
   if (!bar) return;
 
-  // Hide in non-email-list views
-  if (currentView === 'transmittals' || currentView === 'issues' || currentView === 'actionitems') {
-    bar.style.display = 'none';
-    return;
-  }
 
   bar.style.display = 'flex';
   const count = filteredEmails.length;
