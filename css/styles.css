@@ -448,6 +448,9 @@
     min-height: 0;
   }
 
+  .vs-spacer { position: relative; width: 100%; }
+  .vs-window { position: absolute; left: 0; right: 0; top: 0; }
+
   .email-row {
     display: grid;
     grid-template-columns: 24px 180px 1fr 120px 90px 90px;

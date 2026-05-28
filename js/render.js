@@ -2,12 +2,106 @@
 //  RENDER
 // ═══════════════════════════════════════════════════════
 
+const VS_ROW_HEIGHT = 42;
+const VS_BUFFER = 10;
+let _vsActive = false;
+let _vsLastStart = -1;
+let _vsLastEnd = -1;
+let _vsRaf = 0;
+let _vsScrollBound = false;
+
+function renderEmailRowHtml(email) {
+  const dateStr  = email.date ? formatDate(email.date) : '—';
+  const from     = email.fromName || email.fromAddr || '—';
+  const status   = renderBadge(email);
+  const unread   = email.status === 'unread' ? 'unread' : '';
+  const selected = selectedEmail?.id === email.id ? 'selected' : '';
+  const attach   = email.attachmentCount > 0
+    ? `<span style="color:var(--warn)">📎 ${email.attachmentCount}</span>` : '—';
+
+  const emailHasReplies = hasReplies(email);
+  const threadDepth = getThreadDepth(email);
+  let dot = '';
+  if (email.isActionable) {
+    dot = `<span title="Actionable" style="color:var(--danger);font-size:10px">⚡</span>`;
+  } else if (emailHasReplies) {
+    const replyCount = countThreadReplies(email);
+    dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
+  } else if (threadDepth > 0) {
+    dot = `<span class="thread-dot has-thread" title="Reply in thread"></span>`;
+  } else {
+    dot = `<span class="thread-dot no-thread"></span>`;
+  }
+
+  const indent = (currentView === 'threads' && threadDepth > 0) ? (threadDepth * 12) + 'px' : '';
+  const overdueFlag = email._overdue ? `<span style="color:var(--danger);margin-left:4px" title="Overdue">🔴</span>` : '';
+
+  return `
+    <div class="email-row ${unread} ${selected}" data-id="${email.id}" onclick="selectEmail('${email.id}')">
+      <div class="col-flag">${dot}</div>
+      <div class="col-from" title="${escHtml(email.fromAddr)}">${escHtml(truncate(from, 26))}</div>
+      <div class="col-subject" title="${escHtml(email.subject)}">
+        <span style="${indent ? `margin-left:${indent}` : ''}">${escHtml(truncate(email.subject, 60))}${overdueFlag}</span>
+      </div>
+      <div class="col-date">${dateStr}</div>
+      <div class="col-status">${status}</div>
+      <div class="col-attach">${attach}</div>
+    </div>`;
+}
+
+function vsRenderSlice(force) {
+  if (!_vsActive) return;
+  const scroller = document.getElementById('email-scroll');
+  const window_  = document.getElementById('vs-window');
+  if (!scroller || !window_) return;
+
+  const viewH = scroller.clientHeight;
+  const scrollTop = scroller.scrollTop;
+  const total = filteredEmails.length;
+
+  // Bulk-tag bar lives above #email-list in the same scroller; account for its height
+  const listTop = document.getElementById('email-list').offsetTop;
+  const relativeTop = Math.max(0, scrollTop - listTop);
+
+  let start = Math.floor(relativeTop / VS_ROW_HEIGHT) - VS_BUFFER;
+  let end   = Math.ceil((relativeTop + viewH) / VS_ROW_HEIGHT) + VS_BUFFER;
+  start = Math.max(0, start);
+  end   = Math.min(total, end);
+
+  if (!force && start === _vsLastStart && end === _vsLastEnd) return;
+  _vsLastStart = start;
+  _vsLastEnd = end;
+
+  let html = '';
+  for (let i = start; i < end; i++) html += renderEmailRowHtml(filteredEmails[i]);
+  window_.style.transform = `translateY(${start * VS_ROW_HEIGHT}px)`;
+  window_.innerHTML = html;
+}
+
+function vsOnScroll() {
+  if (_vsRaf) return;
+  _vsRaf = requestAnimationFrame(() => {
+    _vsRaf = 0;
+    vsRenderSlice(false);
+  });
+}
+
+function vsBindScrollOnce() {
+  if (_vsScrollBound) return;
+  const scroller = document.getElementById('email-scroll');
+  if (!scroller) return;
+  scroller.addEventListener('scroll', vsOnScroll, { passive: true });
+  window.addEventListener('resize', () => vsRenderSlice(true));
+  _vsScrollBound = true;
+}
+
 function renderEmailList() {
   // Delegate to action-items view when it's active
   if (currentView === 'actionitems') { showActionItemsList(); return; }
   const container = document.getElementById('email-list');
 
   if (!filteredEmails.length) {
+    _vsActive = false;
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">📭</div>
@@ -16,51 +110,20 @@ function renderEmailList() {
           : 'No emails match the current filter.'
         }</div>
       </div>`;
+    refreshBulkTagBar();
     return;
   }
 
-  container.innerHTML = filteredEmails.map(email => {
-    const dateStr  = email.date ? formatDate(email.date) : '—';
-    const from     = email.fromName || email.fromAddr || '—';
-    const status   = renderBadge(email);
-    const unread   = email.status === 'unread' ? 'unread' : '';
-    const selected = selectedEmail?.id === email.id ? 'selected' : '';
-    const attach   = email.attachmentCount > 0
-      ? `<span style="color:var(--warn)">📎 ${email.attachmentCount}</span>` : '—';
-    
-    // Thread indicator
-    const emailHasReplies = hasReplies(email);
-    const threadDepth = getThreadDepth(email);
-    let dot = '';
-    if (email.isActionable) {
-      dot = `<span title="Actionable" style="color:var(--danger);font-size:10px">⚡</span>`;
-    } else if (emailHasReplies) {
-      const replyCount = countThreadReplies(email);
-      dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
-    } else if (threadDepth > 0) {
-      dot = `<span class="thread-dot has-thread" title="Reply in thread"></span>`;
-    } else {
-      dot = `<span class="thread-dot no-thread"></span>`;
-    }
+  _vsActive = true;
+  _vsLastStart = _vsLastEnd = -1;
+  vsBindScrollOnce();
 
-    // Thread indentation — only in Threads view to show reply hierarchy
-    const indent = (currentView === 'threads' && threadDepth > 0) ? (threadDepth * 12) + 'px' : '';
+  const totalHeight = filteredEmails.length * VS_ROW_HEIGHT;
+  container.innerHTML = `<div class="vs-spacer" style="height:${totalHeight}px"><div class="vs-window" id="vs-window"></div></div>`;
 
-    // Overdue flag for awaiting view
-    const overdueFlag = email._overdue ? `<span style="color:var(--danger);margin-left:4px" title="Overdue">🔴</span>` : '';
-
-    return `
-      <div class="email-row ${unread} ${selected}" data-id="${email.id}" onclick="selectEmail('${email.id}')">
-        <div class="col-flag">${dot}</div>
-        <div class="col-from" title="${escHtml(email.fromAddr)}">${escHtml(truncate(from, 26))}</div>
-        <div class="col-subject" title="${escHtml(email.subject)}">
-          <span style="${indent ? `margin-left:${indent}` : ''}">${escHtml(truncate(email.subject, 60))}${overdueFlag}</span>
-        </div>
-        <div class="col-date">${dateStr}</div>
-        <div class="col-status">${status}</div>
-        <div class="col-attach">${attach}</div>
-      </div>`;
-  }).join('');
+  const scroller = document.getElementById('email-scroll');
+  if (scroller) scroller.scrollTop = 0;
+  vsRenderSlice(true);
 
   refreshBulkTagBar();
 }
@@ -117,9 +180,14 @@ function selectEmail(id) {
   selectedEmail = email;
   selectedEmailIdx = newIdx;
 
-  const rows = document.querySelectorAll('#email-list .email-row');
-  if (prevIdx >= 0 && rows[prevIdx]) rows[prevIdx].classList.remove('selected');
-  if (newIdx >= 0 && rows[newIdx]) rows[newIdx].classList.add('selected');
+  const prevRow = prevIdx >= 0 && filteredEmails[prevIdx]
+    ? document.querySelector(`#email-list .email-row[data-id="${CSS.escape(filteredEmails[prevIdx].id)}"]`)
+    : null;
+  const newRow = newIdx >= 0
+    ? document.querySelector(`#email-list .email-row[data-id="${CSS.escape(id)}"]`)
+    : null;
+  if (prevRow) prevRow.classList.remove('selected');
+  if (newRow) newRow.classList.add('selected');
 
   // Open modal immediately — no awaiting anything
   openDetail(email);
@@ -127,7 +195,7 @@ function selectEmail(id) {
   // Mark as read in background (fire-and-forget)
   if (email.status === 'unread') {
     email.status = 'read';
-    if (newIdx >= 0 && rows[newIdx]) rows[newIdx].classList.remove('unread');
+    if (newRow) newRow.classList.remove('unread');
     dbPut('emails', email);
     updateHeaderStatsFast();
   }
@@ -910,8 +978,19 @@ function navigateEmail(dir) {
   if (newIdx < 0 || newIdx >= filteredEmails.length) return;
   selectEmail(filteredEmails[newIdx].id);
   // Scroll the newly selected row into view in the list
-  const rows = document.querySelectorAll('#email-list .email-row');
-  if (rows[newIdx]) rows[newIdx].scrollIntoView({ block: 'nearest' });
+  if (_vsActive) {
+    const scroller = document.getElementById('email-scroll');
+    const listTop = document.getElementById('email-list').offsetTop;
+    if (scroller) {
+      const rowTop = listTop + newIdx * VS_ROW_HEIGHT;
+      const rowBot = rowTop + VS_ROW_HEIGHT;
+      if (rowTop < scroller.scrollTop) scroller.scrollTop = rowTop;
+      else if (rowBot > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = rowBot - scroller.clientHeight;
+    }
+  } else {
+    const row = document.querySelector(`#email-list .email-row[data-id="${CSS.escape(filteredEmails[newIdx].id)}"]`);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function updateModalNavButtons() {
