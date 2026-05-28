@@ -72,23 +72,69 @@ function getValueInputHTML(field, value, operator) {
 
 // --- Rule evaluation ---
 
+// Lazily compute & cache lowercase forms of stable email fields on the email
+// object itself (in a hidden `_lc` slot). Smart-view filtering invokes this
+// hot path N (emails) × M (rules) × K (views) times per render, so caching
+// turns repeated .toLowerCase() / .split() / .map() work into one-time cost.
+// Cache is invalidated by callers that mutate these fields (see invalidateEmailLC).
+function getEmailLC(email) {
+  let c = email._lc;
+  if (!c) {
+    const from   = (email.fromAddr || '').toLowerCase();
+    const toList = (email.toAddrs  || []).map(a => (a || '').toLowerCase());
+    const ccList = (email.ccAddrs  || []).map(a => (a || '').toLowerCase());
+    c = email._lc = {
+      fromAddr:   from,
+      fromName:   (email.fromName || '').toLowerCase(),
+      fromDomain: (from.split('@')[1] || ''),
+      subject:    (email.subject  || '').toLowerCase(),
+      toAddr:     toList.join(' '),
+      toDomain:   toList.map(a => a.split('@')[1] || '').join(' '),
+      ccAddr:     ccList.join(' '),
+      ccDomain:   ccList.map(a => a.split('@')[1] || '').join(' '),
+      toList,
+      ccList,
+    };
+  }
+  return c;
+}
+
+function invalidateEmailLC(email) {
+  if (email) email._lc = null;
+}
+
 function getEmailFieldValue(email, field) {
+  const lc = getEmailLC(email);
   switch (field) {
-    case 'fromAddr':       return (email.fromAddr  || '').toLowerCase();
-    case 'fromName':       return (email.fromName  || '').toLowerCase();
-    case 'fromDomain':     return ((email.fromAddr || '').split('@')[1] || '').toLowerCase();
-    case 'toAddr':         return (email.toAddrs   || []).join(' ').toLowerCase();
-    case 'toDomain':       return (email.toAddrs   || []).map(a => (a.split('@')[1] || '')).join(' ').toLowerCase();
-    case 'ccAddr':         return (email.ccAddrs   || []).join(' ').toLowerCase();
-    case 'ccDomain':       return (email.ccAddrs   || []).map(a => (a.split('@')[1] || '')).join(' ').toLowerCase();
-    case 'subject':        return (email.subject   || '').toLowerCase();
-    case 'status':         return (email.status    || '').toLowerCase();
-    case 'tags':           return (email.tags      || []).join(' ').toLowerCase();
+    case 'fromAddr':       return lc.fromAddr;
+    case 'fromName':       return lc.fromName;
+    case 'fromDomain':     return lc.fromDomain;
+    case 'toAddr':         return lc.toAddr;
+    case 'toDomain':       return lc.toDomain;
+    case 'ccAddr':         return lc.ccAddr;
+    case 'ccDomain':       return lc.ccDomain;
+    case 'subject':        return lc.subject;
+    case 'status':         return (email.status || '').toLowerCase();
+    case 'tags':           return (email.tags   || []).join(' ').toLowerCase();
     case 'hasAttachments': return email.hasAttachments ? 'true' : 'false';
     case 'isActionable':   return email.isActionable   ? 'true' : 'false';
     case 'isSystemEmail':  return email.isSystemEmail  ? 'true' : 'false';
     default: return '';
   }
+}
+
+// Cache lowercase Set of group members on the group object itself for O(1) lookup.
+// Callers mutating group.members must call invalidateGroupCache(group).
+function getGroupMemberSet(group) {
+  let s = group._memberSet;
+  if (!s) {
+    s = group._memberSet = new Set((group.members || []).map(m => (m || '').toLowerCase()));
+  }
+  return s;
+}
+
+function invalidateGroupCache(group) {
+  if (group) group._memberSet = null;
 }
 
 function evaluateRule(email, rule) {
@@ -100,20 +146,28 @@ function evaluateRule(email, rule) {
   if (GROUP_FIELDS.has(field)) {
     const group = emailGroups.find(g => g.id === value);
     if (!group) return false;
-    const members = (group.members || []).map(m => m.toLowerCase());
-    let addrs = [];
+    const members = getGroupMemberSet(group);
+    if (!members.size) return operator === 'not_in_group';
+    const lc = getEmailLC(email);
+    let match = false;
     if (field === 'fromInGroup') {
-      addrs = [(email.fromAddr || '').toLowerCase()];
+      match = members.has(lc.fromAddr);
     } else if (field === 'recipientInGroup') {
-      addrs = [...(email.toAddrs || []), ...(email.ccAddrs || [])].map(a => a.toLowerCase());
+      match = lc.toList.some(a => members.has(a)) || lc.ccList.some(a => members.has(a));
     } else { // participantInGroup
-      addrs = [(email.fromAddr || ''), ...(email.toAddrs || []), ...(email.ccAddrs || [])].map(a => a.toLowerCase());
+      match = members.has(lc.fromAddr)
+           || lc.toList.some(a => members.has(a))
+           || lc.ccList.some(a => members.has(a));
     }
-    const match = addrs.some(a => members.includes(a));
     return operator === 'in_group' ? match : !match;
   }
-  const fv  = getEmailFieldValue(email, field);
-  const val = (value || '').toLowerCase();
+  const fv = getEmailFieldValue(email, field);
+  // Cache rule.value lowercase on the rule object — rules are immutable for
+  // the lifetime of a smart view (edits create a fresh rules array).
+  let val = rule._valueLC;
+  if (val === undefined) {
+    val = rule._valueLC = (value || '').toLowerCase();
+  }
   switch (operator) {
     case 'contains':     return fv.includes(val);
     case 'not_contains': return !fv.includes(val);

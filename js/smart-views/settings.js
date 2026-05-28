@@ -31,6 +31,7 @@ async function addGroupMember(groupId, email) {
   if (!group) return;
   if (group.members.includes(addr)) { toast('Already in group', 'warn'); return; }
   group.members.push(addr);
+  invalidateGroupCache(group);
   await dbPut('emailGroups', group);
   toast(`Added ${addr}`, 'ok');
   showSettings();
@@ -40,6 +41,7 @@ async function removeGroupMember(groupId, email) {
   const group = emailGroups.find(g => g.id === groupId);
   if (!group) return;
   group.members = group.members.filter(m => m !== email);
+  invalidateGroupCache(group);
   await dbPut('emailGroups', group);
   toast('Removed', 'ok');
   showSettings();
