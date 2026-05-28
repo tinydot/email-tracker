@@ -6,19 +6,20 @@ async function init() {
   db = await openDB();
   setupDropZone();
 
-  // Load custom patterns, smart views, email groups, auto-tag rules, and AI prompts before processing emails
-  await loadCustomPatterns();
-  await loadCustomQuotePatterns();
-  await loadCustomSignaturePatterns();
-  await loadSignatureRanges();
-  await loadEmailGroups();
-  await loadAutoTagRules();
-  await loadAiPrompts();
-  await loadAttachTextLimit();
-  await loadDocumentTypes();
-  await loadSmartViews();
-
-  const emails = await dbGetAll('emails');
+  // Load settings + emails in parallel — these are independent IndexedDB reads
+  const [, , , , , , , , , , emails] = await Promise.all([
+    loadCustomPatterns(),
+    loadCustomQuotePatterns(),
+    loadCustomSignaturePatterns(),
+    loadSignatureRanges(),
+    loadEmailGroups(),
+    loadAutoTagRules(),
+    loadAiPrompts(),
+    loadAttachTextLimit(),
+    loadDocumentTypes(),
+    loadSmartViews(),
+    dbGetAll('emails'),
+  ]);
   if (emails.length > 0) {
     allEmails = emails;
     buildThreadCache();
