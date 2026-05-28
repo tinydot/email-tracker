@@ -382,7 +382,6 @@ async function processFilesForImport(fileArr) {
         awaitingSince: null,
         importedAt:   new Date().toISOString(),
         fileName:     file.name,
-        aiSummary:    null,
       };
 
       // Apply auto-tag rules to newly imported email

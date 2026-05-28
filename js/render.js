@@ -489,8 +489,6 @@ function openDetail(email) {
       ${email.isSystemEmail ? '🤖 Unmark Automated' : '🤖 Re-mark Automated'}
     </button>` : ''}
     <button class="btn btn-danger" onclick="deleteEmail('${email.id}')">✕</button>
-    <button class="btn" onclick="aiAnalyzeEmail('${email.id}')" title="Analyze with Claude AI: intent, action items, summary, tags">✨ AI Analyze</button>
-    ${(threadDepth > 0 || emailHasReplies) ? `<button class="btn" onclick="aiAnalyzeThread('${email.id}')" title="Analyze thread action items with Claude AI — sends structured data only, no full bodies">🔗 AI Thread</button>` : ''}
     <button class="btn" onclick="quickAddContact('${escHtml(email.fromAddr || '')}','${escHtml((email.fromName || '').replace(/'/g, "\\'"))}')" title="Add/edit sender in Address Book">👤 Contact</button>
   `;
 
@@ -500,50 +498,6 @@ function openDetail(email) {
   // Body
   const bodyEl = document.getElementById('det-body');
   bodyEl.innerHTML = '';
-
-  // Local AI insights (from tools/analyze.py import) — load async, inject if present
-  const localAiEl = document.getElementById('det-local-ai');
-  localAiEl.innerHTML = '';
-  const emailIdAtDetailLoad = email.id;
-  dbGet('insights', email.id).then(insight => {
-    if (!selectedEmail || selectedEmail.id !== emailIdAtDetailLoad) return;
-    const el = document.getElementById('det-local-ai');
-    if (!el) return;
-    if (insight) {
-      el.innerHTML = renderLocalAiInsights(insight, email.id);
-    }
-  });
-
-  if (email.aiIntent || email.aiSummary) {
-    const summaryEl = document.createElement('div');
-    summaryEl.className = 'ai-summary-box';
-    const intentBadge = email.aiIntent
-      ? `<span class="intent-badge intent-${email.aiIntent}">${email.aiIntent}</span>`
-      : '';
-    summaryEl.innerHTML = intentBadge + escHtml('✨ ' + (email.aiSummary || ''));
-    bodyEl.appendChild(summaryEl);
-  }
-
-  if ((email.actionItems || []).length > 0) {
-    const aiBox = document.createElement('div');
-    aiBox.className = 'action-items-box';
-    const openCount = email.actionItems.filter(a => a.status === 'open').length;
-    const headerLabel = `⚡ Action Items${openCount > 0 ? ` — ${openCount} open` : ' — all resolved'}`;
-    const itemsHtml = email.actionItems.map(a => {
-      const statusClass = `ai-status-${a.status}`;
-      const statusLabel = a.status === 'open' ? '● open' : a.status === 'resolved' ? '✓ resolved' : '⏸ deferred';
-      return `<li class="action-item">
-        <span class="${statusClass}">${statusLabel}</span>
-        <span class="action-item-desc">${escHtml(a.description)}</span>
-      </li>`;
-    }).join('');
-    aiBox.innerHTML = `
-      <div class="action-items-header">
-        <span class="action-items-header-label">${headerLabel}</span>
-      </div>
-      <ul class="action-items-list">${itemsHtml}</ul>`;
-    bodyEl.appendChild(aiBox);
-  }
 
   const labelEl = document.createElement('div');
   labelEl.className = 'detail-body-label';
@@ -775,95 +729,6 @@ function updateModalNavButtons() {
   counter.textContent = selectedEmailIdx >= 0
     ? `${selectedEmailIdx + 1}/${filteredEmails.length}`
     : '';
-}
-
-// ── Local AI insights panel ─────────────────────────────
-
-function renderLocalAiInsights(insight, emailId) {
-  const sev = s => {
-    const cls = s === 'high' ? 'lai-sev-high' : s === 'medium' ? 'lai-sev-med' : 'lai-sev-low';
-    return `<span class="lai-sev-badge ${cls}">${escHtml(s)}</span>`;
-  };
-
-  const issuesHtml = (insight.issues || []).map(i => `<div class="lai-issue"><div class="lai-issue-head">${sev(i.severity || 'low')}<span class="lai-issue-title">${escHtml(i.title || '')}</span>${i.party ? `<span class="lai-party">${escHtml(i.party)}</span>` : ''}</div>${i.quote ? `<blockquote class="lai-quote">${escHtml(i.quote)}</blockquote>` : ''}</div>`).join('');
-
-  const milestonesHtml = (insight.milestones || []).map(m => `
-    <div class="lai-row">
-      <span class="lai-type-badge">${escHtml(m.type || '')}</span>
-      <span>${escHtml(m.name || '')}</span>
-      ${m.oldDate ? `<span class="lai-muted">${escHtml(m.oldDate)}→${escHtml(m.newDate || '?')}</span>` : ''}
-    </div>`).join('');
-
-  const changesHtml = (insight.designChanges || []).map(c => `
-    <div class="lai-row">
-      <span class="lai-scope">${escHtml(c.scope || '')}</span>
-      <span>${escHtml(c.description || '')}</span>
-      ${c.reason ? `<span class="lai-muted">(${escHtml(c.reason)})</span>` : ''}
-    </div>`).join('');
-
-  const resolutionsHtml = (insight.resolutions || []).map(r => `
-    <div class="lai-row">
-      <span>${escHtml(r.refersTo || '')}</span>
-      ${r.resolvedBy ? `<span class="lai-muted">→ ${escHtml(r.resolvedBy)}</span>` : ''}
-    </div>`).join('');
-
-  const interfacesHtml = (insight.interfaces || []).map(i => `
-    <div class="lai-row">
-      <span class="lai-scope">${escHtml((i.parties || []).join(' ↔ '))}</span>
-      <span>${escHtml(i.topic || '')}</span>
-      ${i.direction ? `<span class="lai-muted">${escHtml(i.direction)}</span>` : ''}
-    </div>`).join('');
-
-  const sections = [
-    issuesHtml      && `<div class="lai-section"><div class="lai-section-title">Issues</div>${issuesHtml}</div>`,
-    milestonesHtml  && `<div class="lai-section"><div class="lai-section-title">Milestones</div>${milestonesHtml}</div>`,
-    changesHtml     && `<div class="lai-section"><div class="lai-section-title">Design Changes</div>${changesHtml}</div>`,
-    resolutionsHtml && `<div class="lai-section"><div class="lai-section-title">Resolutions</div>${resolutionsHtml}</div>`,
-    interfacesHtml  && `<div class="lai-section"><div class="lai-section-title">Interfaces</div>${interfacesHtml}</div>`,
-  ].filter(Boolean).join('');
-
-  const ts = insight.analyzedAt ? new Date(insight.analyzedAt).toLocaleDateString() : '';
-
-  return `
-    <div class="lai-panel">
-      <div class="lai-header">
-        <span class="lai-header-label">🤖 Local AI Insights</span>
-        <span class="lai-header-meta">${escHtml(ts)}</span>
-      </div>
-      ${insight.summary ? `<div class="lai-summary">${escHtml(insight.summary)}</div>` : ''}
-      ${sections}
-      <div class="lai-similar-wrap">
-        <button class="btn" onclick="showSimilarEmails('${escHtml(emailId)}')"
-                style="font-size:11px; padding:2px 10px;">Find Similar</button>
-        <div class="lai-similar-list" id="lai-similar-${escHtml(emailId.replace(/[^a-z0-9]/gi, ''))}"></div>
-      </div>
-    </div>`;
-}
-
-async function showSimilarEmails(emailId) {
-  const safeId = emailId.replace(/[^a-z0-9]/gi, '');
-  const listEl = document.getElementById(`lai-similar-${safeId}`);
-  if (!listEl) return;
-  listEl.textContent = 'Searching…';
-
-  const results = await findSimilarEmails(emailId, 10);
-
-  if (!results.length) {
-    listEl.textContent = 'No similar emails found (embeddings may not be imported yet).';
-    return;
-  }
-
-  listEl.innerHTML = results.map(r => {
-    const em = r.email;
-    const subj = em ? escHtml(truncate(em.subject || '(no subject)', 60)) : escHtml(r.emailId);
-    const from  = em ? escHtml(truncate(em.fromName || em.fromAddr || '', 24)) : '';
-    const score = (r.score * 100).toFixed(1) + '%';
-    return `<div class="lai-similar-row" onclick="selectEmail('${escHtml(r.emailId)}')" title="Open email">
-      <span class="lai-similar-score">${score}</span>
-      <span class="lai-similar-from">${from}</span>
-      <span class="lai-similar-subj">${subj}</span>
-    </div>`;
-  }).join('');
 }
 
 async function toggleAttachmentBlacklist(attId) {

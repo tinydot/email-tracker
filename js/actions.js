@@ -125,8 +125,6 @@ function refreshBulkTagBar() {
     <button class="btn btn-primary" style="height:26px;padding:0 10px;font-size:11px;"
             onclick="bulkAddTagToView()">+ Add to all</button>
     <div class="bulk-tag-sep"></div>
-    <button class="btn" onclick="bulkAiTagView()" style="height:26px;padding:0 10px;font-size:11px;" title="AI-tag all emails in current view with Claude">✨ AI Tag All</button>
-    <div class="bulk-tag-sep"></div>
     <span class="bulk-tag-label">Tags in view:</span>
     ${tagsHTML}
   `;

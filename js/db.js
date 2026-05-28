@@ -71,14 +71,12 @@ function openDB() {
         abStore.createIndex('name', 'name', { unique: false });
       }
 
-      // Local AI insights (keyed by emailId) — from analyze.py output
-      if (!db.objectStoreNames.contains('insights')) {
-        db.createObjectStore('insights', { keyPath: 'emailId' });
+      // Drop legacy local-AI stores if present
+      if (db.objectStoreNames.contains('insights')) {
+        db.deleteObjectStore('insights');
       }
-
-      // Local AI embeddings (keyed by emailId) — Float32Array vectors
-      if (!db.objectStoreNames.contains('embeddings')) {
-        db.createObjectStore('embeddings', { keyPath: 'emailId' });
+      if (db.objectStoreNames.contains('embeddings')) {
+        db.deleteObjectStore('embeddings');
       }
     };
     req.onsuccess = e => res(e.target.result);

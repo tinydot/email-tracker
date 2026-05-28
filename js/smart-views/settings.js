@@ -536,94 +536,12 @@ function showSettings() {
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">🤖 Claude API Key</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
-          Used for AI tagging and summarization (✨ AI Tag button in the email detail panel).
-          Your key is stored <strong>locally in IndexedDB only</strong> — it never leaves your browser.
-        </div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <input type="password" id="setting-claude-key" class="search-input"
-                 placeholder="sk-ant-api03-…" style="flex:1; font-family:var(--mono);"
-                 value="" autocomplete="off">
-          <button class="btn btn-primary" onclick="saveClaudeApiKey()">Save</button>
-          <button class="btn" onclick="clearClaudeApiKey()">Clear</button>
-        </div>
-        <div id="claude-key-status" style="margin-top:6px; font-size:11px; color:var(--muted);"></div>
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">✨ AI Prompt Configuration</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
-          Customize the prompts sent to Claude when AI tagging emails.
-          Available template variables: <code>{{subject}}</code> <code>{{from}}</code> <code>{{to}}</code> <code>{{cc}}</code> (expands to "CC: …" or empty) <code>{{body}}</code>.
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <label style="font-size:12px; font-weight:500; flex:1;">System Prompt</label>
-            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiSystemPrompt()">Reset to default</button>
-          </div>
-          <textarea id="ai-system-prompt" class="search-input"
-                    style="width:100%; height:90px; resize:vertical; font-size:12px; font-family:inherit; box-sizing:border-box;"
-                    placeholder="System instructions for Claude…">${escHtml(aiSystemPrompt)}</textarea>
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <label style="font-size:12px; font-weight:500; flex:1;">User Message Template</label>
-            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiUserTemplate()">Reset to default</button>
-          </div>
-          <textarea id="ai-user-template" class="search-input"
-                    style="width:100%; height:110px; resize:vertical; font-size:12px; font-family:var(--mono); box-sizing:border-box;"
-                    placeholder="User message template…">${escHtml(aiUserTemplate)}</textarea>
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <label style="font-size:12px; font-weight:500; flex:1;">Thread Analysis Prompt</label>
-            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiThreadPrompt()">Reset to default</button>
-          </div>
-          <div style="color:var(--muted); font-size:11px; margin-bottom:6px;">Used by <b>AI Thread</b> — receives condensed thread JSON (no body text). Must instruct Claude to return <code>{"updates":[{emailId,actionItemId,status}]}</code>.</div>
-          <textarea id="ai-thread-prompt" class="search-input"
-                    style="width:100%; height:90px; resize:vertical; font-size:12px; font-family:inherit; box-sizing:border-box;"
-                    placeholder="Thread analysis instructions for Claude…">${escHtml(aiThreadPrompt)}</textarea>
-        </div>
-
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-          <label style="font-size:12px; font-weight:500; white-space:nowrap;">Body character limit:</label>
-          <input type="number" id="ai-body-limit" class="search-input" value="${aiBodyLimit}" min="100" max="10000" step="100"
-                 style="width:90px;">
-        </div>
-
-        <button class="btn btn-primary" onclick="saveAiPromptsFromUI()">Save prompt settings</button>
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:4px;">🏷 Auto-Tag Rules</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
           Rules applied automatically when importing emails. Use the same field conditions as smart views.
           Exclusions (⊘) on individual emails are always respected.
         </div>
         ${renderAutoTagRulesSection()}
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">🤖 Local AI (Ollama)</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
-          Workflow: filter the email list to the scope you want analyzed, click <b>Export current view for AI</b>,
-          run <code>tools/analyze.py</code> against that file, then import the resulting <code>insights.json</code>
-          below. The export excludes system/low-value emails and uses the signature-stripped body.
-          See <code>tools/README.md</code> for setup (requires a local Ollama instance).
-        </div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button class="btn" onclick="exportForAI()">Export current view for AI</button>
-          <label class="btn btn-primary" style="cursor:pointer;">
-            Import insights.json
-            <input type="file" accept=".json" style="display:none;"
-                   onchange="if(this.files[0]) importInsightsFile(this.files[0])">
-          </label>
-          <button class="btn btn-danger" onclick="clearAllInsights()">Clear all insights</button>
-        </div>
       </div>
 
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
@@ -659,7 +577,6 @@ function showSettings() {
     </div>
   `;
   closeDetail(); // Close detail panel if open
-  _loadClaudeKeyStatus(); // Async — updates #claude-key-status after render
 }
 
 function toggleNestedAttachments(enabled) {
