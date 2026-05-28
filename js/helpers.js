@@ -18,9 +18,15 @@ function setupDropZone() {
 //  HELPERS
 // ═══════════════════════════════════════════════════════
 
+const _dateFormatter = new Intl.DateTimeFormat('en-SG', { day: '2-digit', month: 'short', year: '2-digit' });
+const _formatDateCache = new Map();
 function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: '2-digit' });
+  const cached = _formatDateCache.get(iso);
+  if (cached !== undefined) return cached;
+  const out = _dateFormatter.format(new Date(iso));
+  if (_formatDateCache.size > 20000) _formatDateCache.clear();
+  _formatDateCache.set(iso, out);
+  return out;
 }
 
 function formatSize(bytes) {
