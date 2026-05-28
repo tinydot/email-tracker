@@ -535,15 +535,6 @@ function showSettings() {
         ${renderEmailGroupsSection()}
       </div>
 
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">🏷 Auto-Tag Rules</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
-          Rules applied automatically when importing emails. Use the same field conditions as smart views.
-          Exclusions (⊘) on individual emails are always respected.
-        </div>
-        ${renderAutoTagRulesSection()}
-      </div>
-
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>

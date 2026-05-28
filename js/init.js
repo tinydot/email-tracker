@@ -7,13 +7,12 @@ async function init() {
   setupDropZone();
 
   // Load settings + emails in parallel — these are independent IndexedDB reads
-  const [, , , , , , , , emails] = await Promise.all([
+  const [, , , , , , , emails] = await Promise.all([
     loadCustomPatterns(),
     loadCustomQuotePatterns(),
     loadCustomSignaturePatterns(),
     loadSignatureRanges(),
     loadEmailGroups(),
-    loadAutoTagRules(),
     loadAttachTextLimit(),
     loadSmartViews(),
     dbGetAll('emails'),

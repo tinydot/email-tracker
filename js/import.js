@@ -384,10 +384,6 @@ async function processFilesForImport(fileArr) {
         fileName:     file.name,
       };
 
-      // Apply auto-tag rules to newly imported email
-      const autoTags = getAutoTagsForEmail(emailRecord);
-      if (autoTags.length) emailRecord.tags = autoTags;
-
       await dbPut('emails', emailRecord);
 
       // Organize EML file if enabled

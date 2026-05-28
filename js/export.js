@@ -413,7 +413,6 @@ async function importData(input) {
     await loadCustomSignaturePatterns();
     await loadSignatureRanges();
     await loadAttachTextLimit();
-    await loadAutoTagRules();
   }
   if (emailGroupsIn.length) await loadEmailGroups();
   if (smartViewsIn.length || settings.length || emailGroupsIn.length) await loadSmartViews();
