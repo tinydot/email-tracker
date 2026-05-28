@@ -355,9 +355,6 @@ async function processFilesForImport(fileArr) {
         continue;
       }
 
-      // isActionable defaults to false; user can mark manually
-      const isActionable = false;
-
       // Detect system/automated email
       const isSystemEmail = detectSystemEmail(parsed.rawHeaders, parsed.from.email, parsed.subject, parsed.textBody);
 
@@ -373,13 +370,11 @@ async function processFilesForImport(fileArr) {
         ccAddrs:      parsed.cc.map(a => a.email),
         date:         parsed.date,
         textBody:     parsed.textBody,
-        isActionable,
         isSystemEmail,
         status:       'unread',
         tags:         [],
         hasAttachments: parsed.attachments.length > 0,
         attachmentCount: parsed.attachments.length,
-        awaitingSince: null,
         importedAt:   new Date().toISOString(),
         fileName:     file.name,
       };

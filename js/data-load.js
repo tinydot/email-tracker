@@ -42,8 +42,6 @@ async function updateHeaderStats() {
 
   document.getElementById('h-total').textContent      = allEmails.length;
   document.getElementById('h-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
-  document.getElementById('h-awaiting').textContent   = allEmails.filter(e => e.status === 'awaiting').length;
-  document.getElementById('h-actionable').textContent = allEmails.filter(e => e.isActionable).length;
   document.getElementById('h-attachments').textContent = atts.length;
 
   updateNavCounts();
@@ -55,10 +53,8 @@ let _navCountsDebounceTimer = null;
 function updateHeaderStatsFast() {
   document.getElementById('h-total').textContent      = allEmails.length;
   document.getElementById('h-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
-  document.getElementById('h-awaiting').textContent   = allEmails.filter(e => e.status === 'awaiting').length;
-  document.getElementById('h-actionable').textContent = allEmails.filter(e => e.isActionable).length;
   // Debounce nav count + smart-view sidebar refresh — batches rapid actions
-  // (mark-read, tag, bulk-tag, etc.) into a single O(n) update instead of one per action
+  // (mark-read, tag, etc.) into a single O(n) update instead of one per action
   clearTimeout(_navCountsDebounceTimer);
   _navCountsDebounceTimer = setTimeout(updateNavCounts, 300);
 }
@@ -100,14 +96,11 @@ async function changeAttachmentFolder() {
 
 function updateNavCounts() {
   const threadRoots = allEmails.filter(e => !e.inReplyTo && hasReplies(e)).length;
-  document.getElementById('n-all').textContent        = allEmails.length;
-  document.getElementById('n-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
-  document.getElementById('n-actionable').textContent = allEmails.filter(e => e.isActionable).length;
-  document.getElementById('n-awaiting').textContent   = allEmails.filter(e => e.status === 'awaiting').length;
-  document.getElementById('n-threads').textContent    = threadRoots;
-  document.getElementById('n-attach').textContent     = allEmails.filter(e => e.hasAttachments).length;
-  document.getElementById('n-automated').textContent  = allEmails.filter(e => e.isSystemEmail).length;
-  document.getElementById('n-lowvalue').textContent   = allEmails.filter(e => e.isLowValue).length;
+  document.getElementById('n-all').textContent       = allEmails.length;
+  document.getElementById('n-unread').textContent    = allEmails.filter(e => e.status === 'unread').length;
+  document.getElementById('n-threads').textContent   = threadRoots;
+  document.getElementById('n-attach').textContent    = allEmails.filter(e => e.hasAttachments).length;
+  document.getElementById('n-automated').textContent = allEmails.filter(e => e.isSystemEmail).length;
 
   // Refresh smart view counts in sidebar
   renderSmartViewsSidebar();

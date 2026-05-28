@@ -14,8 +14,6 @@
     <div class="header-stats">
       <div class="stat">EMAILS <b id="h-total">0</b></div>
       <div class="stat">UNREAD <b id="h-unread">0</b></div>
-      <div class="stat">AWAITING <b id="h-awaiting">0</b></div>
-      <div class="stat">ACTIONABLE <b id="h-actionable">0</b></div>
       <div class="stat">ATTACHMENTS <b id="h-attachments">0</b></div>
       <div class="stat" id="storage-indicator" style="display:none;color:var(--accent);cursor:pointer" onclick="changeAttachmentFolder()" title="Click to change folder">
         💾 <b id="h-storage">—</b>
@@ -34,12 +32,6 @@
         <button class="nav-item" data-view="unread" onclick="switchView('unread')">
           ● Unread <span class="nav-count" id="n-unread">0</span>
         </button>
-        <button class="nav-item" data-view="actionable" onclick="switchView('actionable')">
-          ⚡ Actionable <span class="nav-count" id="n-actionable">0</span>
-        </button>
-        <button class="nav-item" data-view="awaiting" onclick="switchView('awaiting')">
-          ⏳ Awaiting Reply <span class="nav-count" id="n-awaiting">0</span>
-        </button>
         <button class="nav-item" data-view="threads" onclick="switchView('threads')">
           💬 Threads <span class="nav-count" id="n-threads">0</span>
         </button>
@@ -48,9 +40,6 @@
         </button>
         <button class="nav-item" data-view="automated" onclick="switchView('automated')">
           🤖 Automated <span class="nav-count" id="n-automated">0</span>
-        </button>
-        <button class="nav-item" data-view="lowvalue" onclick="switchView('lowvalue')">
-          ↓ Low Value <span class="nav-count" id="n-lowvalue">0</span>
         </button>
         <button class="nav-item" data-view="addressbook" onclick="switchView('addressbook')">
           👤 Address Book
@@ -129,7 +118,6 @@
           <div class="col-attach">Attach</div>
         </div>
         <div id="email-scroll" style="flex:1;overflow-y:auto;">
-          <div id="bulk-tag-bar" style="display:none"></div>
           <div class="email-list" id="email-list"></div>
         </div>
       </div>

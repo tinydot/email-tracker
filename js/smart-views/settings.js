@@ -389,7 +389,6 @@ async function removeCustomPattern(category, idx) {
 function showSettings() {
   showPanel('list'); // Show the list panel
   document.querySelector('.toolbar').style.display = 'none';
-  document.getElementById('bulk-tag-bar').style.display = 'none';
   document.querySelector('.email-list-header').style.display = 'none';
   const container = document.getElementById('email-list');
   container.innerHTML = `
@@ -540,14 +539,6 @@ function showSettings() {
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
 
         <div style="margin-bottom:16px;">
-          <div style="font-weight:500; margin-bottom:4px;">Unmark all actionable emails</div>
-          <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
-            Removes the ⚡ actionable flag from every email in the library. This cannot be undone.
-          </div>
-          <button class="btn btn-danger" onclick="bulkUnmarkActionable()">⚡ Unmark All Actionable</button>
-        </div>
-
-        <div style="margin-bottom:16px;">
           <div style="font-weight:500; margin-bottom:4px;">Discard automated emails</div>
           <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
             Deletes all automated/system emails and their attachments, but remembers their IDs to prevent reimporting them. This cannot be undone.
@@ -558,7 +549,7 @@ function showSettings() {
         <div>
           <div style="font-weight:500; margin-bottom:4px;">Clear database</div>
           <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
-            Permanently deletes all emails, attachments, tags, and issues from the local database.
+            Permanently deletes all emails, attachments, and tags from the local database.
           </div>
           <button class="btn btn-danger" onclick="clearDB()">✕ Clear Database</button>
         </div>

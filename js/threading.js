@@ -1,29 +1,4 @@
 // ═══════════════════════════════════════════════════════
-//  THREAD LINKING (Lightweight - Reply Detection Only)
-// ═══════════════════════════════════════════════════════
-
-async function linkThreads() {
-  const all = await dbGetAll('emails');
-
-  // Build messageId → email map
-  const msgMap = new Map();
-  for (const e of all) {
-    if (e.messageId) msgMap.set(e.messageId, e);
-  }
-
-  // Mark parents as replied when we find their responses
-  for (const email of all) {
-    if (email.inReplyTo && msgMap.has(email.inReplyTo)) {
-      const parent = msgMap.get(email.inReplyTo);
-      if (parent.status === 'awaiting') {
-        parent.status = 'replied';
-        await dbPut('emails', parent);
-      }
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════
 //  THREAD COMPUTATION (On-demand via queries)
 // ═══════════════════════════════════════════════════════
 

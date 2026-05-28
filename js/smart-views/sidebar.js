@@ -26,11 +26,10 @@ function setSvSubView(sub) {
   const header = document.querySelector('.email-list-header');
   if (sub === 'attachments') {
     if (header) header.style.display = 'none';
-    document.getElementById('bulk-tag-bar').style.display = 'none';
     showSvAttachments();
   } else {
     if (header) header.style.display = '';
-    applyFilters(); // rebuilds filteredEmails and calls renderEmailList + refreshBulkTagBar
+    applyFilters(); // rebuilds filteredEmails and calls renderEmailList
   }
 }
 

@@ -22,9 +22,7 @@ function renderEmailRowHtml(email) {
   const emailHasReplies = hasReplies(email);
   const threadDepth = getThreadDepth(email);
   let dot = '';
-  if (email.isActionable) {
-    dot = `<span title="Actionable" style="color:var(--danger);font-size:10px">⚡</span>`;
-  } else if (emailHasReplies) {
+  if (emailHasReplies) {
     const replyCount = countThreadReplies(email);
     dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
   } else if (threadDepth > 0) {
@@ -34,14 +32,13 @@ function renderEmailRowHtml(email) {
   }
 
   const indent = (currentView === 'threads' && threadDepth > 0) ? (threadDepth * 12) + 'px' : '';
-  const overdueFlag = email._overdue ? `<span style="color:var(--danger);margin-left:4px" title="Overdue">🔴</span>` : '';
 
   return `
     <div class="email-row ${unread} ${selected}" data-id="${email.id}" onclick="selectEmail('${email.id}')">
       <div class="col-flag">${dot}</div>
       <div class="col-from" title="${escHtml(email.fromAddr)}">${escHtml(truncate(from, 26))}</div>
       <div class="col-subject" title="${escHtml(email.subject)}">
-        <span style="${indent ? `margin-left:${indent}` : ''}">${escHtml(truncate(email.subject, 60))}${overdueFlag}</span>
+        <span style="${indent ? `margin-left:${indent}` : ''}">${escHtml(truncate(email.subject, 60))}</span>
       </div>
       <div class="col-date">${dateStr}</div>
       <div class="col-status">${status}</div>
@@ -108,7 +105,6 @@ function renderEmailList() {
           : 'No emails match the current filter.'
         }</div>
       </div>`;
-    refreshBulkTagBar();
     return;
   }
 
@@ -122,21 +118,13 @@ function renderEmailList() {
   const scroller = document.getElementById('email-scroll');
   if (scroller) scroller.scrollTop = 0;
   vsRenderSlice(true);
-
-  refreshBulkTagBar();
 }
 
 
 function renderBadge(email) {
-  switch (email.status) {
-    case 'unread':    return '<span class="badge badge-unread">unread</span>';
-    case 'replied':   return '<span class="badge badge-replied">replied</span>';
-    case 'awaiting':  return '<span class="badge badge-awaiting">awaiting</span>';
-    case 'actioned':  return '<span class="badge badge-actioned">actioned</span>';
-    default:
-      if (email.isActionable) return '<span class="badge badge-action">action!</span>';
-      return '<span class="badge badge-actioned">read</span>';
-  }
+  return email.status === 'unread'
+    ? '<span class="badge badge-unread">unread</span>'
+    : '<span class="badge badge-actioned">read</span>';
 }
 
 // Update a single email row in the list without re-rendering everything
@@ -152,9 +140,7 @@ function updateEmailRow(email) {
   const emailHasReplies = hasReplies(email);
   const threadDepth = getThreadDepth(email);
   let dot = '';
-  if (email.isActionable) {
-    dot = `<span title="Actionable" style="color:var(--danger);font-size:10px">⚡</span>`;
-  } else if (emailHasReplies) {
+  if (emailHasReplies) {
     const replyCount = countThreadReplies(email);
     dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
   } else if (threadDepth > 0) {
@@ -470,20 +456,7 @@ function openDetail(email) {
     <span><b>File:</b> <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${escHtml(email.fileName || '')}</span></span>
   `;
 
-  // Action buttons
-  const awaitingBtn = email.status === 'awaiting'
-    ? `<button class="btn" onclick="setStatus('${email.id}','read')" title="Clear awaiting status">✓ Clear Awaiting</button>`
-    : `<button class="btn" onclick="setStatus('${email.id}','awaiting')" title="Mark: I sent this, waiting for reply">⏳ Mark Awaiting</button>`;
-
   document.getElementById('det-actions').innerHTML = `
-    ${awaitingBtn}
-    <button class="btn" onclick="setStatus('${email.id}','actioned')" title="Mark as actioned">✓ Actioned</button>
-    <button class="btn" onclick="toggleActionable('${email.id}')" title="Toggle actionable flag">
-      ${email.isActionable ? '⚡ Unmark Action' : '⚡ Mark Action'}
-    </button>
-    <button class="btn${email.isLowValue ? ' btn-warn' : ''}" onclick="toggleLowValue('${email.id}')" title="Toggle low value flag">
-      ${email.isLowValue ? '↓ Unmark Low Value' : '↓ Low Value'}
-    </button>
     ${(email.isSystemEmail || email.manualSystemOverride) ? `
     <button class="btn" onclick="toggleAutomated('${email.id}')" title="${email.isSystemEmail ? 'Unmark automated — removes from automated view and protects from bulk discard' : 'Re-mark as automated'}">
       ${email.isSystemEmail ? '🤖 Unmark Automated' : '🤖 Re-mark Automated'}
