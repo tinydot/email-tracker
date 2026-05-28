@@ -197,14 +197,13 @@ A SQL engine (specifically SQLite via WASM) would push filtering, search, and ag
 
 ### Viable in-browser SQL option
 
-**SQLite WASM + OPFS** — the only realistic option that preserves the no-server, no-npm constraint:
+**SQLite WASM** — the only realistic option that preserves the no-server, no-npm constraint. Three persistence backends, in order of preference for this app:
 
-- [sqlite.org/wasm](https://sqlite.org/wasm) ships an official WASM build usable via a `<script>` CDN tag
-- Persistence via **Origin Private File System** (OPFS) — a sandboxed virtual filesystem available in all modern browsers
-- Full **FTS5** extension is included, enabling proper ranked full-text search over `subject` + `textBody`
-- A SharedArrayBuffer + Worker thread is required for OPFS access (needs `Cross-Origin-Isolation` headers — a deployment consideration)
+- **`opfs-sahpool` VFS (SyncAccessHandle Pool)** — added in SQLite 3.43 (Aug 2023). Persists to the Origin Private File System but **does not require COOP/COEP headers / cross-origin isolation**, so it works on GitHub Pages out of the box. Per the official docs this is also the *fastest* OPFS backend. Trade-off: one tab at a time — a second tab opening the DB throws.
+- **Default `opfs` VFS** — uses `SharedArrayBuffer` + a dedicated worker; requires `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`. On GitHub Pages this can be enabled via the [`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker) shim (a client-side service worker that injects the headers). Supports multi-tab.
+- **`sql.js`** — older, no OPFS, holds the DB in memory and persists as a `Uint8Array` blob to IndexedDB. No header constraints. Forfeits the memory advantage — the whole DB still has to live in RAM.
 
-Alternative: **sql.js** (older, no OPFS, stores in memory and exports as a `Uint8Array` blob to IndexedDB). Simpler to set up but forfeits the memory advantage.
+All three include the **FTS5** extension for ranked full-text search over `subject` + `textBody`.
 
 ### Proposed SQL schema
 
@@ -320,7 +319,7 @@ CREATE VIRTUAL TABLE emails_fts USING fts5(
 | **Smart view rules** | Rules are arbitrary JS objects; storing as `rules_json TEXT` and deserializing in JS is the pragmatic choice. SQL-side rule evaluation would require dynamic query generation — complex but possible. |
 | **allEmails in-memory cache** | The entire rendering pipeline assumes `allEmails` is a populated JS array. With SQL the array could be populated lazily (paginated) or replaced by direct DB queries in `applyFilters`. The latter is a larger refactor. |
 | **FTS sync** | The `emails_fts` trigger must be kept in sync on insert/update/delete. SQLite WASM supports triggers so this is handled automatically. |
-| **OPFS + Cross-Origin-Isolation** | OPFS requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` headers. For a local `file://` open this is a blocker — a small local HTTP server (e.g. `python -m http.server`) or Electron wrapper would be needed. |
+| **Persistence backend choice** | The default `opfs` VFS requires COOP/COEP headers — GitHub Pages can't set them, but `coi-serviceworker` works around that. The `opfs-sahpool` VFS sidesteps the issue entirely (no SAB, no headers) at the cost of single-tab access. Either way, a `file://` open of `index.html` no longer works — a local HTTP server is needed during development. |
 | **Single-file constraint** | The SQLite WASM bundle (~1.5 MB) and its worker script are external files. The app would no longer be a single `index.html`. Alternatively, inline the WASM as a base64 data URL — ugly but possible. |
 | **Export/Import** | Current JSON export covers `emails` + `attachments`. A SQL export could use SQLite's `.dump` output or recreate the same JSON shape by querying and serialising. |
 
@@ -348,4 +347,6 @@ Current IndexedDB wrappers map straightforwardly to SQL equivalents:
 
 ### Verdict
 
-**Not applicable for this deployment.** The app is hosted on GitHub Pages, which cannot serve custom HTTP headers. SQLite WASM + OPFS requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` — both blocked on GitHub Pages. The `sql.js` alternative (no OPFS, memory-only) offers no advantage over IndexedDB at the current scale. At 10k emails with no performance complaints, IndexedDB + in-memory JS remains the right choice.
+**Technically feasible on GitHub Pages, but not warranted at current scale.** The original blocker — that OPFS requires COOP/COEP headers GitHub Pages can't set — has two viable workarounds: the `opfs-sahpool` VFS (SQLite ≥ 3.43) drops the SAB requirement entirely, and `coi-serviceworker` can inject the headers client-side for the standard `opfs` VFS. Either path runs on Pages today.
+
+What *hasn't* changed is the cost/benefit balance: a migration touches every call site that reads array fields (`toAddrs`, `ccAddrs`, `tags`, `linkedIssues`), trades the single-`index.html` deploy for a ~1.5 MB WASM bundle + worker, and the in-memory JS pipeline already handles 10k emails without user-visible lag (especially after the rule-engine memoization and virtual-scrolling changes). Revisit if the corpus crosses ~50k emails or full-text search latency becomes a complaint — `opfs-sahpool` is the recommended starting point at that time.
