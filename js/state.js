@@ -23,7 +23,6 @@ const VIEW_LABELS = {
 };
 
 function showPanel(name) {
-  document.getElementById('import-panel').style.display   = name === 'import'   ? '' : 'none';
-  document.getElementById('progress-panel').className     = name === 'progress' ? 'active' : '';
-  document.getElementById('email-list-panel').className   = name === 'list'     ? 'active' : '';
+  document.getElementById('import-panel').style.display   = name === 'import' ? '' : 'none';
+  document.getElementById('email-list-panel').className   = name === 'list'   ? 'active' : '';
 }
