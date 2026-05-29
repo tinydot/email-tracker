@@ -72,6 +72,29 @@ function buildThreadCache() {
   }
 }
 
+// Returns a stable identifier for the thread containing `email`.
+// Prefers the root's Message-ID; falls back to the root's internal id.
+function computeThreadId(email) {
+  const root = getThreadRoot(email);
+  return root.messageId || root.id;
+}
+
+// Reconcile persisted threadId on every email. Mutates allEmails in place
+// and writes back only those whose stored value differs from the computed one.
+// Safe to call after rebuildMsgIdIndex() — relies on msgIdIndex.
+async function reconcileThreadIds() {
+  let changed = 0;
+  for (const e of allEmails) {
+    const tid = computeThreadId(e);
+    if (e.threadId !== tid) {
+      e.threadId = tid;
+      await dbPut('emails', e);
+      changed++;
+    }
+  }
+  return changed;
+}
+
 function hasReplies(email) {
   return (threadReplyCountCache.get(getThreadRoot(email).id) || 0) > 0;
 }

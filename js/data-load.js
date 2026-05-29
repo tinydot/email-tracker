@@ -30,6 +30,7 @@ async function loadEmailList() {
   await backfillSystemEmailFlag();
   rebuildMsgIdIndex();   // must precede buildThreadCache (thread walks use msgIdIndex)
   buildThreadCache();
+  await reconcileThreadIds();
   applyFilters();
   updateNavCounts();
 }

@@ -358,11 +358,20 @@ async function processFilesForImport(fileArr) {
       // Detect system/automated email
       const isSystemEmail = detectSystemEmail(parsed.rawHeaders, parsed.from.email, parsed.subject, parsed.textBody);
 
+      // Provisional threadId: prefer existing in-batch parent, else self.
+      // Reconciled by reconcileThreadIds() after loadEmailList() at end of import.
+      let provisionalThreadId = parsed.messageId || id;
+      if (parsed.inReplyTo) {
+        const parent = msgIdIndex.get(parsed.inReplyTo);
+        if (parent && parent.threadId) provisionalThreadId = parent.threadId;
+      }
+
       const emailRecord = {
         id,
         messageId:    parsed.messageId,
         inReplyTo:    parsed.inReplyTo,
         references:   parsed.references,
+        threadId:     provisionalThreadId,
         subject:      parsed.subject,
         fromAddr:     parsed.from.email,
         fromName:     parsed.from.name,
@@ -492,8 +501,12 @@ async function processFilesForImport(fileArr) {
       }
 
       ok++;
-      // Add to in-memory list immediately so user sees it while browsing
+      // Add to in-memory list immediately so user sees it while browsing.
+      // Also update msgIdIndex so later emails in the same batch can find
+      // this one as a thread parent and inherit its threadId.
       allEmails.push(emailRecord);
+      if (emailRecord.messageId) msgIdIndex.set(emailRecord.messageId, emailRecord);
+      emailIdIndex.set(emailRecord.id, emailRecord);
       const totalAttachments = parsed.attachments.reduce((sum, att) =>
         sum + 1 + (att.nestedAttachments?.length || 0), 0);
       const attInfo = totalAttachments > 0
