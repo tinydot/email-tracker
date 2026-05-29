@@ -58,41 +58,6 @@ async function renameEmailGroup(groupId) {
   showSettings();
 }
 
-// --- Document types ---
-
-const DEFAULT_DOCUMENT_TYPES = ['Certificate', 'Drawing', 'Minutes', 'Other', 'Report', 'RFI', 'Specification', 'Submittal'];
-let documentTypes = [...DEFAULT_DOCUMENT_TYPES];
-
-async function loadDocumentTypes() {
-  const saved = await dbGet('settings', 'documentTypes');
-  if (saved && Array.isArray(saved.types)) documentTypes = saved.types;
-}
-
-async function saveDocumentTypes() {
-  await dbPut('settings', { key: 'documentTypes', types: documentTypes });
-}
-
-async function addDocumentType() {
-  const input = document.getElementById('new-doc-type-input');
-  const val = input.value.trim();
-  if (!val) return;
-  if (documentTypes.map(t => t.toLowerCase()).includes(val.toLowerCase())) {
-    toast('Type already exists', 'warn'); return;
-  }
-  documentTypes = [...documentTypes, val].sort((a, b) => a.localeCompare(b));
-  await saveDocumentTypes();
-  input.value = '';
-  toast(`Added "${val}"`, 'ok');
-  showSettings();
-}
-
-async function removeDocumentType(type) {
-  documentTypes = documentTypes.filter(t => t !== type);
-  await saveDocumentTypes();
-  toast(`Removed "${type}"`, 'ok');
-  showSettings();
-}
-
 // --- Custom automation patterns ---
 
 async function loadCustomPatterns() {
@@ -424,7 +389,6 @@ async function removeCustomPattern(category, idx) {
 function showSettings() {
   showPanel('list'); // Show the list panel
   document.querySelector('.toolbar').style.display = 'none';
-  document.getElementById('bulk-tag-bar').style.display = 'none';
   document.querySelector('.email-list-header').style.display = 'none';
   const container = document.getElementById('email-list');
   container.innerHTML = `
@@ -440,7 +404,7 @@ function showSettings() {
         </div>
         <div style="color:var(--muted); font-size:12px; margin-left:30px;">
           When enabled, attachments inside forwarded .eml files will be extracted and saved separately.
-          <br>Nested files will be marked with ↳ in the transmittal register.
+          <br>Nested files will be marked with ↳ in the attachments list.
         </div>
       </div>
 
@@ -562,26 +526,6 @@ function showSettings() {
       </div>
 
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">Document Types</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
-          The list of document types available when classifying attachments in the transmittal register.
-        </div>
-        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
-          ${documentTypes.map(t => `
-            <span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:var(--surface3); border:1px solid var(--border); border-radius:4px; font-size:12px;">
-              ${escHtml(t)}
-              <button onclick="removeDocumentType('${escHtml(t)}')" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 2px;" title="Remove">&times;</button>
-            </span>
-          `).join('')}
-        </div>
-        <div style="display:flex; gap:6px;">
-          <input id="new-doc-type-input" type="text" class="search-input" placeholder="New type name…" style="flex:1;"
-                 onkeydown="if(event.key==='Enter') addDocumentType()">
-          <button class="btn btn-primary" onclick="addDocumentType()">Add</button>
-        </div>
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:4px;">Email Groups</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
           Create named groups of email addresses to use in smart view rules.
@@ -590,108 +534,9 @@ function showSettings() {
         ${renderEmailGroupsSection()}
       </div>
 
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">🤖 Claude API Key</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
-          Used for AI tagging and summarization (✨ AI Tag button in the email detail panel).
-          Your key is stored <strong>locally in IndexedDB only</strong> — it never leaves your browser.
-        </div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <input type="password" id="setting-claude-key" class="search-input"
-                 placeholder="sk-ant-api03-…" style="flex:1; font-family:var(--mono);"
-                 value="" autocomplete="off">
-          <button class="btn btn-primary" onclick="saveClaudeApiKey()">Save</button>
-          <button class="btn" onclick="clearClaudeApiKey()">Clear</button>
-        </div>
-        <div id="claude-key-status" style="margin-top:6px; font-size:11px; color:var(--muted);"></div>
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">✨ AI Prompt Configuration</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
-          Customize the prompts sent to Claude when AI tagging emails.
-          Available template variables: <code>{{subject}}</code> <code>{{from}}</code> <code>{{to}}</code> <code>{{cc}}</code> (expands to "CC: …" or empty) <code>{{body}}</code>.
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <label style="font-size:12px; font-weight:500; flex:1;">System Prompt</label>
-            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiSystemPrompt()">Reset to default</button>
-          </div>
-          <textarea id="ai-system-prompt" class="search-input"
-                    style="width:100%; height:90px; resize:vertical; font-size:12px; font-family:inherit; box-sizing:border-box;"
-                    placeholder="System instructions for Claude…">${escHtml(aiSystemPrompt)}</textarea>
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <label style="font-size:12px; font-weight:500; flex:1;">User Message Template</label>
-            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiUserTemplate()">Reset to default</button>
-          </div>
-          <textarea id="ai-user-template" class="search-input"
-                    style="width:100%; height:110px; resize:vertical; font-size:12px; font-family:var(--mono); box-sizing:border-box;"
-                    placeholder="User message template…">${escHtml(aiUserTemplate)}</textarea>
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <label style="font-size:12px; font-weight:500; flex:1;">Thread Analysis Prompt</label>
-            <button class="btn" style="font-size:11px; padding:2px 8px;" onclick="resetAiThreadPrompt()">Reset to default</button>
-          </div>
-          <div style="color:var(--muted); font-size:11px; margin-bottom:6px;">Used by <b>AI Thread</b> — receives condensed thread JSON (no body text). Must instruct Claude to return <code>{"updates":[{emailId,actionItemId,status}]}</code>.</div>
-          <textarea id="ai-thread-prompt" class="search-input"
-                    style="width:100%; height:90px; resize:vertical; font-size:12px; font-family:inherit; box-sizing:border-box;"
-                    placeholder="Thread analysis instructions for Claude…">${escHtml(aiThreadPrompt)}</textarea>
-        </div>
-
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-          <label style="font-size:12px; font-weight:500; white-space:nowrap;">Body character limit:</label>
-          <input type="number" id="ai-body-limit" class="search-input" value="${aiBodyLimit}" min="100" max="10000" step="100"
-                 style="width:90px;">
-        </div>
-
-        <button class="btn btn-primary" onclick="saveAiPromptsFromUI()">Save prompt settings</button>
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">🏷 Auto-Tag Rules</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
-          Rules applied automatically when importing emails. Use the same field conditions as smart views.
-          Exclusions (⊘) on individual emails are always respected.
-        </div>
-        ${renderAutoTagRulesSection()}
-      </div>
-
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
-        <div style="font-weight:500; margin-bottom:4px;">🤖 Local AI (Ollama)</div>
-        <div style="color:var(--muted); font-size:12px; margin-bottom:12px;">
-          Workflow: filter the email list to the scope you want analyzed, click <b>Export current view for AI</b>,
-          run <code>tools/analyze.py</code> against that file, then import the resulting <code>insights.json</code>
-          below. The export excludes system/low-value emails and uses the signature-stripped body.
-          See <code>tools/README.md</code> for setup (requires a local Ollama instance).
-        </div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button class="btn" onclick="exportForAI()">Export current view for AI</button>
-          <label class="btn btn-primary" style="cursor:pointer;">
-            Import insights.json
-            <input type="file" accept=".json" style="display:none;"
-                   onchange="if(this.files[0]) importInsightsFile(this.files[0])">
-          </label>
-          <button class="btn btn-danger" onclick="clearAllInsights()">Clear all insights</button>
-        </div>
-      </div>
-
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
-
-        <div style="margin-bottom:16px;">
-          <div style="font-weight:500; margin-bottom:4px;">Unmark all actionable emails</div>
-          <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
-            Removes the ⚡ actionable flag from every email in the library. This cannot be undone.
-          </div>
-          <button class="btn btn-danger" onclick="bulkUnmarkActionable()">⚡ Unmark All Actionable</button>
-        </div>
 
         <div style="margin-bottom:16px;">
           <div style="font-weight:500; margin-bottom:4px;">Discard automated emails</div>
@@ -704,7 +549,7 @@ function showSettings() {
         <div>
           <div style="font-weight:500; margin-bottom:4px;">Clear database</div>
           <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
-            Permanently deletes all emails, attachments, tags, and issues from the local database.
+            Permanently deletes all emails, attachments, and tags from the local database.
           </div>
           <button class="btn btn-danger" onclick="clearDB()">✕ Clear Database</button>
         </div>
@@ -714,7 +559,6 @@ function showSettings() {
     </div>
   `;
   closeDetail(); // Close detail panel if open
-  _loadClaudeKeyStatus(); // Async — updates #claude-key-status after render
 }
 
 function toggleNestedAttachments(enabled) {

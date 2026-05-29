@@ -26,11 +26,10 @@ function setSvSubView(sub) {
   const header = document.querySelector('.email-list-header');
   if (sub === 'attachments') {
     if (header) header.style.display = 'none';
-    document.getElementById('bulk-tag-bar').style.display = 'none';
     showSvAttachments();
   } else {
     if (header) header.style.display = '';
-    applyFilters(); // rebuilds filteredEmails and calls renderEmailList + refreshBulkTagBar
+    applyFilters(); // rebuilds filteredEmails and calls renderEmailList
   }
 }
 
@@ -46,7 +45,7 @@ async function showSvAttachments() {
 
   const emailIds = new Set(filteredEmails.map(e => e.id));
   const allAtts = await dbGetAll('attachments');
-  const atts = allAtts.filter(a => emailIds.has(a.emailId));
+  const atts = allAtts.filter(a => emailIds.has(a.emailId) && !a.isBlacklisted);
 
   const emailMap = new Map(filteredEmails.map(e => [e.id, e]));
   const rawRows = atts.map(a => ({ ...a, email: emailMap.get(a.emailId) }));
@@ -62,13 +61,11 @@ async function showSvAttachments() {
   }
 
   const rows = deduplicateAttachmentsByHash(rawRows);
-  window._txRows = rows; // allows editCellInline to locate and update rows
 
   container.innerHTML = `
     <div style="display:flex; flex-direction:column; height:100%;">
       <div style="padding:8px 12px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; background:var(--surface); flex-shrink:0;">
         <span style="font-size:12px; color:var(--muted);">${rows.length} attachment${rows.length !== 1 ? 's' : ''}</span>
-        <button class="btn" onclick="exportSvAttachmentsExcel()" style="margin-left:auto;">⬇ Export to Excel</button>
       </div>
       <div style="overflow:auto; flex:1;">
     <table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -76,8 +73,6 @@ async function showSvAttachments() {
         <tr style="height:34px;">
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">File</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Subject</th>
-          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Source Party</th>
-          <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Type</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Size</th>
           <th style="text-align:left; padding:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;">Date</th>
         </tr>
@@ -120,16 +115,6 @@ async function showSvAttachments() {
               <td style="padding:8px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                 ${subjectDisplay}
               </td>
-              <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'sourceParty')" title="Click to edit">
-                <div style="padding:4px; cursor:text; min-height:20px; ${!r.sourceParty ? 'color:var(--muted);' : ''}">
-                  ${escHtml(r.sourceParty || 'Click to edit')}
-                </div>
-              </td>
-              <td style="padding:4px;" onclick="editCellInline(this, '${escHtml(r.id)}', 'documentType')" title="Click to edit">
-                <div style="padding:4px; cursor:text; min-height:20px; ${!r.documentType ? 'color:var(--muted);' : ''}">
-                  ${escHtml(r.documentType || 'Click to edit')}
-                </div>
-              </td>
               <td style="padding:8px; font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap;">
                 ${formatSize(r.size)}
               </td>
@@ -145,41 +130,6 @@ async function showSvAttachments() {
 
   // Asynchronously load image thumbnails
   _loadSvThumbnails(container);
-}
-
-function exportSvAttachmentsExcel() {
-  const rows = window._txRows;
-  if (!rows || !rows.length) {
-    toast('No data to export', 'warn');
-    return;
-  }
-
-  const fmtSize = bytes => {
-    if (!bytes) return '';
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
-    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return bytes + ' B';
-  };
-
-  const data = [
-    ['Filename', 'Subject', 'Source Party', 'Document Type', 'Size', 'Date'],
-    ...rows.map(r => {
-      const allDates = (r._allEmails || [r.email]).map(e => e?.date).filter(Boolean).sort();
-      const rawDate = allDates.length ? new Date(allDates[0]) : null;
-      const dateStr = rawDate ? rawDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ') : '';
-      const subject = r._allEmails && r._allEmails.length > 1
-        ? `${r._allEmails.length} emails`
-        : (r.email?.subject || '');
-      return [r.filename, subject, r.sourceParty || '', r.documentType || '', fmtSize(r.size), dateStr];
-    })
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Attachments');
-  XLSX.writeFile(wb, `attachments-${new Date().toISOString().split('T')[0]}.xlsx`);
-
-  toast(`Exported ${rows.length} attachment${rows.length !== 1 ? 's' : ''}`, 'ok');
 }
 
 async function _loadSvThumbnails(container) {

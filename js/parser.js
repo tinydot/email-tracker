@@ -923,7 +923,6 @@ async function bulkExtractAttachmentText() {
     `Text extraction complete: ${done} done${failed ? `, ${failed} failed` : ''}`,
     failed && !done ? 'err' : 'ok'
   );
-  if (currentView === 'transmittals') showTransmittalRegister();
 }
 
 function toggleAttachText(attId) {

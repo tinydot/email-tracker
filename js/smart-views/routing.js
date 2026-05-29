@@ -7,7 +7,6 @@ function showImport() { showPanel('import'); }
 
 function switchView(view) {
   currentView = view;
-  bulkTagBarExpanded = false;
   document.querySelector('.toolbar').style.display = '';
   document.querySelector('.email-list-header').style.display = '';
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
@@ -23,27 +22,11 @@ function switchView(view) {
     document.querySelector('.email-list-header').style.display = '';
     showPanel('list');
     applyFilters();
-  } else if (view === 'transmittals') {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-    hideSvTabToggle();
-    refreshBulkTagBar();
-    showTransmittalRegister();
-  } else if (view === 'issues') {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-    hideSvTabToggle();
-    refreshBulkTagBar();
-    showIssuesList();
-  } else if (view === 'actionitems') {
-    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
-    hideSvTabToggle();
-    refreshBulkTagBar();
-    showActionItemsList();
   } else if (view === 'addressbook') {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     hideSvTabToggle();
     document.querySelector('.toolbar').style.display = '';
     document.querySelector('.email-list-header').style.display = 'none';
-    refreshBulkTagBar();
     showAddressBook();
   } else {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
@@ -77,34 +60,21 @@ function applyFilters() {
   }
 
   const excludeSystem = sv ? sv.excludeAutomated !== false : currentView !== 'automated';
-  const excludeLow    = sv ? true : currentView !== 'lowvalue';
   const term          = searchTerm;
-  const now           = Date.now();
 
   // Single pass: all predicates combined
   const list = [];
   for (const e of allEmails) {
     if (excludeSystem && e.isSystemEmail) continue;
-    if (excludeLow    && e.isLowValue)    continue;
 
     if (sv) {
       if (!applySmartViewRules(e, sv)) continue;
     } else {
       switch (currentView) {
-        case 'unread':      if (e.status !== 'unread')  continue; break;
-        case 'actionable':  if (!e.isActionable)         continue; break;
-        case 'awaiting': {
-          if (e.status !== 'awaiting') continue;
-          if (e.awaitingSince) {
-            const days = (now - new Date(e.awaitingSince).getTime()) / (1000*60*60*24);
-            e._overdue = days > 7;
-          }
-          break;
-        }
+        case 'unread':      if (e.status !== 'unread')        continue; break;
         case 'threads':     if (e.inReplyTo || !hasReplies(e)) continue; break;
-        case 'attachments': if (!e.hasAttachments)  continue; break;
-        case 'automated':   if (!e.isSystemEmail)   continue; break;
-        case 'lowvalue':    if (!e.isLowValue)       continue; break;
+        case 'attachments': if (!e.hasAttachments)             continue; break;
+        case 'automated':   if (!e.isSystemEmail)              continue; break;
       }
     }
 

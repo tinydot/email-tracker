@@ -355,9 +355,6 @@ async function processFilesForImport(fileArr) {
         continue;
       }
 
-      // isActionable defaults to false; user can mark manually
-      const isActionable = false;
-
       // Detect system/automated email
       const isSystemEmail = detectSystemEmail(parsed.rawHeaders, parsed.from.email, parsed.subject, parsed.textBody);
 
@@ -373,23 +370,14 @@ async function processFilesForImport(fileArr) {
         ccAddrs:      parsed.cc.map(a => a.email),
         date:         parsed.date,
         textBody:     parsed.textBody,
-        isActionable,
         isSystemEmail,
         status:       'unread',
         tags:         [],
-        linkedIssues: [], // For issue tracking
-        emailType:    null, // query | decision | risk | action
         hasAttachments: parsed.attachments.length > 0,
         attachmentCount: parsed.attachments.length,
-        awaitingSince: null,
         importedAt:   new Date().toISOString(),
         fileName:     file.name,
-        aiSummary:    null,
       };
-
-      // Apply auto-tag rules to newly imported email
-      const autoTags = getAutoTagsForEmail(emailRecord);
-      if (autoTags.length) emailRecord.tags = autoTags;
 
       await dbPut('emails', emailRecord);
 
@@ -427,25 +415,16 @@ async function processFilesForImport(fileArr) {
           size: att.size,
           hash: att.hash,
           contentId: att.contentId || null,
-          transmittalRef: '',
-          sourceParty: '',
-          documentType: '',
           storedPath: '',
           isNested: false,
           parentFilename: null,
           importedAt: new Date().toISOString(),
         };
 
-        // Inherit blacklist status and metadata from any existing attachment with the same hash
+        // Inherit blacklist status from any existing attachment with the same hash
         const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
         if (existingForBlacklist.some(a => a.isBlacklisted)) {
           attRecord.isBlacklisted = true;
-        }
-        const existingWithMeta = existingForBlacklist.find(a => a.transmittalRef || a.sourceParty || a.documentType);
-        if (existingWithMeta) {
-          if (existingWithMeta.transmittalRef) attRecord.transmittalRef = existingWithMeta.transmittalRef;
-          if (existingWithMeta.sourceParty) attRecord.sourceParty = existingWithMeta.sourceParty;
-          if (existingWithMeta.documentType) attRecord.documentType = existingWithMeta.documentType;
         }
 
         // Save attachment to disk if storage is available
@@ -478,25 +457,16 @@ async function processFilesForImport(fileArr) {
               contentType: nested.contentType,
               size: nested.size,
               hash: nested.hash,
-              transmittalRef: '',
-              sourceParty: '',
-              documentType: '',
               storedPath: '',
               isNested: true,
               parentFilename: att.filename,
               importedAt: new Date().toISOString(),
             };
-            
-            // Inherit blacklist status and metadata from any existing attachment with the same hash
+
+            // Inherit blacklist status from any existing attachment with the same hash
             const existingNested = await dbGetByIndex('attachments', 'hash', nested.hash);
             if (existingNested.some(a => a.isBlacklisted)) {
               nestedRecord.isBlacklisted = true;
-            }
-            const existingNestedWithMeta = existingNested.find(a => a.transmittalRef || a.sourceParty || a.documentType);
-            if (existingNestedWithMeta) {
-              if (existingNestedWithMeta.transmittalRef) nestedRecord.transmittalRef = existingNestedWithMeta.transmittalRef;
-              if (existingNestedWithMeta.sourceParty) nestedRecord.sourceParty = existingNestedWithMeta.sourceParty;
-              if (existingNestedWithMeta.documentType) nestedRecord.documentType = existingNestedWithMeta.documentType;
             }
 
             // Save nested attachment to disk
@@ -729,8 +699,8 @@ async function reimportEmlBody(emailId) {
     }
 
     // Re-process attachments — add any that are missing from the DB.
-    // Existing attachment records are left untouched to preserve metadata
-    // (transmittalRef, sourceParty, blacklist status, etc.).
+    // Existing attachment records are left untouched to preserve blacklist
+    // status and other persisted flags.
 
     // If there are attachments to save but no folder is connected, prompt for one now.
     // (We're still inside a user-gesture call chain so showDirectoryPicker is allowed.)
@@ -759,9 +729,6 @@ async function reimportEmlBody(emailId) {
           size: att.size,
           hash: att.hash,
           contentId: att.contentId || null,
-          transmittalRef: '',
-          sourceParty: '',
-          documentType: '',
           storedPath: '',
           isNested: false,
           parentFilename: null,
@@ -809,9 +776,6 @@ async function reimportEmlBody(emailId) {
             size: nested.size,
             hash: nested.hash,
             contentId: nested.contentId || null,
-            transmittalRef: '',
-            sourceParty: '',
-            documentType: '',
             storedPath: '',
             isNested: true,
             parentFilename: att.filename,

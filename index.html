@@ -14,8 +14,6 @@
     <div class="header-stats">
       <div class="stat">EMAILS <b id="h-total">0</b></div>
       <div class="stat">UNREAD <b id="h-unread">0</b></div>
-      <div class="stat">AWAITING <b id="h-awaiting">0</b></div>
-      <div class="stat">ACTIONABLE <b id="h-actionable">0</b></div>
       <div class="stat">ATTACHMENTS <b id="h-attachments">0</b></div>
       <div class="stat" id="storage-indicator" style="display:none;color:var(--accent);cursor:pointer" onclick="changeAttachmentFolder()" title="Click to change folder">
         💾 <b id="h-storage">—</b>
@@ -34,12 +32,6 @@
         <button class="nav-item" data-view="unread" onclick="switchView('unread')">
           ● Unread <span class="nav-count" id="n-unread">0</span>
         </button>
-        <button class="nav-item" data-view="actionable" onclick="switchView('actionable')">
-          ⚡ Actionable <span class="nav-count" id="n-actionable">0</span>
-        </button>
-        <button class="nav-item" data-view="awaiting" onclick="switchView('awaiting')">
-          ⏳ Awaiting Reply <span class="nav-count" id="n-awaiting">0</span>
-        </button>
         <button class="nav-item" data-view="threads" onclick="switchView('threads')">
           💬 Threads <span class="nav-count" id="n-threads">0</span>
         </button>
@@ -48,18 +40,6 @@
         </button>
         <button class="nav-item" data-view="automated" onclick="switchView('automated')">
           🤖 Automated <span class="nav-count" id="n-automated">0</span>
-        </button>
-        <button class="nav-item" data-view="lowvalue" onclick="switchView('lowvalue')">
-          ↓ Low Value <span class="nav-count" id="n-lowvalue">0</span>
-        </button>
-        <button class="nav-item" data-view="issues" onclick="switchView('issues')">
-          📋 Issues <span class="nav-count" id="n-issues">0</span>
-        </button>
-        <button class="nav-item" data-view="actionitems" onclick="switchView('actionitems')">
-          ⚡ Action Items <span class="nav-count" id="n-actionitems">0</span>
-        </button>
-        <button class="nav-item" data-view="transmittals" onclick="switchView('transmittals')">
-          📋 Transmittal Register <span class="nav-count" id="n-transmittals">0</span>
         </button>
         <button class="nav-item" data-view="addressbook" onclick="switchView('addressbook')">
           👤 Address Book
@@ -78,7 +58,6 @@
         <div class="sidebar-label">Actions</div>
         <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
-        <button class="nav-item" onclick="exportSQLite()">⬇ Export SQLite</button>
         <input type="file" id="json-import-input" accept=".json" style="display:none" onchange="importData(this)">
         <button class="nav-item" onclick="document.getElementById('json-import-input').click()">⬆ Import JSON</button>
         <button class="nav-item" onclick="showSettings()">⚙ Settings</button>
@@ -138,7 +117,6 @@
           <div class="col-attach">Attach</div>
         </div>
         <div id="email-scroll" style="flex:1;overflow-y:auto;">
-          <div id="bulk-tag-bar" style="display:none"></div>
           <div class="email-list" id="email-list"></div>
         </div>
       </div>
@@ -164,7 +142,6 @@
     <div class="detail-actions" id="det-actions"></div>
     <div class="tag-row" id="det-tags"></div>
     <div class="detail-attachments" id="det-attachments" style="display:none"></div>
-    <div id="det-local-ai"></div>
     <div class="detail-body" id="det-body">
       <div class="detail-body-label">Email Body</div>
     </div>
@@ -193,7 +170,6 @@
 </div>
 
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/db.js"></script>
 <script src="js/parser.js"></script>
 <script src="js/detection.js"></script>
@@ -204,18 +180,12 @@
 <script src="js/smart-views/editor.js"></script>
 <script src="js/smart-views/sidebar.js"></script>
 <script src="js/smart-views/routing.js"></script>
-<script src="js/smart-views/auto-tag.js"></script>
-<script src="js/smart-views/ai.js"></script>
 <script src="js/smart-views/settings.js"></script>
-<script src="js/ai/import-insights.js"></script>
-<script src="js/ai/similar.js"></script>
 <script src="js/render.js"></script>
 <script src="js/actions.js"></script>
 <script src="js/data-load.js"></script>
 <script src="js/export.js"></script>
 <script src="js/address-book.js"></script>
-<script src="js/issues.js"></script>
-<script src="js/action-items.js"></script>
 <script src="js/helpers.js"></script>
 <script src="js/init.js"></script>
 </body>

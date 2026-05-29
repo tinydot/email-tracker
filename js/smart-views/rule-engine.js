@@ -17,14 +17,13 @@ const RULE_FIELDS = [
   { value: 'status',            label: 'Status' },
   { value: 'tags',              label: 'Tags' },
   { value: 'hasAttachments',    label: 'Has Attachments' },
-  { value: 'isActionable',      label: 'Is Actionable' },
   { value: 'isSystemEmail',     label: 'Is Automated' },
   { value: 'fromInGroup',       label: 'Sender in Group' },
   { value: 'recipientInGroup',  label: 'Recipient in Group' },
   { value: 'participantInGroup',label: 'Any Participant in Group' },
 ];
 
-const BOOL_FIELDS  = new Set(['hasAttachments', 'isActionable', 'isSystemEmail']);
+const BOOL_FIELDS  = new Set(['hasAttachments', 'isSystemEmail']);
 const GROUP_FIELDS = new Set(['fromInGroup', 'recipientInGroup', 'participantInGroup']);
 
 function getOperatorOptions(field, selected) {
@@ -64,7 +63,7 @@ function getValueInputHTML(field, value, operator) {
     return `<select>${opts}</select>`;
   }
   if (field === 'status') {
-    const statuses = ['unread','read','replied','awaiting','actioned'];
+    const statuses = ['unread','read'];
     return `<select>${statuses.map(s => `<option value="${s}" ${value === s ? 'selected' : ''}>${s}</option>`).join('')}</select>`;
   }
   return `<input type="text" value="${escHtml(value)}" placeholder="Value…">`;
@@ -117,7 +116,6 @@ function getEmailFieldValue(email, field) {
     case 'status':         return (email.status || '').toLowerCase();
     case 'tags':           return (email.tags   || []).join(' ').toLowerCase();
     case 'hasAttachments': return email.hasAttachments ? 'true' : 'false';
-    case 'isActionable':   return email.isActionable   ? 'true' : 'false';
     case 'isSystemEmail':  return email.isSystemEmail  ? 'true' : 'false';
     default: return '';
   }
