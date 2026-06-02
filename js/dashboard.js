@@ -201,5 +201,67 @@ function showDashboard() {
       </div>`;
   }
 
-  container.innerHTML = toolbar + summary + chart + gapSection;
+  // ── Import activity — when emails were imported (by import-day) ──
+  // Catches the case where you imported on a day but missed a folder/account:
+  // the most recent import day shows how many came in last, and the per-day
+  // breakdown reveals whether a session brought in fewer than expected.
+  const impCounts = new Map();
+  let undated = 0;
+  for (const e of dated) {
+    if (!e.importedAt || isNaN(new Date(e.importedAt))) { undated++; continue; }
+    const k = bucketKey(new Date(e.importedAt), 'day');
+    impCounts.set(k, (impCounts.get(k) || 0) + 1);
+  }
+  const impRows = [...impCounts.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  const lastImport = impRows.length ? bucketLabel(impRows[0][0], 'day') : '—';
+  const impList = impRows.slice(0, 15).map(([k, n]) => `
+      <div style="display:flex; justify-content:space-between; gap:12px; padding:6px 10px;
+                  border-bottom:1px solid var(--border);">
+        <span>${bucketLabel(k, 'day')}</span>
+        <span style="color:var(--muted); white-space:nowrap;">${n} email${n === 1 ? '' : 's'}</span>
+      </div>`).join('');
+
+  const importSection = `
+    <div style="padding:0 20px 24px;">
+      <div style="font-size:13px; font-weight:600; margin-bottom:6px;">
+        ⬆ Import activity <span style="color:var(--muted); font-weight:400;">(last import: ${lastImport}${impRows.length > 15 ? ', showing 15 most recent' : ''})</span>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
+        Emails grouped by the day they were imported — a thin recent session may mean a folder or account was skipped.
+        ${undated ? `<span style="color:var(--warn);">${undated} email${undated === 1 ? '' : 's'} have no import date.</span>` : ''}
+      </div>
+      <div style="border:1px solid var(--border); border-radius:6px; background:var(--surface); font-size:13px;">
+        ${impList || '<div style="padding:6px 10px; color:var(--muted);">No import dates recorded.</div>'}
+      </div>
+    </div>`;
+
+  // ── By sender domain — a sparse/absent domain may mean a missed account ──
+  const domCounts = new Map();
+  for (const e of dated) {
+    const dom = ((e.fromAddr || '').split('@')[1] || '(unknown)').toLowerCase();
+    domCounts.set(dom, (domCounts.get(dom) || 0) + 1);
+  }
+  const domRows = [...domCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const domMax = domRows.length ? domRows[0][1] : 1;
+  const domList = domRows.slice(0, 20).map(([dom, n]) => `
+      <div style="padding:5px 10px; border-bottom:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; gap:12px;">
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(dom)}</span>
+          <span style="color:var(--muted); white-space:nowrap;">${n}</span>
+        </div>
+        <div style="height:4px; margin-top:3px; background:var(--accent); border-radius:2px;
+                    width:${Math.max(2, Math.round((n / domMax) * 100))}%;"></div>
+      </div>`).join('');
+
+  const domainSection = `
+    <div style="padding:0 20px 24px;">
+      <div style="font-size:13px; font-weight:600; margin-bottom:6px;">
+        🌐 By sender domain <span style="color:var(--muted); font-weight:400;">(${domRows.length} domain${domRows.length === 1 ? '' : 's'}${domRows.length > 20 ? ', top 20' : ''})</span>
+      </div>
+      <div style="border:1px solid var(--border); border-radius:6px; background:var(--surface); font-size:13px;">
+        ${domList}
+      </div>
+    </div>`;
+
+  container.innerHTML = toolbar + summary + chart + gapSection + importSection + domainSection;
 }
