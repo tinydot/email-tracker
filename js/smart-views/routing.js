@@ -28,6 +28,12 @@ function switchView(view) {
     document.querySelector('.toolbar').style.display = '';
     document.querySelector('.email-list-header').style.display = 'none';
     showAddressBook();
+  } else if (view === 'dashboard') {
+    document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
+    hideSvTabToggle();
+    document.querySelector('.toolbar').style.display = '';
+    document.querySelector('.email-list-header').style.display = 'none';
+    showDashboard();
   } else {
     document.getElementById('view-title').textContent = VIEW_LABELS[view] || view;
     hideSvTabToggle();
