@@ -15,6 +15,7 @@ let emailGroups    = []; // user-created email groups for smart view rules
 
 const VIEW_LABELS = {
   all:          'All Emails',
+  dashboard:    'Dashboard',
   unread:       'Unread',
   threads:      'Threads',
   attachments:  'Has Attachments',
