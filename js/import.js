@@ -662,7 +662,7 @@ async function _resolveEmlFile(email) {
 }
 
 async function reimportEmlBody(emailId) {
-  const email = allEmails.find(e => e.id === emailId);
+  const email = emailIdIndex.get(emailId);
   if (!email) return;
 
   try {
@@ -680,9 +680,8 @@ async function reimportEmlBody(emailId) {
     // The user will choose how much to keep via the truncation controls,
     // then confirm with "Save Truncated" or "Save Full".
     const bodyForTrunc = parsed.rawTextBody || parsed.textBody;
+    // email comes from emailIdIndex — same object as in allEmails
     email.textBody = bodyForTrunc;
-    const idx = allEmails.findIndex(e => e.id === emailId);
-    if (idx >= 0) allEmails[idx].textBody = bodyForTrunc;
 
     // Load into truncation UI if this email is still open
     if (selectedEmail?.id === emailId) {
@@ -838,7 +837,7 @@ async function reimportEmlBody(emailId) {
 }
 
 async function openOriginalEml(emailId) {
-  const email = allEmails.find(e => e.id === emailId);
+  const email = emailIdIndex.get(emailId);
   if (!email) return;
   try {
     const resolved = await _resolveEmlFile(email);

@@ -10,6 +10,17 @@ let _vsLastEnd = -1;
 let _vsRaf = 0;
 let _vsScrollBound = false;
 
+function renderThreadDot(email) {
+  if (hasReplies(email)) {
+    const replyCount = countThreadReplies(email);
+    return `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
+  }
+  if (getThreadDepth(email) > 0) {
+    return `<span class="thread-dot has-thread" title="Reply in thread"></span>`;
+  }
+  return `<span class="thread-dot no-thread"></span>`;
+}
+
 function renderEmailRowHtml(email) {
   const dateStr  = email.date ? formatDate(email.date) : '—';
   const from     = email.fromName || email.fromAddr || '—';
@@ -19,18 +30,8 @@ function renderEmailRowHtml(email) {
   const attach   = email.attachmentCount > 0
     ? `<span style="color:var(--warn)">📎 ${email.attachmentCount}</span>` : '—';
 
-  const emailHasReplies = hasReplies(email);
+  const dot = renderThreadDot(email);
   const threadDepth = getThreadDepth(email);
-  let dot = '';
-  if (emailHasReplies) {
-    const replyCount = countThreadReplies(email);
-    dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
-  } else if (threadDepth > 0) {
-    dot = `<span class="thread-dot has-thread" title="Reply in thread"></span>`;
-  } else {
-    dot = `<span class="thread-dot no-thread"></span>`;
-  }
-
   const indent = (currentView === 'threads' && threadDepth > 0) ? (threadDepth * 12) + 'px' : '';
 
   return `
@@ -137,18 +138,7 @@ function updateEmailRow(email) {
   else row.classList.remove('unread');
 
   // Update flag dot
-  const emailHasReplies = hasReplies(email);
-  const threadDepth = getThreadDepth(email);
-  let dot = '';
-  if (emailHasReplies) {
-    const replyCount = countThreadReplies(email);
-    dot = `<span title="Has ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}" style="color:var(--info);font-size:10px">💬</span>`;
-  } else if (threadDepth > 0) {
-    dot = `<span class="thread-dot has-thread" title="Reply in thread"></span>`;
-  } else {
-    dot = `<span class="thread-dot no-thread"></span>`;
-  }
-  row.querySelector('.col-flag').innerHTML = dot;
+  row.querySelector('.col-flag').innerHTML = renderThreadDot(email);
 
   // Update status badge
   row.querySelector('.col-status').innerHTML = renderBadge(email);
@@ -191,25 +181,26 @@ let _truncCurrent = -1;     // which match is previewed (-1 = none)
 let _truncOrigBody = null;  // original textBody before any preview
 let _inlineImageUrls = [];  // blob URLs for inline CID images (revoked on close)
 
+// Clears match state, sets the status label, and hides all truncation buttons
+function _resetTruncControls(statusText) {
+  _truncMatches = [];
+  _truncCurrent = -1;
+  const status = document.getElementById('trunc-status');
+  if (status) status.textContent = statusText;
+  for (const id of ['trunc-prev-btn', 'trunc-next-btn', 'trunc-save-btn', 'trunc-reset-btn', 'trunc-save-full-btn']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+}
+
 function truncFindMatches() {
   const email = selectedEmail;
   if (!email) return;
   _truncOrigBody = email.textBody || '';
   _truncMatches = findTruncationMatches(_truncOrigBody);
-  _truncCurrent = -1;
-
-  const status = document.getElementById('trunc-status');
-  const prevBtn = document.getElementById('trunc-prev-btn');
-  const nextBtn = document.getElementById('trunc-next-btn');
-  const saveBtn = document.getElementById('trunc-save-btn');
-  const resetBtn = document.getElementById('trunc-reset-btn');
 
   if (!_truncMatches.length) {
-    status.textContent = 'No truncation points found';
-    prevBtn.style.display = 'none';
-    nextBtn.style.display = 'none';
-    saveBtn.style.display = 'none';
-    resetBtn.style.display = 'none';
+    _resetTruncControls('No truncation points found');
     return;
   }
 
@@ -250,27 +241,11 @@ async function truncSave() {
   if (!email || _truncCurrent < 0 || !_truncMatches.length) return;
   const match = _truncMatches[_truncCurrent];
   const truncated = truncateAtLine(_truncOrigBody, match.lineIndex);
+  // selectedEmail is the same object stored in allEmails — no separate sync needed
   email.textBody = truncated;
   await dbPut('emails', email);
-  // Update allEmails in-place
-  const idx = allEmails.findIndex(e => e.id === email.id);
-  if (idx >= 0) allEmails[idx].textBody = truncated;
   _truncOrigBody = truncated;
-  _truncMatches = [];
-  _truncCurrent = -1;
-  // Reset controls
-  const status = document.getElementById('trunc-status');
-  const prevBtn = document.getElementById('trunc-prev-btn');
-  const nextBtn = document.getElementById('trunc-next-btn');
-  const saveBtn = document.getElementById('trunc-save-btn');
-  const resetBtn = document.getElementById('trunc-reset-btn');
-  const saveFullBtn = document.getElementById('trunc-save-full-btn');
-  if (status) status.textContent = 'Saved';
-  if (prevBtn) prevBtn.style.display = 'none';
-  if (nextBtn) nextBtn.style.display = 'none';
-  if (saveBtn) saveBtn.style.display = 'none';
-  if (resetBtn) resetBtn.style.display = 'none';
-  if (saveFullBtn) saveFullBtn.style.display = 'none';
+  _resetTruncControls('Saved');
   toast('Body truncated and saved');
 }
 
@@ -279,42 +254,14 @@ async function truncSaveFull() {
   if (!email || _truncOrigBody === null) return;
   email.textBody = _truncOrigBody;
   await dbPut('emails', email);
-  const idx = allEmails.findIndex(e => e.id === email.id);
-  if (idx >= 0) allEmails[idx].textBody = _truncOrigBody;
-  _truncMatches = [];
-  _truncCurrent = -1;
-  const status = document.getElementById('trunc-status');
-  const prevBtn = document.getElementById('trunc-prev-btn');
-  const nextBtn = document.getElementById('trunc-next-btn');
-  const saveBtn = document.getElementById('trunc-save-btn');
-  const resetBtn = document.getElementById('trunc-reset-btn');
-  const saveFullBtn = document.getElementById('trunc-save-full-btn');
-  if (status) status.textContent = 'Saved';
-  if (prevBtn) prevBtn.style.display = 'none';
-  if (nextBtn) nextBtn.style.display = 'none';
-  if (saveBtn) saveBtn.style.display = 'none';
-  if (resetBtn) resetBtn.style.display = 'none';
-  if (saveFullBtn) saveFullBtn.style.display = 'none';
+  _resetTruncControls('Saved');
   toast('Full body saved');
 }
 
 function truncReset() {
   const bodyEl = document.getElementById('det-body-text');
   if (bodyEl && _truncOrigBody !== null) bodyEl.textContent = _truncOrigBody;
-  _truncMatches = [];
-  _truncCurrent = -1;
-  const status = document.getElementById('trunc-status');
-  const prevBtn = document.getElementById('trunc-prev-btn');
-  const nextBtn = document.getElementById('trunc-next-btn');
-  const saveBtn = document.getElementById('trunc-save-btn');
-  const resetBtn = document.getElementById('trunc-reset-btn');
-  const saveFullBtn = document.getElementById('trunc-save-full-btn');
-  if (status) status.textContent = '';
-  if (prevBtn) prevBtn.style.display = 'none';
-  if (nextBtn) nextBtn.style.display = 'none';
-  if (saveBtn) saveBtn.style.display = 'none';
-  if (resetBtn) resetBtn.style.display = 'none';
-  if (saveFullBtn) saveFullBtn.style.display = 'none';
+  _resetTruncControls('');
 }
 // ── End truncation controls ──────────────────────────────
 
@@ -359,15 +306,14 @@ async function saveBodyEdit() {
   if (!ta || !selectedEmail) return;
 
   const newText = ta.value;
+  // selectedEmail is the same object stored in allEmails — no separate sync needed
   selectedEmail.textBody = newText;
   await dbPut('emails', selectedEmail);
-  const idx = allEmails.findIndex(e => e.id === selectedEmail.id);
-  if (idx >= 0) allEmails[idx].textBody = newText;
 
   const bodyTextEl = document.getElementById('det-body-text');
   if (bodyTextEl) _renderBodyText(bodyTextEl, newText || '(no plain text body)', null);
   if (editBtn) editBtn.textContent = '✏ Edit Body';
-  showToast('Body saved');
+  toast('Body saved');
 }
 
 function cancelBodyEdit() {
@@ -607,7 +553,7 @@ function openDetail(email) {
 }
 
 function showThread(emailId) {
-  const email = allEmails.find(e => e.id === emailId);
+  const email = emailIdIndex.get(emailId);
   if (!email) return;
   
   const threadEmails = getThreadEmails(email);

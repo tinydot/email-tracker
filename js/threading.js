@@ -6,64 +6,78 @@
 let msgIdIndex = new Map(); // messageId → email
 let emailIdIndex = new Map(); // id → email (O(1) lookup)
 
+// Memoized thread resolution — email.id → root email / depth.
+// Kept in Maps rather than on the email objects so dbPut never persists them.
+let threadRootCache  = new Map();
+let threadDepthCache = new Map();
+
+// Maps root email ID → count of non-root members in that thread.
+// Rebuilt once per allEmails load via buildThreadCache().
+let threadReplyCountCache = new Map();
+
 function rebuildMsgIdIndex() {
   msgIdIndex.clear();
   emailIdIndex.clear();
+  // Root/depth caches are derived from msgIdIndex — invalidate together
+  threadRootCache.clear();
+  threadDepthCache.clear();
   for (const e of allEmails) {
     if (e.messageId) msgIdIndex.set(e.messageId, e);
     emailIdIndex.set(e.id, e);
   }
 }
 
-function getThreadRoot(email) {
-  if (!email.inReplyTo) return email;
+// Walk the inReplyTo chain once, memoizing root + depth for every email
+// visited along the way. Subsequent lookups are O(1).
+function _resolveThread(email) {
+  if (threadRootCache.has(email.id)) {
+    return { root: threadRootCache.get(email.id), depth: threadDepthCache.get(email.id) };
+  }
+  const chain = [];
   let current = email;
-  let depth = 0;
-  while (current.inReplyTo && depth < 20) {
+  while (current.inReplyTo && chain.length < 20 && !threadRootCache.has(current.id)) {
     const parent = msgIdIndex.get(current.inReplyTo);
     if (!parent) break;
+    chain.push(current);
     current = parent;
-    depth++;
   }
-  return current;
+  let root, depth;
+  if (threadRootCache.has(current.id)) {
+    root  = threadRootCache.get(current.id);
+    depth = threadDepthCache.get(current.id);
+  } else {
+    root  = current;
+    depth = 0;
+    threadRootCache.set(current.id, root);
+    threadDepthCache.set(current.id, 0);
+  }
+  for (let i = chain.length - 1; i >= 0; i--) {
+    depth++;
+    threadRootCache.set(chain[i].id, root);
+    threadDepthCache.set(chain[i].id, depth);
+  }
+  return { root, depth };
+}
+
+function getThreadRoot(email) {
+  return _resolveThread(email).root;
 }
 
 function getThreadDepth(email) {
-  if (!email.inReplyTo) return 0;
-  let current = email;
-  let depth = 0;
-  while (current.inReplyTo && depth < 20) {
-    const parent = msgIdIndex.get(current.inReplyTo);
-    if (!parent) break;
-    current = parent;
-    depth++;
-  }
-  return depth;
+  return _resolveThread(email).depth;
 }
 
 function getThreadEmails(rootEmail) {
-  const threadId = rootEmail.id;
-  const root = getThreadRoot(rootEmail);
-  const results = [root];
-  
-  // Find all emails that reply to this thread
-  for (const e of allEmails) {
-    if (e.id === root.id) continue;
-    const eRoot = getThreadRoot(e);
-    if (eRoot.id === root.id) {
-      results.push(e);
-    }
-  }
-  
-  return results.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const rootId = getThreadRoot(rootEmail).id;
+  return allEmails
+    .filter(e => getThreadRoot(e).id === rootId)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 }
 
-// Maps root email ID → count of non-root members in that thread.
-// Rebuilt once per allEmails load via buildThreadCache().
-let threadReplyCountCache = new Map();
-
 function buildThreadCache() {
-  threadReplyCountCache = new Map();
+  threadRootCache.clear();
+  threadDepthCache.clear();
+  threadReplyCountCache.clear();
   for (const e of allEmails) {
     const rootId = getThreadRoot(e).id;
     if (e.id !== rootId) {

@@ -194,8 +194,7 @@ async function discardAutomatedEmails() {
 
   allEmails = allEmails.filter(e => !e.isSystemEmail);
   if (selectedEmail?.isSystemEmail) closeDetail();
+  await updateHeaderStats(); // rebuilds indexes + thread cache, updates nav counts
   applyFilters();
-  await updateHeaderStats();
-  await updateNavCounts();
   toast(`Discarded ${automated.length} automated email(s)`, 'ok');
 }
