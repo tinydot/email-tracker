@@ -6,45 +6,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project at a glance
 
-A client-side web app with no build step, no npm, no server. Open `index.html` in a browser and it runs entirely in-browser using the File System Access API and IndexedDB.
+A client-side web app with no build step, no npm, no server, and no external runtime dependencies. Open `index.html` in a browser and it runs entirely in-browser using the File System Access API and IndexedDB.
 
 ```
 email-tracker/
-├── index.html        ← HTML structure only (~200 lines)
+├── index.html        ← HTML structure only (~190 lines)
 ├── css/
-│   └── styles.css    ← all styles (~1078 lines)
+│   └── styles.css    ← all styles (~1050 lines)
 └── js/
-    ├── db.js         ← IndexedDB wrapper
-    ├── parser.js     ← EML parser + attachment text extraction
-    ├── detection.js  ← system/automated email detection
-    ├── import.js     ← import pipeline + attachment file storage
-    ├── threading.js  ← thread linking + thread computation
-    ├── state.js      ← global state variables + panel switching
+    ├── db.js         ← IndexedDB wrapper (openDB + db* helpers)
+    ├── parser.js     ← EML parser (MIME, encodings, signature/quote stripping)
+    ├── detection.js  ← system/automated email detection patterns
+    ├── import.js     ← import pipeline, attachment/EML file storage, reimport
+    ├── threading.js  ← msgId/emailId indexes + memoized thread root/depth caches
+    ├── state.js      ← global state variables + showPanel
     ├── smart-views/  ← smart views (split into focused modules)
-    │   ├── rule-engine.js ← RULE_FIELDS, evaluateRule, applySmartViewRules, loadSmartViews
-    │   ├── editor.js      ← smart view editor modal (build, show, save, delete)
-    │   ├── sidebar.js     ← renderSmartViewsSidebar, tab toggle, sv attachments view
+    │   ├── rule-engine.js ← RULE_FIELDS, evaluateRule, applySmartViewRules, lowercase caches
+    │   ├── editor.js      ← smart view editor modal (grouped rules, required tags)
+    │   ├── sidebar.js     ← renderSmartViewsSidebar, sv tab toggle, sv attachments view
     │   ├── routing.js     ← switchView, applyFilters, searchEmails, applySort
-    │   ├── auto-tag.js    ← auto-tag rules engine + CRUD UI
-    │   ├── ai.js          ← Claude API key, aiTagEmail, bulkAiTagView, prompt config
-    │   └── settings.js    ← showSettings, email groups, custom patterns, maintenance
-    ├── ai/           ← local-AI insights (offline pipeline output)
-    │   ├── import-insights.js ← parse + store insights.json from tools/analyze.py
-    │   └── similar.js         ← cosine-similarity search over local embeddings
-    ├── render.js     ← renderEmailList, openDetail, transmittal register
-    ├── actions.js    ← email actions + bulk tagging
-    ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts
-    ├── export.js     ← JSON export/import, clearDB, danger zone
-    ├── address-book.js ← contact profiles (used to enrich AI prompts)
-    ├── issues.js     ← issue tracker CRUD, email↔issue linking
-    ├── action-items.js ← flat action-items view (open/resolved/deferred)
+    │   └── settings.js    ← showSettings: email groups, custom patterns, maintenance
+    ├── render.js     ← virtual-scrolled email list, detail modal, body edit/truncation
+    ├── actions.js    ← email actions (tags, automated toggle, delete)
+    ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts, backfill
+    ├── export.js     ← JSON export/import, clearDB, discard automated
+    ├── address-book.js ← contact profiles (name, role, projects)
+    ├── dashboard.js  ← email volume over time, import activity, sender domains
     ├── helpers.js    ← drag & drop, formatDate, escHtml, toast
-    └── init.js       ← init(), keyboard shortcuts
+    └── init.js       ← init(), keyboard shortcuts (j/k, Escape)
 ```
 
-Script load order matters — all files share global scope via `<script src>` tags
-in `index.html`. The only external runtime dep is the SheetJS CDN bundle
-(`xlsx.full.min.js`) used by `export.js` for spreadsheet export.
+All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, parser, detection, import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
 
 ### Companion scripts (outside the web app)
 
@@ -52,136 +44,144 @@ in `index.html`. The only external runtime dep is the SheetJS CDN bundle
   to `.eml` files importable by the web app. See `pst_to_eml_README.md`.
 - `imap_sync.py` — Python stdlib only; incrementally syncs an IMAP account to
   `.eml` files. See `imap_sync_README.md`.
-- `tools/analyze.py` — runs locally against an Ollama instance. Reads an
-  emails-for-ai export from the web app, produces `insights.json` (+ embeddings)
-  which is imported back via Settings → Local AI. See `tools/README.md`.
 - `fix-mojibake.js` — one-off DevTools console script to repair mis-decoded
   UTF-8 bodies in an existing IndexedDB. Paste into the console; safe to re-run.
-
-All JS files share a single global scope (loaded via `<script src>`), so there are no module imports. The section banners (`// ═══…`) within each file mark sub-sections.
+  (A version of this also exists in-app: Settings → maintenance.)
 
 ## Data model
 
 ### Email record (stored in IndexedDB `emails` store)
 ```js
 {
-  id,            // messageId or "filename-date"
-  messageId,     // RFC Message-ID header
-  inReplyTo,     // RFC In-Reply-To header
-  references,    // array of referenced message IDs
+  id,             // messageId or "filename-date"
+  messageId,      // RFC Message-ID header
+  inReplyTo,      // RFC In-Reply-To header
+  references,     // array of referenced message IDs
   subject,
-  fromAddr,      // sender email
-  fromName,      // sender display name
-  toAddrs,       // array of recipient emails
-  ccAddrs,       // array of CC emails
-  date,          // ISO string
-  textBody,      // plain-text body
-  status,        // 'unread' | 'read' | 'replied' | 'awaiting' | 'actioned'
-  isActionable,  // boolean — user-flagged
-  isSystemEmail, // boolean — auto-detected automated/bulk email
+  fromAddr,       // sender email
+  fromName,       // sender display name
+  toAddrs,        // array of recipient emails
+  ccAddrs,        // array of CC emails
+  date,           // ISO string
+  textBody,       // plain-text body (signature/quote-stripped at import)
+  status,         // 'unread' | 'read'
+  isSystemEmail,  // boolean — auto-detected automated/bulk email
+  manualSystemOverride, // boolean — user unmarked automated; detection won't re-flag
   hasAttachments,
   attachmentCount,
-  tags,          // string[]
-  linkedIssues,  // string[] of issue IDs
-  importedAt,    // timestamp
+  tags,           // string[]
+  tagExclusions,  // string[] — tags the user excluded (won't be re-applied)
+  importedAt,     // ISO string
+  fileName,       // original .eml filename
+  emlArchivePath, // optional — path if EML organizing is enabled
 }
 ```
 
-### IndexedDB stores
-- `emails` — email records
-- `attachments` — attachment metadata (with `emailId` index)
+### IndexedDB stores (`DB_VERSION = 9` in `js/db.js`)
+- `emails` — email records (indexes: messageId, threadId, date, fromAddr, status, isActionable, importedAt)
+- `attachments` — attachment metadata (indexes: `emailId`, `hash`)
 - `tags` — global tag registry (keyPath: `name`) — note: tags are also stored inline on each email
-- `msgIndex` — messageId → emailId mapping for O(1) thread lookups
-- `issues` — issue tracker records
+- `msgIndex` — messageId → emailId mapping
 - `smartViews` — user-defined filter views (keyPath: `id`)
-- `settings` — key-value store (e.g. `customAutomationPatterns`)
-- `addressBook` — contact profiles (name, role, projects) injected into AI prompts
-- `insights` — per-email AI-generated summary/action items (output of `tools/analyze.py`)
-- `embeddings` — per-email vector (Float32Array) for similarity search
+- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, …)
+- `emailGroups` — named address lists used by smart view group rules
+- `seenIds` — tombstones for discarded email IDs (prevents reimport)
+- `addressBook` — contact profiles (keyPath: `email`)
 
-## Key global state variables
+Legacy stores (`issues`, `insights`, `embeddings`) are deleted in `onupgradeneeded`.
+
+## Key global state variables (`js/state.js`)
 ```js
-allEmails      // full email array loaded from DB
-filteredEmails // currently displayed subset (result of applyFilters())
-currentView    // 'all' | 'unread' | 'actionable' | 'awaiting' | 'threads' |
-               // 'attachments' | 'automated' | 'issues' | 'transmittals' |
-               // 'action-items' | 'address-book' | 'sv-<id>'
-currentSort    // 'date-desc' | 'date-asc' | 'from' | 'subject'
-searchTerm     // active search string
-selectedEmail  // currently open email object
-smartViews     // array loaded from DB on init
+allEmails        // full email array loaded from DB
+filteredEmails   // currently displayed subset (result of applyFilters())
+currentView      // 'all' | 'dashboard' | 'unread' | 'threads' | 'attachments' |
+                 // 'automated' | 'addressbook' | 'sv-<id>'
+currentSort      // 'date-desc' | 'date-asc' | 'from' | 'subject'
+searchTerm       // active search string
+selectedEmail    // currently open email object (same object as in allEmails)
+selectedEmailIdx // index in filteredEmails for j/k navigation
+smartViews       // array loaded from DB on init
+svSubView        // 'emails' | 'attachments' — sub-view within a smart view
+emailGroups      // email groups for smart view rules
 ```
 
 ## Important patterns
 
-**Rendering flow:** `switchView(view)` → `applyFilters()` → `renderEmailList()` → `refreshBulkTagBar()`
+**Rendering flow:** `switchView(view)` → `applyFilters()` → `renderEmailList()`. The list is virtual-scrolled (`VS_ROW_HEIGHT`, `vsRenderSlice` in `js/render.js`) — only visible rows are in the DOM.
 
-**Filtering:** `applyFilters()` rebuilds `filteredEmails` from `allEmails` by applying:
-1. Smart view rules (`applySmartViewRules`) or built-in view filters
-2. System email exclusion (all views except `automated`)
-3. Full-text search
-4. Sort
+**Filtering:** `applyFilters()` rebuilds `filteredEmails` from `allEmails` in a single pass: smart-view rules or built-in view filter, system-email exclusion (all views except `automated`; smart views can opt out via `excludeAutomated`), full-text search, then sort.
 
-**DB writes:** always `await dbPut('emails', email)` — the `allEmails` array is mutated in-place, then saved.
+**DB writes:** always `await dbPut('emails', email)` — email objects in `allEmails` are mutated in-place, then saved. `selectedEmail` is the same object reference, so no separate sync is needed.
 
-**Panels:** `showPanel('import' | 'progress' | 'list')` — issues and transmittals render into `#email-list` while staying in the `list` panel.
+**In-memory caches** (rebuild after `allEmails` changes):
+- `rebuildMsgIdIndex()` — rebuilds `msgIdIndex` (messageId → email) and `emailIdIndex` (id → email; use this instead of `allEmails.find`). Also invalidates the thread caches.
+- `buildThreadCache()` — must run *after* `rebuildMsgIdIndex()`; populates memoized thread root/depth caches and per-root reply counts (`hasReplies`, `countThreadReplies`, `getThreadRoot`, `getThreadDepth` are O(1) after this).
+- `updateHeaderStats()` rebuilds both caches from the in-memory `allEmails` (it does **not** re-read emails from the DB — callers must update `allEmails` first) and refreshes header/nav counts.
+- `getEmailLC(email)` caches lowercase field forms in a `_lc` slot on the email object; call `invalidateEmailLC(email)` after mutating address/subject fields. Same idea for `getGroupMemberSet` / `invalidateGroupCache` on email groups.
+- `updateHeaderStatsFast()` — cheap header refresh with debounced nav counts; use after single-email changes.
 
-**Thread linking:** `buildThreadCache()` is called once after load; `rebuildMsgIdIndex()` is called on each `applyFilters()`.
+**Panels:** `showPanel('import' | 'list')`. Dashboard and address book render into `#email-list` while staying in the `list` panel.
 
 ## Smart Views
 
-Each smart view object:
+Smart views use a **grouped rules** format (legacy flat `{ruleOperator, rules}` records are converted on the fly by `normalizeSmartView`):
 ```js
-{ id, name, icon, ruleOperator: 'AND'|'OR', rules: [{ field, operator, value }] }
+{
+  id, name, icon,
+  groupOperator: 'AND'|'OR',          // how groups combine
+  groups: [{ operator: 'AND'|'OR', rules: [{ field, operator, value }] }],
+  requiredTags: [],                   // always AND-combined
+  excludeAutomated: true,             // default true
+}
 ```
 
-**Rule fields:** `fromAddr`, `fromName`, `fromDomain`, `toAddr`, `toDomain`, `ccAddr`, `ccDomain`, `subject`, `status`, `tags`, `hasAttachments`, `isActionable`, `isSystemEmail`
+**Rule fields:** `fromAddr`, `fromName`, `fromDomain`, `toAddr`, `toDomain`, `ccAddr`, `ccDomain`, `subject`, `status`, `tags`, `hasAttachments`, `isSystemEmail`, plus group fields `fromInGroup`, `recipientInGroup`, `participantInGroup`
 
-**Operators:** `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty` (text fields); `is_true`, `is_false` (boolean fields)
+**Operators:** `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty` (text fields); `is_true`, `is_false` (boolean fields); `in_group`, `not_in_group` (group fields)
 
-Rule evaluation: `evaluateRule(email, rule)` → `applySmartViewRules(email, sv)` → used in `applyFilters()` and `renderSmartViewsSidebar()`.
+Rule evaluation: `evaluateRule(email, rule)` → `applySmartViewRules(email, sv)` → used in `applyFilters()` and `renderSmartViewsSidebar()` (sidebar badges count *unread* matches).
+
+Each smart view has an Emails/Attachments tab toggle (`svSubView`); the attachments sub-view (`showSvAttachments`) lists attachments of the filtered emails, deduplicated by hash.
 
 ## Tagging
 
-- Tags stored as `string[]` on each email (`email.tags`)
-- Single-email: `addTag(id)`, `removeTag(id, tag)` — in the detail panel
-- Bulk (current view): `bulkAddTagToView()`, `bulkRemoveTagFromView(tag)` — via the bulk tag bar below the toolbar
-- `refreshBulkTagBar()` is called from `renderEmailList()` and `switchView()` to update/hide the bar
+- Tags stored as `string[]` on each email (`email.tags`); exclusions in `email.tagExclusions`
+- `addTag(id, tagName?)`, `removeTag(id, tag)`, `excludeTag(id, tag)`, `unexcludeTag(id, tag)` — in the detail panel (`js/actions.js`)
+- The detail panel suggests the top-5 globally used tags not already on/excluded from the email
 
 ## UI structure
 
 ```
 #app
-  header          — logo, header stats
+  header            — logo, header stats (#h-total, #h-unread, #h-attachments, #storage-indicator)
   #main
-    #sidebar      — nav items (data-view attr), smart views, storage indicator
+    #sidebar        — nav items (data-view attr), #smart-views-nav, import/export buttons
     #content
-      #import-panel
-      #progress-panel
+      #import-panel — drop zone + folder import
       #email-list-panel
-        .toolbar
-        #bulk-tag-bar    ← shown in all email-list views; hidden for issues/transmittals
+        .toolbar    — #view-title, #sv-tab-toggle, search, sort
         .email-list-header
-        #email-list
+        #email-scroll → #email-list   (virtual scroll container)
 
-#email-modal-overlay → #detail-panel   (email detail modal)
-#sv-modal-overlay    → #sv-modal       (smart view editor modal)
+#email-modal-overlay → #detail-panel  (email detail modal, j/k navigation)
+#sv-modal-overlay    → #sv-modal      (smart view editor modal)
+#import-progress-bar                  (bottom bar during import, with log)
 #toast
 ```
 
 ## Adding a new feature — checklist
 
-1. **New email action** → add button in `renderDetailActions` (inside `openDetail` in `js/render.js`) + async handler in `js/actions.js`
+1. **New email action** → add button in the `det-actions` block (inside `openDetail` in `js/render.js`) + async handler in `js/actions.js`
 2. **New view** → add entry to `VIEW_LABELS` in `js/state.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views/routing.js`
-3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS`; add case in `getEmailFieldValue`
-4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed
-5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js`
+3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS` (group-style fields go in `GROUP_FIELDS`); add case in `getEmailFieldValue`
+4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed; include it in `exportData`/`importData` in `js/export.js`
+5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js` (`showSettings`)
 
 ---
 
 ## Analysis: Migration from IndexedDB to SQL
 
-*Recorded 2026-02-27*
+*Recorded 2026-02-27 — kept as a decision record; some schema details reference stores/fields that have since been removed (e.g. issues).*
 
 ### Motivation
 
@@ -315,7 +315,7 @@ CREATE VIRTUAL TABLE emails_fts USING fts5(
 
 | Challenge | Detail |
 |---|---|
-| **Array fields** | `toAddrs`, `ccAddrs`, `references`, `tags`, `linkedIssues` are JS arrays today. In SQL they become junction tables (`email_addresses`, `email_tags`, `email_issue_links`). Every current call site that reads/writes these must change. |
+| **Array fields** | `toAddrs`, `ccAddrs`, `references`, `tags` are JS arrays today. In SQL they become junction tables (`email_addresses`, `email_tags`). Every current call site that reads/writes these must change. |
 | **Smart view rules** | Rules are arbitrary JS objects; storing as `rules_json TEXT` and deserializing in JS is the pragmatic choice. SQL-side rule evaluation would require dynamic query generation — complex but possible. |
 | **allEmails in-memory cache** | The entire rendering pipeline assumes `allEmails` is a populated JS array. With SQL the array could be populated lazily (paginated) or replaced by direct DB queries in `applyFilters`. The latter is a larger refactor. |
 | **FTS sync** | The `emails_fts` trigger must be kept in sync on insert/update/delete. SQLite WASM supports triggers so this is handled automatically. |
@@ -349,4 +349,4 @@ Current IndexedDB wrappers map straightforwardly to SQL equivalents:
 
 **Technically feasible on GitHub Pages, but not warranted at current scale.** The original blocker — that OPFS requires COOP/COEP headers GitHub Pages can't set — has two viable workarounds: the `opfs-sahpool` VFS (SQLite ≥ 3.43) drops the SAB requirement entirely, and `coi-serviceworker` can inject the headers client-side for the standard `opfs` VFS. Either path runs on Pages today.
 
-What *hasn't* changed is the cost/benefit balance: a migration touches every call site that reads array fields (`toAddrs`, `ccAddrs`, `tags`, `linkedIssues`), trades the single-`index.html` deploy for a ~1.5 MB WASM bundle + worker, and the in-memory JS pipeline already handles 10k emails without user-visible lag (especially after the rule-engine memoization and virtual-scrolling changes). Revisit if the corpus crosses ~50k emails or full-text search latency becomes a complaint — `opfs-sahpool` is the recommended starting point at that time.
+What *hasn't* changed is the cost/benefit balance: a migration touches every call site that reads array fields (`toAddrs`, `ccAddrs`, `tags`), trades the single-`index.html` deploy for a ~1.5 MB WASM bundle + worker, and the in-memory JS pipeline already handles 10k emails without user-visible lag (especially after the rule-engine memoization and virtual-scrolling changes). Revisit if the corpus crosses ~50k emails or full-text search latency becomes a complaint — `opfs-sahpool` is the recommended starting point at that time.

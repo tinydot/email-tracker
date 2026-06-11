@@ -19,10 +19,8 @@ async function init() {
   ]);
   if (emails.length > 0) {
     allEmails = emails;
-    buildThreadCache();
+    await updateHeaderStats(); // rebuilds msgId index + thread cache, updates nav counts
     applyFilters();
-    updateNavCounts();
-    await updateHeaderStats();
     showPanel('list');
   } else {
     showPanel('import');

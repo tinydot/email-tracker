@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════
 
 async function toggleAutomated(id) {
-  const email = emailIdIndex.get(id) || allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id);
   if (!email) return;
   if (email.isSystemEmail) {
     email.isSystemEmail = false;
@@ -23,7 +23,7 @@ async function addTag(id, tagName) {
   const tag = tagName || prompt('Enter tag:');
   if (!tag) return;
   const clean = tag.trim().toLowerCase();
-  const email = allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id);
   if (!email) return;
   if ((email.tagExclusions || []).includes(clean)) {
     toast(`"${clean}" is excluded on this email — click ⊘ chip to un-exclude first`, 'warn');
@@ -38,7 +38,7 @@ async function addTag(id, tagName) {
 }
 
 async function removeTag(id, tag) {
-  const email = allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id);
   if (!email) return;
   email.tags = (email.tags || []).filter(t => t !== tag);
   renderDetailTags(email); // update UI immediately
@@ -47,7 +47,7 @@ async function removeTag(id, tag) {
 
 // Exclude a tag: removes it AND marks it so auto-tag/bulk won't reapply
 async function excludeTag(id, tag) {
-  const email = allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id);
   if (!email) return;
   email.tags = (email.tags || []).filter(t => t !== tag);
   if (!email.tagExclusions) email.tagExclusions = [];
@@ -59,7 +59,7 @@ async function excludeTag(id, tag) {
 
 // Remove exclusion — allows the tag to be applied again
 async function unexcludeTag(id, tag) {
-  const email = allEmails.find(e => e.id === id);
+  const email = emailIdIndex.get(id);
   if (!email) return;
   email.tagExclusions = (email.tagExclusions || []).filter(t => t !== tag);
   await dbPut('emails', email);
@@ -72,9 +72,8 @@ async function deleteEmail(id) {
   const atts = await dbGetByIndex('attachments', 'emailId', id);
   for (const a of atts) await dbDelete('attachments', a.id);
   allEmails = allEmails.filter(e => e.id !== id);
-  rebuildMsgIdIndex();   // allEmails changed
   closeDetail();
+  await updateHeaderStats(); // rebuilds msgId index + thread cache from updated allEmails
   applyFilters();
-  await updateHeaderStats();
   toast('Email deleted', 'ok');
 }

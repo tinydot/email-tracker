@@ -3,14 +3,17 @@
 // ═══════════════════════════════════════════════════════
 
 async function backfillSystemEmailFlag() {
-  const toUpdate = allEmails.filter(e => e.isSystemEmail !== true);
-  if (!toUpdate.length) return 0;
   let flagged = 0;
-  for (const e of toUpdate) {
+  for (const e of allEmails) {
+    // Respect manual unmark — never re-flag what the user overrode
+    if (e.isSystemEmail === true || e.manualSystemOverride) continue;
     // rawHeaders not persisted — use available stored fields only
-    e.isSystemEmail = detectSystemEmail({}, e.fromAddr, e.subject, e.textBody);
-    if (e.isSystemEmail) flagged++;
-    await dbPut('emails', e);
+    const detected = detectSystemEmail({}, e.fromAddr, e.subject, e.textBody);
+    if (detected) flagged++;
+    if (e.isSystemEmail !== detected) {
+      e.isSystemEmail = detected;
+      await dbPut('emails', e);
+    }
   }
   return flagged;
 }
@@ -34,8 +37,10 @@ async function loadEmailList() {
   updateNavCounts();
 }
 
+// Refreshes header stats, nav counts, and the storage indicator from the
+// in-memory allEmails array. Callers must update allEmails first; indexes
+// and the thread cache are rebuilt here (in-memory, no email re-read).
 async function updateHeaderStats() {
-  allEmails = await dbGetAll('emails');
   rebuildMsgIdIndex();
   buildThreadCache();
   const atts = await dbGetAll('attachments');
@@ -95,12 +100,18 @@ async function changeAttachmentFolder() {
 }
 
 function updateNavCounts() {
-  const threadRoots = allEmails.filter(e => !e.inReplyTo && hasReplies(e)).length;
+  let unread = 0, threadRoots = 0, attach = 0, automated = 0;
+  for (const e of allEmails) {
+    if (e.status === 'unread') unread++;
+    if (!e.inReplyTo && hasReplies(e)) threadRoots++;
+    if (e.hasAttachments) attach++;
+    if (e.isSystemEmail) automated++;
+  }
   document.getElementById('n-all').textContent       = allEmails.length;
-  document.getElementById('n-unread').textContent    = allEmails.filter(e => e.status === 'unread').length;
+  document.getElementById('n-unread').textContent    = unread;
   document.getElementById('n-threads').textContent   = threadRoots;
-  document.getElementById('n-attach').textContent    = allEmails.filter(e => e.hasAttachments).length;
-  document.getElementById('n-automated').textContent = allEmails.filter(e => e.isSystemEmail).length;
+  document.getElementById('n-attach').textContent    = attach;
+  document.getElementById('n-automated').textContent = automated;
 
   // Refresh smart view counts in sidebar
   renderSmartViewsSidebar();
