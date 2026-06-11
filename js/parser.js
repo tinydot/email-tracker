@@ -110,23 +110,23 @@ function parseEML(raw) {
     }
   }
 
+  // Prefer the plain-text part; fall back to HTML converted to text.
+  // The fallback happens *before* quote/signature stripping so HTML-only
+  // emails get truncated the same way as plain-text ones.
+  const rawBody = textBody || (htmlBody ? stripHtml(htmlBody) : '');
+
   // Clean quoted text from body for "first message" view
-  let cleanText = textBody ? stripQuotedText(textBody) : '';
+  let cleanText = rawBody ? stripQuotedText(rawBody) : '';
 
   // If stripping removed everything, keep the original
-  if (!cleanText && textBody) {
-    cleanText = textBody.trim();
+  if (!cleanText && rawBody) {
+    cleanText = rawBody.trim();
   }
 
   // Strip corporate/boilerplate signature block from the bottom
   if (cleanText) {
     const noSig = stripSignature(cleanText);
     if (noSig) cleanText = noSig;
-  }
-  
-  // If still no text, try HTML
-  if (!cleanText && htmlBody) {
-    cleanText = stripHtml(htmlBody);
   }
 
   // Remove excessive blank lines (e.g. \r\n\r\n \r\n\r\n → single newline)
@@ -156,7 +156,7 @@ function parseEML(raw) {
     cc,
     date,
     textBody:    cleanText,
-    rawTextBody: textBody,
+    rawTextBody: rawBody,
     htmlBody:    htmlBody ? '[HTML available]' : '',
     attachments,
     rawHeaders:  headers,
@@ -522,8 +522,10 @@ function isThreadMarker(trimmed, lines, i) {
     /^-{3,}\s*Original Message\s*-{3,}/i.test(trimmed) ||
     /^_{3,}\s*Original Message\s*_{3,}/i.test(trimmed) ||
     (/^From:/i.test(trimmed) && lines[i+1] && /^Sent:/i.test(lines[i+1].trim())) ||
+    /^From:.*Sent:.*To:/i.test(trimmed) ||
     /^={3,}$/i.test(trimmed) ||
     /^-{5,}$/i.test(trimmed) ||
+    /^_{5,}$/.test(trimmed) ||
     /^Begin forwarded message:/i.test(trimmed) ||
     /^-{3,}\s*Forwarded message\s*-{3,}/i.test(trimmed) ||
     /^发件人:|^寄件者:/i.test(trimmed) ||
@@ -557,14 +559,12 @@ function stripQuotedText(text) {
   // Remove lines starting with > (quoted), and common quote headers
   const lines = text.split('\n');
   const cleaned = [];
-  let foundThreadMarker = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 
     if (isThreadMarker(trimmed, lines, i)) {
-      foundThreadMarker = true;
       break;
     }
 
@@ -573,10 +573,7 @@ function stripQuotedText(text) {
       continue;
     }
 
-    // If we haven't hit a thread marker yet, keep the line
-    if (!foundThreadMarker) {
-      cleaned.push(line);
-    }
+    cleaned.push(line);
   }
 
   return cleaned.join('\n').trim();

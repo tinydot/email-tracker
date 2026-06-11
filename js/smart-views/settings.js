@@ -233,6 +233,7 @@ const DEFAULT_QUOTE_PATTERNS = [
   /^From:.*Sent:.*To:/i,
   /^={3,}$/,
   /^-{5,}$/,
+  /^_{5,}$/,
   /^Begin forwarded message:/i,
   /^-{3,}\s*Forwarded message\s*-{3,}/i,
   /^发件人:|^寄件者:/i,
