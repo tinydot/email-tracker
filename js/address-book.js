@@ -96,7 +96,7 @@ async function showAddressBookEditor(emailKey) {
 
   const overlay = document.getElementById('sv-modal-overlay');
   const modal   = document.getElementById('sv-modal');
-  overlay.style.display = 'flex';
+  overlay.classList.add('open');
 
   modal.innerHTML = `
     <div style="padding:24px;max-width:480px;width:100%;">
@@ -161,7 +161,7 @@ async function showAddressBookEditor(emailKey) {
 
 function closeAddressBookEditor() {
   const overlay = document.getElementById('sv-modal-overlay');
-  overlay.style.display = 'none';
+  overlay.classList.remove('open');
   document.getElementById('sv-modal').innerHTML = '';
 }
 
