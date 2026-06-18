@@ -99,7 +99,7 @@ async function showAddressBookEditor(emailKey) {
   overlay.classList.add('open');
 
   modal.innerHTML = `
-    <div style="padding:24px;max-width:480px;width:100%;">
+    <div style="padding:24px;width:100%;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
         <h2 style="margin:0;font-size:16px;">${isNew ? 'Add Contact' : 'Edit Contact'}</h2>
         <button class="modal-close" onclick="closeAddressBookEditor()">×</button>
