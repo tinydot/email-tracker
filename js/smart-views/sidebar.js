@@ -34,6 +34,7 @@ function setSvSubView(sub) {
 }
 
 let _svThumbUrls = [];
+let _svAttachmentRows = [];
 
 async function showSvAttachments() {
   // Revoke any previous thumbnail blob URLs
@@ -61,11 +62,13 @@ async function showSvAttachments() {
   }
 
   const rows = deduplicateAttachmentsByHash(rawRows);
+  _svAttachmentRows = rows;
 
   container.innerHTML = `
     <div style="display:flex; flex-direction:column; height:100%;">
       <div style="padding:8px 12px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; background:var(--surface); flex-shrink:0;">
         <span style="font-size:12px; color:var(--muted);">${rows.length} attachment${rows.length !== 1 ? 's' : ''}</span>
+        <button onclick="exportSvAttachmentsCsv()" style="margin-left:auto; font-size:11px; padding:4px 10px; cursor:pointer; background:var(--surface2); border:1px solid var(--border2); border-radius:4px; color:var(--text);" title="Export this table to CSV">⬇ Export CSV</button>
       </div>
       <div style="overflow:auto; flex:1;">
     <table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -130,6 +133,64 @@ async function showSvAttachments() {
 
   // Asynchronously load image thumbnails
   _loadSvThumbnails(container);
+}
+
+function _csvCell(val) {
+  const s = (val == null ? '' : String(val));
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function exportSvAttachmentsCsv() {
+  const rows = _svAttachmentRows;
+  if (!rows || !rows.length) {
+    toast('No attachments to export', 'warn');
+    return;
+  }
+
+  const fmtAddr = (e) => {
+    if (!e) return '';
+    return e.fromName ? `${e.fromName} <${e.fromAddr || ''}>` : (e.fromAddr || '');
+  };
+  const fmtTo = (e) => {
+    if (!e) return '';
+    return [...(e.toAddrs || []), ...(e.ccAddrs || [])].join('; ');
+  };
+
+  const header = ['File', 'Subject', 'From', 'To/CC', 'Date', 'Size', 'Emails'];
+  const lines = [header.map(_csvCell).join(',')];
+
+  for (const r of rows) {
+    const emails = r._allEmails || [r.email];
+    const subjects = [...new Set(emails.map(e => e?.subject).filter(Boolean))].join(' | ');
+    const froms = [...new Set(emails.map(fmtAddr).filter(Boolean))].join(' | ');
+    const tos = [...new Set(emails.map(fmtTo).filter(Boolean))].join(' | ');
+    const allDates = emails.map(e => e?.date).filter(Boolean).sort();
+    const dateStr = allDates.length ? formatDate(allDates[0]) : '';
+    lines.push([
+      r.filename,
+      subjects,
+      froms,
+      tos,
+      dateStr,
+      formatSize(r.size),
+      emails.length,
+    ].map(_csvCell).join(','));
+  }
+
+  const csv = '﻿' + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const svName = (smartViews.find(s => 'sv-' + s.id === currentView)?.name || 'attachments')
+    .replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'attachments';
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `transmittal-${svName}-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`Exported ${rows.length} attachment${rows.length !== 1 ? 's' : ''} to CSV`, 'ok');
 }
 
 async function _loadSvThumbnails(container) {
