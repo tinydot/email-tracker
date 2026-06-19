@@ -147,7 +147,7 @@ function exportSvAttachmentsCsv() {
     return;
   }
 
-  const header = ['File', 'Subject', 'Sender Domain', 'Size', 'Date'];
+  const header = ['File', 'Subject', 'Sender Domain', 'Size (KB)', 'Date'];
   const lines = [header.map(_csvCell).join(',')];
 
   for (const r of rows) {
@@ -156,11 +156,12 @@ function exportSvAttachmentsCsv() {
     const domains = [...new Set(emails.map(e => ((e?.fromAddr || '').split('@')[1] || '').toLowerCase()).filter(Boolean))].join(' | ');
     const allDates = emails.map(e => e?.date).filter(Boolean).sort();
     const dateStr = allDates.length ? formatDate(allDates[0]) : '';
+    const sizeKb = r.size ? (r.size / 1024).toFixed(1) : '';
     lines.push([
       r.filename,
       subjects,
       domains,
-      formatSize(r.size),
+      sizeKb,
       dateStr,
     ].map(_csvCell).join(','));
   }
