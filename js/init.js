@@ -30,12 +30,31 @@ async function init() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeDetail(); return; }
+  const tag = document.activeElement?.tagName;
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  // Escape closes whichever overlay is open
+  if (e.key === 'Escape') {
+    if (document.getElementById('sv-modal-overlay').classList.contains('open')) {
+      closeSmartViewEditor();
+    } else if (document.getElementById('email-modal-overlay').classList.contains('open')) {
+      closeDetail();
+    }
+    return;
+  }
+
   const modalOpen = document.getElementById('email-modal-overlay').classList.contains('open');
+
+  // "/" focuses the search box when no modal is open and not already typing
+  if (e.key === '/' && !modalOpen && !typing) {
+    const search = document.getElementById('search-input');
+    if (search) { e.preventDefault(); search.focus(); }
+    return;
+  }
+
   if (!modalOpen) return;
   // Don't intercept if user is typing in an input/select/textarea
-  const tag = document.activeElement?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (typing) return;
   if (e.key === 'j' || e.key === 'ArrowRight') { e.preventDefault(); navigateEmail(1); }
   if (e.key === 'k' || e.key === 'ArrowLeft')  { e.preventDefault(); navigateEmail(-1); }
 });
