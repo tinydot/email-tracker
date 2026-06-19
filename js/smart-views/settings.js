@@ -446,8 +446,11 @@ function showSettings() {
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:4px;">Quote / reply truncation patterns</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
-          When importing, the email body is truncated at the first line matching one of these patterns —
-          keeping only the top-most reply and discarding the quoted thread below.
+          Removes the <strong>quoted thread below</strong> a message — the older replies appended when
+          someone hits "Reply". On import, the body is cut at the first line matching one of these patterns,
+          keeping only the top-most reply and discarding everything beneath it.
+          <em>(This is separate from signature stripping below, which removes the footer of the current
+          message; the two work together.)</em>
           Built-in patterns are shown in gray. Add custom patterns as plain text (substring match) or <code>/regex/</code>.
         </div>
         ${renderQuotePatternSection()}
@@ -463,9 +466,12 @@ function showSettings() {
       <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="font-weight:500; margin-bottom:4px;">Signature stripping patterns</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:14px;">
-          When importing, corporate signature blocks (disclaimers, confidentiality notices, etc.) are removed from the bottom of
-          each email body when a line matches one of these patterns. Built-in patterns are shown in gray.
-          Add custom patterns as plain text (substring match) or <code>/regex/</code>.
+          Removes the <strong>signature / footer of the current message</strong> — corporate disclaimers,
+          confidentiality notices, "Sent from my iPhone", etc. — that sit above any quoted thread.
+          On import, the block starting at a matching line is removed while any quoted reply below it is kept.
+          <em>(This catches footers that truncation can't — e.g. a fresh email with a signature but no quoted
+          thread underneath.)</em>
+          Built-in patterns are shown in gray. Add custom patterns as plain text (substring match) or <code>/regex/</code>.
         </div>
         ${renderSignaturePatternSection()}
         <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
