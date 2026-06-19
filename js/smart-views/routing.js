@@ -112,6 +112,8 @@ function applyFilters() {
   selectedEmailIdx = selectedEmail ? filteredEmails.findIndex(e => e.id === selectedEmail.id) : -1;
   if (currentView.startsWith('sv-') && svSubView === 'attachments') {
     showSvAttachments();
+  } else if (currentView.startsWith('sv-') && svSubView === 'links') {
+    showSvLinks();
   } else {
     renderEmailList();
   }

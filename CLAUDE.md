@@ -23,7 +23,7 @@ email-tracker/
     ├── smart-views/  ← smart views (split into focused modules)
     │   ├── rule-engine.js ← RULE_FIELDS, evaluateRule, applySmartViewRules, lowercase caches
     │   ├── editor.js      ← smart view editor modal (grouped rules, required tags)
-    │   ├── sidebar.js     ← renderSmartViewsSidebar, sv tab toggle, sv attachments view
+    │   ├── sidebar.js     ← renderSmartViewsSidebar, sv tab toggle, sv attachments + links views
     │   ├── routing.js     ← switchView, applyFilters, searchEmails, applySort
     │   └── settings.js    ← showSettings: email groups, custom patterns, maintenance
     ├── render.js     ← virtual-scrolled email list, detail modal, body edit/truncation
@@ -141,7 +141,7 @@ Smart views use a **grouped rules** format (legacy flat `{ruleOperator, rules}` 
 
 Rule evaluation: `evaluateRule(email, rule)` → `applySmartViewRules(email, sv)` → used in `applyFilters()` and `renderSmartViewsSidebar()` (sidebar badges count *unread* matches).
 
-Each smart view has an Emails/Attachments tab toggle (`svSubView`); the attachments sub-view (`showSvAttachments`) lists attachments of the filtered emails, deduplicated by hash.
+Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the attachments sub-view (`showSvAttachments`) lists attachments of the filtered emails, deduplicated by hash. The links sub-view (`showSvLinks`) scans the (truncated) `textBody` of the filtered emails for http(s) URLs and lists them deduplicated by URL — useful for spotting external file-transfer/cloud-storage links (WeTransfer, Dropbox, Google Drive, etc., classified via `FILE_TRANSFER_HOSTS`) that don't appear as attachments. Defaults to file-transfer links only, with a toggle to show all links; both attachment and link tables export to CSV.
 
 ## Tagging
 
