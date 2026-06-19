@@ -34,8 +34,9 @@ function renderEmailRowHtml(email) {
   const threadDepth = getThreadDepth(email);
   const indent = (currentView === 'threads' && threadDepth > 0) ? (threadDepth * 12) + 'px' : '';
 
+  const rowLabel = escHtml(`${from}: ${email.subject || '(no subject)'}`);
   return `
-    <div class="email-row ${unread} ${selected}" data-id="${email.id}" onclick="selectEmail('${email.id}')">
+    <div class="email-row ${unread} ${selected}" data-id="${email.id}" role="button" tabindex="0" aria-label="${rowLabel}" onclick="selectEmail('${email.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectEmail('${email.id}')}">
       <div class="col-flag">${dot}</div>
       <div class="col-from" title="${escHtml(email.fromAddr)}">${escHtml(truncate(from, 26))}</div>
       <div class="col-subject" title="${escHtml(email.subject)}">
@@ -358,7 +359,15 @@ function _renderBodyText(el, text, cidMap) {
   }
 }
 
+// Element focused before the detail modal opened, restored on close
+let _focusBeforeModal = null;
+
 function openDetail(email) {
+  // Remember focus so we can restore it when the modal closes (a11y)
+  if (!document.getElementById('email-modal-overlay').classList.contains('open')) {
+    _focusBeforeModal = document.activeElement;
+  }
+
   // Revoke any previous inline image blob URLs
   for (const url of _inlineImageUrls) URL.revokeObjectURL(url);
   _inlineImageUrls = [];
@@ -370,6 +379,8 @@ function openDetail(email) {
 
   document.getElementById('email-modal-overlay').classList.add('open');
   document.getElementById('email-modal-overlay').scrollTop = 0;
+  // Move focus into the dialog so keyboard/screen-reader users land inside it
+  document.getElementById('detail-panel').focus();
   updateModalNavButtons();
 
   // Subject
@@ -607,11 +618,17 @@ function renderDetailTags(email) {
 }
 
 function closeDetail() {
+  const wasOpen = document.getElementById('email-modal-overlay').classList.contains('open');
   selectedEmail = null;
   selectedEmailIdx = -1;
   for (const url of _inlineImageUrls) URL.revokeObjectURL(url);
   _inlineImageUrls = [];
   document.getElementById('email-modal-overlay').classList.remove('open');
+  // Restore focus to the element that opened the modal (a11y)
+  if (wasOpen && _focusBeforeModal && document.contains(_focusBeforeModal)) {
+    _focusBeforeModal.focus();
+  }
+  _focusBeforeModal = null;
 }
 
 function handleModalOverlayClick(e) {

@@ -7,8 +7,8 @@
     --border:    #d4d4d4;
     --border2:   #b8b8b8;
     --text:      #111111;
-    --muted:     #888;
-    --accent:    #16a34a;
+    --muted:     #6b6b6b;
+    --accent:    #15803d;
     --accent-dim:#dcfce7;
     --warn:      #ca8a04;
     --warn-dim:  #fef9c3;
@@ -193,15 +193,22 @@
     white-space: nowrap;
   }
 
-  .btn:hover { border-color: var(--border2); background: var(--surface2); }
+  .btn:hover { border-color: var(--border2); background: var(--border); }
   .btn:active { transform: scale(0.98); }
+
+  /* Visible keyboard focus for all interactive elements */
+  :focus-visible {
+    outline: 2px solid var(--info);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
 
   .btn-primary {
     background: var(--accent);
     border-color: var(--accent);
     color: #000;
   }
-  .btn-primary:hover { background: #15803d; border-color: #15803d; }
+  .btn-primary:hover { background: #166534; border-color: #166534; }
 
   .btn-danger {
     background: var(--danger-dim);
@@ -815,7 +822,7 @@
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
   /* ── Thread indicator ── */
   .thread-dot {
@@ -1046,3 +1053,32 @@
     transition: color 0.1s;
   }
   .pattern-chip .del-pat:hover { color: var(--danger); }
+
+  /* keyboard focus on a list row sits inside the row so it isn't clipped by the scroller */
+  .email-row:focus-visible {
+    outline: 2px solid var(--info);
+    outline-offset: -2px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 860px) {
+    #sidebar { width: 180px; }
+    #import-progress-bar { left: 180px; }
+    .toolbar { flex-wrap: wrap; }
+    .search-input { flex: 1 1 140px; width: auto; }
+    .email-row, .email-list-header { grid-template-columns: 24px 150px 1fr 110px 80px; }
+    .col-status { display: none; }
+  }
+
+  @media (max-width: 620px) {
+    #sidebar { width: 150px; }
+    #import-progress-bar { left: 150px; }
+    header { padding: 0 14px; gap: 10px; }
+    .header-stats { gap: 12px; }
+    .header-stats .stat:nth-child(3) { display: none; } /* attachments stat */
+    .email-row, .email-list-header { grid-template-columns: 24px 1fr 88px; }
+    .col-from, .col-attach { display: none; }
+    #email-modal-overlay, #sv-modal-overlay { padding: 16px 10px 40px; }
+    .detail-header { padding: 12px 12px 14px 16px; }
+    .detail-actions, .detail-body, .detail-attachments { padding-left: 16px; padding-right: 16px; }
+  }

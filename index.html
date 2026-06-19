@@ -51,7 +51,7 @@
       <div class="sidebar-section">
         <div class="sidebar-label-row">
           <span class="sidebar-label">Smart Views</span>
-          <button class="sidebar-add-btn" onclick="showSmartViewEditor()" title="New Smart View">+</button>
+          <button class="sidebar-add-btn" onclick="showSmartViewEditor()" title="New Smart View" aria-label="New Smart View">+</button>
         </div>
         <div id="smart-views-nav">
           <div style="padding:4px 8px; font-size:11px; color:var(--muted); font-style:italic;">No smart views yet</div>
@@ -126,16 +126,16 @@
 </div><!-- /app -->
 
 <div id="email-modal-overlay" onclick="handleModalOverlayClick(event)">
-  <div id="detail-panel">
+  <div id="detail-panel" role="dialog" aria-modal="true" aria-labelledby="det-subject" tabindex="-1">
     <div class="detail-header">
       <div class="detail-header-top">
         <div class="detail-subject" id="det-subject">—</div>
         <div class="modal-nav">
-          <button class="modal-nav-btn" id="nav-prev" onclick="navigateEmail(-1)" title="Previous email (k)">‹</button>
+          <button class="modal-nav-btn" id="nav-prev" onclick="navigateEmail(-1)" title="Previous email (k)" aria-label="Previous email">‹</button>
           <span class="modal-nav-counter" id="nav-counter"></span>
-          <button class="modal-nav-btn" id="nav-next" onclick="navigateEmail(1)" title="Next email (j)">›</button>
+          <button class="modal-nav-btn" id="nav-next" onclick="navigateEmail(1)" title="Next email (j)" aria-label="Next email">›</button>
         </div>
-        <button class="modal-close" onclick="closeDetail()" title="Close (Esc)">×</button>
+        <button class="modal-close" onclick="closeDetail()" title="Close (Esc)" aria-label="Close">×</button>
       </div>
       <div class="detail-meta" id="det-meta"></div>
     </div>
@@ -166,7 +166,7 @@
 
 <!-- Smart View Editor Modal -->
 <div id="sv-modal-overlay" onclick="handleSvOverlayClick(event)">
-  <div id="sv-modal"></div>
+  <div id="sv-modal" role="dialog" aria-modal="true" tabindex="-1"></div>
 </div>
 
 
