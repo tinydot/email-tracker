@@ -147,17 +147,19 @@ function exportSvAttachmentsCsv() {
     return;
   }
 
-  const header = ['File', 'Subject', 'Size', 'Date'];
+  const header = ['File', 'Subject', 'Sender Domain', 'Size', 'Date'];
   const lines = [header.map(_csvCell).join(',')];
 
   for (const r of rows) {
     const emails = r._allEmails || [r.email];
     const subjects = [...new Set(emails.map(e => e?.subject).filter(Boolean))].join(' | ');
+    const domains = [...new Set(emails.map(e => ((e?.fromAddr || '').split('@')[1] || '').toLowerCase()).filter(Boolean))].join(' | ');
     const allDates = emails.map(e => e?.date).filter(Boolean).sort();
     const dateStr = allDates.length ? formatDate(allDates[0]) : '';
     lines.push([
       r.filename,
       subjects,
+      domains,
       formatSize(r.size),
       dateStr,
     ].map(_csvCell).join(','));
