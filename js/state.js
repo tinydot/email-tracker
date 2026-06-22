@@ -12,6 +12,7 @@ let selectedEmailIdx = -1; // index in filteredEmails for navigation
 let smartViews     = []; // user-created smart views
 let svSubView      = 'emails'; // 'emails' | 'attachments' | 'links' — sub-view within smart views
 let emailGroups    = []; // user-created email groups for smart view rules
+let attachmentNameIndex = new Map(); // emailId → lowercase attachment filenames (joined), for search
 
 const VIEW_LABELS = {
   all:          'All Emails',

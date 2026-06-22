@@ -85,11 +85,13 @@ function applyFilters() {
     }
 
     if (term) {
+      const attNames = attachmentNameIndex.get(e.id);
       if (
         !(e.subject  || '').toLowerCase().includes(term) &&
         !(e.fromAddr || '').toLowerCase().includes(term) &&
         !(e.fromName || '').toLowerCase().includes(term) &&
-        !(e.textBody || '').toLowerCase().includes(term)
+        !(e.textBody || '').toLowerCase().includes(term) &&
+        !(attNames && attNames.includes(term))
       ) continue;
     }
 

@@ -33,8 +33,24 @@ async function loadEmailList() {
   await backfillSystemEmailFlag();
   rebuildMsgIdIndex();   // must precede buildThreadCache (thread walks use msgIdIndex)
   buildThreadCache();
+  await buildAttachmentNameIndex();
   applyFilters();
   updateNavCounts();
+}
+
+// Build emailId → lowercase attachment filenames map so applyFilters() can
+// match the search term against attachment names without a per-email DB read.
+// Accepts a preloaded attachments array to avoid re-querying when the caller
+// already has one.
+async function buildAttachmentNameIndex(atts = null) {
+  if (!atts) atts = await dbGetAll('attachments');
+  attachmentNameIndex.clear();
+  for (const a of atts) {
+    if (!a.emailId || !a.filename) continue;
+    const prev = attachmentNameIndex.get(a.emailId);
+    const name = a.filename.toLowerCase();
+    attachmentNameIndex.set(a.emailId, prev ? prev + '\n' + name : name);
+  }
 }
 
 // Refreshes header stats, nav counts, and the storage indicator from the
@@ -44,6 +60,7 @@ async function updateHeaderStats() {
   rebuildMsgIdIndex();
   buildThreadCache();
   const atts = await dbGetAll('attachments');
+  await buildAttachmentNameIndex(atts);
 
   document.getElementById('h-total').textContent      = allEmails.length;
   document.getElementById('h-unread').textContent     = allEmails.filter(e => e.status === 'unread').length;
