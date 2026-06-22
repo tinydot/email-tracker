@@ -46,7 +46,7 @@ async function buildAttachmentNameIndex(atts = null) {
   if (!atts) atts = await dbGetAll('attachments');
   attachmentNameIndex.clear();
   for (const a of atts) {
-    if (!a.emailId || !a.filename) continue;
+    if (!a.emailId || !a.filename || a.isBlacklisted) continue;
     const prev = attachmentNameIndex.get(a.emailId);
     const name = a.filename.toLowerCase();
     attachmentNameIndex.set(a.emailId, prev ? prev + '\n' + name : name);
