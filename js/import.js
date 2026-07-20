@@ -58,6 +58,158 @@ async function organizeEmlFile(file, fromAddr) {
   }
 }
 
+// ═══════════════════════════════════════════════════════
+//  STORAGE CONNECTIONS
+//  Folder handles are persisted in the settings store so they
+//  survive reloads; a restored handle whose permission has lapsed
+//  is kept in a "pending" slot until the user clicks Reconnect
+//  (permission re-grant needs a user gesture).
+// ═══════════════════════════════════════════════════════
+
+let pendingAttachmentHandle = null;
+let pendingEmlHandle = null;
+
+async function persistDirHandle(key, handle) {
+  try {
+    await dbPut('settings', { key, handle });
+  } catch (err) {
+    console.warn('Could not persist folder handle:', key, err);
+  }
+}
+
+async function restoreDirHandles() {
+  if ('showDirectoryPicker' in window) {
+    try {
+      const rec = await dbGet('settings', 'attachmentDirHandle');
+      if (rec?.handle) {
+        const perm = await rec.handle.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') attachmentDirHandle = rec.handle;
+        else if (perm === 'prompt') pendingAttachmentHandle = rec.handle;
+      }
+    } catch (err) {
+      console.warn('Could not restore attachment folder handle:', err);
+    }
+    try {
+      const rec = await dbGet('settings', 'emlArchiveDirHandle');
+      if (rec?.handle) {
+        const perm = await rec.handle.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') emlArchiveDirHandle = rec.handle;
+        else if (perm === 'prompt') pendingEmlHandle = rec.handle;
+      }
+    } catch (err) {
+      console.warn('Could not restore EML archive folder handle:', err);
+    }
+  }
+  renderConnectionStatus();
+}
+
+async function connectAttachmentFolder() {
+  // One-click re-grant on the previously used folder, if we have one
+  if (!attachmentDirHandle && pendingAttachmentHandle) {
+    try {
+      const granted = await pendingAttachmentHandle.requestPermission({ mode: 'readwrite' });
+      if (granted === 'granted') {
+        attachmentDirHandle = pendingAttachmentHandle;
+        pendingAttachmentHandle = null;
+        renderConnectionStatus();
+        toast('Attachment folder reconnected: ' + attachmentDirHandle.name, 'ok');
+        return;
+      }
+    } catch (err) {
+      console.warn('Permission re-grant failed, falling back to picker:', err);
+    }
+  }
+  await setupAttachmentStorage();
+}
+
+async function connectEmlArchiveFolder() {
+  if (!emlArchiveDirHandle && pendingEmlHandle) {
+    try {
+      const granted = await pendingEmlHandle.requestPermission({ mode: 'readwrite' });
+      if (granted === 'granted') {
+        emlArchiveDirHandle = pendingEmlHandle;
+        pendingEmlHandle = null;
+        renderConnectionStatus();
+        toast('EML archive folder reconnected: ' + emlArchiveDirHandle.name, 'ok');
+        return;
+      }
+    } catch (err) {
+      console.warn('Permission re-grant failed, falling back to picker:', err);
+    }
+  }
+  await setupEmlArchiveFolder();
+}
+
+async function disconnectAttachmentFolder() {
+  attachmentDirHandle = null;
+  pendingAttachmentHandle = null;
+  try { await dbDelete('settings', 'attachmentDirHandle'); } catch {}
+  renderConnectionStatus();
+  toast('Attachment folder disconnected', 'ok');
+}
+
+async function disconnectEmlArchiveFolder() {
+  emlArchiveDirHandle = null;
+  pendingEmlHandle = null;
+  try { await dbDelete('settings', 'emlArchiveDirHandle'); } catch {}
+  renderConnectionStatus();
+  toast('EML archive folder disconnected', 'ok');
+}
+
+function renderConnectionStatus() {
+  const supported = 'showDirectoryPicker' in window;
+  const rows = [
+    {
+      dot: 'conn-attach-dot', detail: 'conn-attach-detail', btn: 'conn-attach-btn', x: 'conn-attach-x',
+      handle: attachmentDirHandle, pending: pendingAttachmentHandle,
+      connectedText: h => `Saving to “${h.name}” — organized by sender domain`,
+      offText: 'Not connected — attachments recorded as metadata only',
+    },
+    {
+      dot: 'conn-eml-dot', detail: 'conn-eml-detail', btn: 'conn-eml-btn', x: 'conn-eml-x',
+      handle: emlArchiveDirHandle, pending: pendingEmlHandle,
+      connectedText: h => `Copying imported .eml files into “${h.name}” by sender domain`,
+      offText: 'Optional — keeps a copy of each imported .eml by sender domain',
+    },
+  ];
+
+  for (const r of rows) {
+    const dot    = document.getElementById(r.dot);
+    const detail = document.getElementById(r.detail);
+    const btn    = document.getElementById(r.btn);
+    const x      = document.getElementById(r.x);
+    if (!dot || !detail || !btn || !x) return;
+
+    if (!supported) {
+      dot.className = 'conn-dot';
+      detail.textContent = 'Not supported in this browser (use Chrome or Edge)';
+      btn.disabled = true;
+      x.style.display = 'none';
+      continue;
+    }
+
+    if (r.handle) {
+      dot.className = 'conn-dot ok';
+      detail.textContent = r.connectedText(r.handle);
+      btn.textContent = 'Change';
+      x.style.display = '';
+    } else if (r.pending) {
+      dot.className = 'conn-dot warn';
+      detail.textContent = `“${r.pending.name}” needs permission — click Reconnect`;
+      btn.textContent = 'Reconnect';
+      x.style.display = '';
+    } else {
+      dot.className = 'conn-dot';
+      detail.textContent = r.offText;
+      btn.textContent = 'Connect';
+      x.style.display = 'none';
+    }
+  }
+
+  const importBtn = document.getElementById('conn-import-btn');
+  if (importBtn && !supported) importBtn.disabled = true;
+}
+
 async function setupAttachmentStorage() {
   if (!('showDirectoryPicker' in window)) {
     alert('File System Access API not supported in this browser.\n\nAttachments will be imported as metadata only.');
@@ -77,10 +229,14 @@ async function setupAttachmentStorage() {
       if (granted !== 'granted') {
         alert('Storage permission denied.\n\nAttachments will be imported as metadata only.');
         attachmentDirHandle = null;
+        renderConnectionStatus();
         return false;
       }
     }
-    
+
+    pendingAttachmentHandle = null;
+    await persistDirHandle('attachmentDirHandle', attachmentDirHandle);
+    renderConnectionStatus();
     toast('Attachment folder: ' + attachmentDirHandle.name, 'ok');
     return true;
   } catch (err) {
@@ -115,10 +271,14 @@ async function setupEmlArchiveFolder() {
       if (granted !== 'granted') {
         alert('Storage permission denied.');
         emlArchiveDirHandle = null;
+        renderConnectionStatus();
         return false;
       }
     }
-    
+
+    pendingEmlHandle = null;
+    await persistDirHandle('emlArchiveDirHandle', emlArchiveDirHandle);
+    renderConnectionStatus();
     toast('EML archive folder: ' + emlArchiveDirHandle.name, 'ok');
     return true;
   } catch (err) {
@@ -135,47 +295,9 @@ async function setupEmlArchiveFolder() {
 
 async function handleFiles(files) {
   if (!files.length) return;
-  const fileArr = Array.from(files);
-
-  // Check browser support
-  const hasFileSystemAPI = 'showDirectoryPicker' in window;
-
-  // If we don't have a storage folder yet and API is supported, ask upfront
-  if (!attachmentDirHandle && hasFileSystemAPI) {
-    const setupNow = confirm(
-      'Set up attachment storage folder?\n\n' +
-      'Attachments will be saved to a folder you choose.\n' +
-      'Click OK to select folder now, or Cancel to skip.\n\n' +
-      '(This folder will be remembered for this session.)'
-    );
-    
-    if (setupNow) {
-      await setupAttachmentStorage();
-    }
-  }
-  
-  // Ask about EML file organization
-  if (!emlArchiveDirHandle && hasFileSystemAPI && organizeEmlFiles) {
-    const setupEml = confirm(
-      'Organize imported EML files by sender domain?\n\n' +
-      'Files will be copied to domain-based folders.\n' +
-      'Click OK to select archive folder, or Cancel to skip.'
-    );
-    
-    if (setupEml) {
-      const success = await setupEmlArchiveFolder();
-      if (!success) {
-        const continueAnyway = confirm(
-          'EML archive folder not set up.\n\n' +
-          'Continue import without organizing EML files?'
-        );
-        if (!continueAnyway) return;
-      }
-    }
-  }
-
-  // Process files through the import pipeline
-  await processFilesForImport(fileArr);
+  // Storage folders are connected via the checklist in the import panel —
+  // no blocking prompts here; the import log notes what isn't connected.
+  await processFilesForImport(Array.from(files));
 }
 
 async function handleFolderImport() {
@@ -183,42 +305,7 @@ async function handleFolderImport() {
     alert('Folder import requires File System Access API which is not supported in this browser.\n\nPlease use Chrome or Edge.');
     return;
   }
-  
-  // Setup attachment storage FIRST (while we still have user gesture)
-  if (!attachmentDirHandle) {
-    const setupNow = confirm(
-      'Set up attachment storage folder?\n\n' +
-      'Attachments will be saved to a folder you choose.\n' +
-      'Click OK to select folder now, or Cancel to skip.\n\n' +
-      '(This folder will be remembered for this session.)'
-    );
-    
-    if (setupNow) {
-      await setupAttachmentStorage();
-    }
-  }
-  
-  // Setup EML archive SECOND (while we still have user gesture)
-  if (!emlArchiveDirHandle && organizeEmlFiles) {
-    const setupEml = confirm(
-      'Organize imported EML files by sender domain?\n\n' +
-      'Files will be copied to domain-based folders.\n' +
-      'Click OK to select archive folder, or Cancel to skip.'
-    );
-    
-    if (setupEml) {
-      const success = await setupEmlArchiveFolder();
-      if (!success) {
-        const continueAnyway = confirm(
-          'EML archive folder not set up.\n\n' +
-          'Continue import without organizing EML files?'
-        );
-        if (!continueAnyway) return;
-      }
-    }
-  }
-  
-  // NOW select the folder to scan (after all folder prompts are done)
+
   try {
     const dirHandle = await window.showDirectoryPicker({
       mode: 'read',
@@ -307,7 +394,14 @@ async function processFilesForImport(fileArr) {
   if (attachmentDirHandle) {
     appendLog(`Attachment storage: ${attachmentDirHandle.name}`, 'ok');
   } else {
-    appendLog(`Attachment storage: not configured (metadata only)`, 'warn');
+    appendLog(`Attachment storage: not connected (metadata only) — connect it in the Import screen`, 'warn');
+  }
+  if (organizeEmlFiles) {
+    if (emlArchiveDirHandle) {
+      appendLog(`EML archive: ${emlArchiveDirHandle.name}`, 'ok');
+    } else {
+      appendLog(`EML archive: not connected (originals stay where they are)`, 'warn');
+    }
   }
 
   let ok = 0, errs = 0, updated = 0;

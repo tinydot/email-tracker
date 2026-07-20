@@ -83,7 +83,7 @@ All JS files share a single global scope (loaded via `<script src>` tags in `ind
 - `tags` — global tag registry (keyPath: `name`) — note: tags are also stored inline on each email
 - `msgIndex` — messageId → emailId mapping
 - `smartViews` — user-defined filter views (keyPath: `id`)
-- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, …)
+- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, persisted storage folder handles `attachmentDirHandle`/`emlArchiveDirHandle`, …)
 - `emailGroups` — named address lists used by smart view group rules
 - `seenIds` — tombstones for discarded email IDs (prevents reimport)
 - `addressBook` — contact profiles (keyPath: `email`)
@@ -157,7 +157,7 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
   #main
     #sidebar        — nav items (data-view attr), #smart-views-nav, import/export buttons
     #content
-      #import-panel — drop zone + folder import
+      #import-panel — storage connection checklist (attachment folder, EML archive, import folder) + drop zone
       #email-list-panel
         .toolbar    — #view-title, #sv-tab-toggle, search, sort
         .email-list-header
