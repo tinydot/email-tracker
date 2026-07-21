@@ -260,11 +260,94 @@
     line-height: 1.6;
   }
 
+  /* ── Storage connection checklist ── */
+  .conn-list {
+    text-align: left;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .conn-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .conn-row + .conn-row { border-top: 1px solid var(--border); }
+
+  .conn-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .conn-info { flex: 1; min-width: 0; }
+
+  .conn-name { font-size: 13px; font-weight: 600; }
+
+  .conn-detail {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .conn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border2);
+    flex-shrink: 0;
+  }
+
+  .conn-dot.ok   { background: var(--accent); }
+  .conn-dot.warn { background: var(--warn); }
+
+  .conn-btn { flex-shrink: 0; white-space: nowrap; }
+
+  .conn-x {
+    flex-shrink: 0;
+    padding: 4px 8px;
+    color: var(--muted);
+  }
+
+  .import-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+
+  .import-divider::before,
+  .import-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
   .drop-zone {
     border: 2px dashed var(--border2);
     border-radius: 6px;
     padding: 32px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     transition: all 0.15s;
     cursor: pointer;
     position: relative;

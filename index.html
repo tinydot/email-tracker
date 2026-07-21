@@ -75,21 +75,47 @@
         <div class="import-card">
           <span class="import-icon">📬</span>
           <h2>Import EML Files</h2>
-          <p>Drop your exported <code>.eml</code> files below. Emails are parsed locally — nothing leaves your device.</p>
+          <p>Connect your storage folders, then choose the folder to import. Emails are parsed locally — nothing leaves your device.</p>
+
+          <div class="conn-list">
+            <div class="conn-row">
+              <span class="conn-num">1</span>
+              <div class="conn-info">
+                <div class="conn-name">📎 Attachment folder</div>
+                <div class="conn-detail" id="conn-attach-detail">Not connected — attachments recorded as metadata only</div>
+              </div>
+              <span class="conn-dot" id="conn-attach-dot"></span>
+              <button class="btn conn-x" id="conn-attach-x" onclick="disconnectAttachmentFolder()" title="Disconnect folder" style="display:none">✕</button>
+              <button class="btn conn-btn" id="conn-attach-btn" onclick="connectAttachmentFolder()">Connect</button>
+            </div>
+            <div class="conn-row">
+              <span class="conn-num">2</span>
+              <div class="conn-info">
+                <div class="conn-name">🗂 EML archive folder</div>
+                <div class="conn-detail" id="conn-eml-detail">Optional — keeps a copy of each imported .eml by sender domain</div>
+              </div>
+              <span class="conn-dot" id="conn-eml-dot"></span>
+              <button class="btn conn-x" id="conn-eml-x" onclick="disconnectEmlArchiveFolder()" title="Disconnect folder" style="display:none">✕</button>
+              <button class="btn conn-btn" id="conn-eml-btn" onclick="connectEmlArchiveFolder()">Connect</button>
+            </div>
+            <div class="conn-row">
+              <span class="conn-num">3</span>
+              <div class="conn-info">
+                <div class="conn-name">📥 Import email folder</div>
+                <div class="conn-detail">Scans the chosen folder and all subfolders for .eml files</div>
+              </div>
+              <button class="btn btn-primary conn-btn" id="conn-import-btn" onclick="handleFolderImport()">Choose &amp; Import</button>
+            </div>
+          </div>
+
+          <div class="import-divider"><span>or</span></div>
+
           <div class="drop-zone" id="drop-zone">
             <input type="file" id="file-input" accept=".eml" multiple onchange="handleFiles(this.files)">
             <div class="drop-zone-text">
               <strong>Click to select</strong> or drag & drop .eml files<br>
               <span style="font-size:11px; margin-top:4px; display:block;">Multiple files supported</span>
             </div>
-          </div>
-          <div style="display:flex; gap:8px; justify-content:center;">
-            <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
-              Choose Files
-            </button>
-            <button class="btn" onclick="handleFolderImport()">
-              📁 Import Folder
-            </button>
           </div>
         </div>
       </div>

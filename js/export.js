@@ -27,7 +27,8 @@ async function exportData() {
     tags,
     msgIndex,
     smartViews,
-    settings,
+    // Folder handles are machine-local and not JSON-serializable — skip them
+    settings: settings.filter(s => !s.handle),
     emailGroups,
     seenIds,
     addressBook,
@@ -78,7 +79,7 @@ async function importData(input) {
 
   // Restore settings (don't overwrite existing values)
   for (const s of settings) {
-    if (!s.key) continue;
+    if (!s.key || s.handle) continue; // handle records are machine-local
     const existing = await dbGet('settings', s.key);
     if (!existing) await dbPut('settings', s);
   }

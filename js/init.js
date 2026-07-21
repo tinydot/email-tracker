@@ -16,6 +16,7 @@ async function init() {
     loadAttachTextLimit(),
     loadSmartViews(),
     dbGetAll('emails'),
+    restoreDirHandles(), // reconnect persisted storage folder handles
   ]);
   if (emails.length > 0) {
     allEmails = emails;
