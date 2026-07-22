@@ -820,38 +820,46 @@ async function _extractAndStoreText(attId, data, contentType, filename) {
   }
 }
 
-// Manual single-attachment extraction — reads the file from the stored path on disk.
-async function extractTextManualFromDisk(attId) {
+// Manual single-attachment extraction — re-reads the email's archived .eml
+// (attachment files are not stored on disk) and pulls the attachment's raw
+// data out of the parsed message.
+async function extractTextFromEml(attId) {
   const att = await dbGet('attachments', attId);
   if (!att) return;
 
-  if (!att.storedPath) {
-    toast('No file stored on disk for this attachment', 'warn');
-    return;
-  }
   if (!isExtractableType(att.contentType, att.filename)) {
     toast(`${att.filename}: format not supported for text extraction`, 'warn');
     return;
   }
 
-  if (!attachmentDirHandle) {
-    const ok = confirm('Attachment folder not connected.\nClick OK to select the folder.');
-    if (ok) {
-      const success = await setupAttachmentStorage();
-      if (!success) { toast('Cannot extract without folder access', 'err'); return; }
-    } else return;
-  }
+  const email = emailIdIndex.get(att.emailId);
+  if (!email) { toast('Email not found for this attachment', 'err'); return; }
 
   const btn = document.getElementById(`extract-btn-${attId}`);
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
 
   try {
-    const parts       = att.storedPath.split('/');
-    const domainDir   = await attachmentDirHandle.getDirectoryHandle(parts[0]);
-    const fileHandle  = await domainDir.getFileHandle(parts[1]);
-    const file        = await fileHandle.getFile();
-    const buf         = await file.arrayBuffer();
-    const text        = await extractAttachmentText(new Uint8Array(buf), att.contentType, att.filename);
+    const resolved = await _resolveEmlFile(email);
+    if (!resolved) {
+      if (btn) { btn.disabled = false; btn.textContent = '↺'; }
+      return;
+    }
+    const raw = await resolved.file.text();
+    const parsed = parseEML(raw);
+    if (!parsed) throw new Error('Failed to parse EML file');
+
+    // Locate the attachment's raw data in the parsed message.
+    // Nested attachments live inside an embedded .eml part.
+    let data = null;
+    if (att.isNested) {
+      const parent = parsed.attachments.find(a => a.filename === att.parentFilename);
+      data = (parent?.nestedAttachments || []).find(n => n.filename === att.filename)?.rawData || null;
+    } else {
+      data = parsed.attachments.find(a => a.filename === att.filename)?.rawData || null;
+    }
+    if (!data) throw new Error(`"${att.filename}" not found in the archived EML`);
+
+    const text = await extractAttachmentText(data, att.contentType, att.filename);
     att.extractedText    = text ?? '';
     att.extractionStatus = text != null ? 'done' : 'unsupported';
     att.extractedAt      = Date.now();
@@ -869,57 +877,6 @@ async function extractTextManualFromDisk(attId) {
 
   // Re-render the open detail panel so buttons + preview update
   if (selectedEmail) openDetail(selectedEmail);
-}
-
-// Bulk extraction — iterates all stored attachments that don't yet have extracted text.
-async function bulkExtractAttachmentText() {
-  const atts    = await dbGetAll('attachments');
-  const pending = atts.filter(a =>
-    !a.extractionStatus && isExtractableType(a.contentType, a.filename) && a.storedPath
-  );
-  if (!pending.length) {
-    toast('No pending extractable attachments with stored files', 'warn');
-    return;
-  }
-  if (!confirm(`Extract text from ${pending.length} attachment${pending.length !== 1 ? 's' : ''}?\n\nRequires the attachment folder to be connected.`)) return;
-
-  if (!attachmentDirHandle) {
-    const ok = confirm('Attachment folder not connected.\nClick OK to select the folder.');
-    if (ok) {
-      const success = await setupAttachmentStorage();
-      if (!success) { toast('Cannot extract without folder access', 'err'); return; }
-    } else return;
-  }
-
-  let done = 0, failed = 0;
-  toast(`Extracting text from ${pending.length} attachments…`, 'ok');
-
-  for (const att of pending) {
-    try {
-      const parts      = att.storedPath.split('/');
-      const domainDir  = await attachmentDirHandle.getDirectoryHandle(parts[0]);
-      const fileHandle = await domainDir.getFileHandle(parts[1]);
-      const file       = await fileHandle.getFile();
-      const buf        = await file.arrayBuffer();
-      const text       = await extractAttachmentText(new Uint8Array(buf), att.contentType, att.filename);
-      att.extractedText    = text ?? '';
-      att.extractionStatus = text != null ? 'done' : 'unsupported';
-      att.extractedAt      = Date.now();
-      await dbPut('attachments', att);
-      done++;
-      if (done % 10 === 0) toast(`Extracting text: ${done}/${pending.length}…`, 'ok');
-    } catch (err) {
-      att.extractionStatus = 'failed';
-      att.extractedAt      = Date.now();
-      await dbPut('attachments', att);
-      failed++;
-    }
-  }
-
-  toast(
-    `Text extraction complete: ${done} done${failed ? `, ${failed} failed` : ''}`,
-    failed && !done ? 'err' : 'ok'
-  );
 }
 
 function toggleAttachText(attId) {
