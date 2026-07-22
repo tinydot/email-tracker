@@ -3,9 +3,8 @@
 // ═══════════════════════════════════════════════════════
 
 let importedEmails = 0;
-let attachmentDirHandle = null; // File System Directory Handle
 let emlArchiveDirHandle = null; // For organizing imported EML files
-let extractNestedAttachments = true; // Setting: extract attachments from embedded .eml files
+let extractNestedAttachments = true; // Setting: record attachments from embedded .eml files
 let organizeEmlFiles = true; // Setting: copy EML files to organized folders by domain
 
 async function organizeEmlFile(file, fromAddr) {
@@ -66,7 +65,6 @@ async function organizeEmlFile(file, fromAddr) {
 //  (permission re-grant needs a user gesture).
 // ═══════════════════════════════════════════════════════
 
-let pendingAttachmentHandle = null;
 let pendingEmlHandle = null;
 
 async function persistDirHandle(key, handle) {
@@ -79,16 +77,8 @@ async function persistDirHandle(key, handle) {
 
 async function restoreDirHandles() {
   if ('showDirectoryPicker' in window) {
-    try {
-      const rec = await dbGet('settings', 'attachmentDirHandle');
-      if (rec?.handle) {
-        const perm = await rec.handle.queryPermission({ mode: 'readwrite' });
-        if (perm === 'granted') attachmentDirHandle = rec.handle;
-        else if (perm === 'prompt') pendingAttachmentHandle = rec.handle;
-      }
-    } catch (err) {
-      console.warn('Could not restore attachment folder handle:', err);
-    }
+    // Attachment extraction was removed — clean up the legacy folder handle
+    try { await dbDelete('settings', 'attachmentDirHandle'); } catch {}
     try {
       const rec = await dbGet('settings', 'emlArchiveDirHandle');
       if (rec?.handle) {
@@ -103,26 +93,8 @@ async function restoreDirHandles() {
   renderConnectionStatus();
 }
 
-async function connectAttachmentFolder() {
-  // One-click re-grant on the previously used folder, if we have one
-  if (!attachmentDirHandle && pendingAttachmentHandle) {
-    try {
-      const granted = await pendingAttachmentHandle.requestPermission({ mode: 'readwrite' });
-      if (granted === 'granted') {
-        attachmentDirHandle = pendingAttachmentHandle;
-        pendingAttachmentHandle = null;
-        renderConnectionStatus();
-        toast('Attachment folder reconnected: ' + attachmentDirHandle.name, 'ok');
-        return;
-      }
-    } catch (err) {
-      console.warn('Permission re-grant failed, falling back to picker:', err);
-    }
-  }
-  await setupAttachmentStorage();
-}
-
 async function connectEmlArchiveFolder() {
+  // One-click re-grant on the previously used folder, if we have one
   if (!emlArchiveDirHandle && pendingEmlHandle) {
     try {
       const granted = await pendingEmlHandle.requestPermission({ mode: 'readwrite' });
@@ -140,14 +112,6 @@ async function connectEmlArchiveFolder() {
   await setupEmlArchiveFolder();
 }
 
-async function disconnectAttachmentFolder() {
-  attachmentDirHandle = null;
-  pendingAttachmentHandle = null;
-  try { await dbDelete('settings', 'attachmentDirHandle'); } catch {}
-  renderConnectionStatus();
-  toast('Attachment folder disconnected', 'ok');
-}
-
 async function disconnectEmlArchiveFolder() {
   emlArchiveDirHandle = null;
   pendingEmlHandle = null;
@@ -160,16 +124,10 @@ function renderConnectionStatus() {
   const supported = 'showDirectoryPicker' in window;
   const rows = [
     {
-      dot: 'conn-attach-dot', detail: 'conn-attach-detail', btn: 'conn-attach-btn', x: 'conn-attach-x',
-      handle: attachmentDirHandle, pending: pendingAttachmentHandle,
-      connectedText: h => `Saving to “${h.name}” — organized by sender domain`,
-      offText: 'Not connected — attachments recorded as metadata only',
-    },
-    {
       dot: 'conn-eml-dot', detail: 'conn-eml-detail', btn: 'conn-eml-btn', x: 'conn-eml-x',
       handle: emlArchiveDirHandle, pending: pendingEmlHandle,
       connectedText: h => `Copying imported .eml files into “${h.name}” by sender domain`,
-      offText: 'Optional — keeps a copy of each imported .eml by sender domain',
+      offText: 'Not connected — needed to reopen originals and their attachments later',
     },
   ];
 
@@ -208,48 +166,6 @@ function renderConnectionStatus() {
 
   const importBtn = document.getElementById('conn-import-btn');
   if (importBtn && !supported) importBtn.disabled = true;
-}
-
-async function setupAttachmentStorage() {
-  if (!('showDirectoryPicker' in window)) {
-    alert('File System Access API not supported in this browser.\n\nAttachments will be imported as metadata only.');
-    return false;
-  }
-
-  try {
-    attachmentDirHandle = await window.showDirectoryPicker({
-      mode: 'readwrite',
-      startIn: 'documents',
-    });
-    
-    // Check permission
-    const permission = await attachmentDirHandle.queryPermission({ mode: 'readwrite' });
-    if (permission !== 'granted') {
-      const granted = await attachmentDirHandle.requestPermission({ mode: 'readwrite' });
-      if (granted !== 'granted') {
-        alert('Storage permission denied.\n\nAttachments will be imported as metadata only.');
-        attachmentDirHandle = null;
-        renderConnectionStatus();
-        return false;
-      }
-    }
-
-    pendingAttachmentHandle = null;
-    await persistDirHandle('attachmentDirHandle', attachmentDirHandle);
-    renderConnectionStatus();
-    toast('Attachment folder: ' + attachmentDirHandle.name, 'ok');
-    return true;
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      // User cancelled - silent failure
-      console.log('Folder selection cancelled by user');
-      return false;
-    } else {
-      console.error('Attachment folder setup failed:', err);
-      alert('Failed to select attachment folder:\n' + err.message + '\n\nAttachments will be imported as metadata only.');
-      return false;
-    }
-  }
 }
 
 async function setupEmlArchiveFolder() {
@@ -391,11 +307,6 @@ async function processFilesForImport(fileArr) {
   };
 
   appendLog(`Starting import of ${fileArr.length} file(s)…`);
-  if (attachmentDirHandle) {
-    appendLog(`Attachment storage: ${attachmentDirHandle.name}`, 'ok');
-  } else {
-    appendLog(`Attachment storage: not connected (metadata only) — connect it in the Import screen`, 'warn');
-  }
   if (organizeEmlFiles) {
     if (emlArchiveDirHandle) {
       appendLog(`EML archive: ${emlArchiveDirHandle.name}`, 'ok');
@@ -509,7 +420,6 @@ async function processFilesForImport(fileArr) {
           size: att.size,
           hash: att.hash,
           contentId: att.contentId || null,
-          storedPath: '',
           isNested: false,
           parentFilename: null,
           importedAt: new Date().toISOString(),
@@ -519,18 +429,6 @@ async function processFilesForImport(fileArr) {
         const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
         if (existingForBlacklist.some(a => a.isBlacklisted)) {
           attRecord.isBlacklisted = true;
-        }
-
-        // Save attachment to disk if storage is available
-        if (attachmentDirHandle && att.rawData) {
-          try {
-            const savedPath = await saveAttachmentToDisk(att, emailRecord.fromAddr);
-            if (savedPath) {
-              attRecord.storedPath = savedPath;
-            }
-          } catch (err) {
-            appendLog(`  ⚠ Failed to save ${att.filename}: ${err.message}`, 'warn');
-          }
         }
 
         await dbPut('attachments', attRecord);
@@ -551,7 +449,6 @@ async function processFilesForImport(fileArr) {
               contentType: nested.contentType,
               size: nested.size,
               hash: nested.hash,
-              storedPath: '',
               isNested: true,
               parentFilename: att.filename,
               importedAt: new Date().toISOString(),
@@ -561,18 +458,6 @@ async function processFilesForImport(fileArr) {
             const existingNested = await dbGetByIndex('attachments', 'hash', nested.hash);
             if (existingNested.some(a => a.isBlacklisted)) {
               nestedRecord.isBlacklisted = true;
-            }
-
-            // Save nested attachment to disk
-            if (attachmentDirHandle && nested.rawData) {
-              try {
-                const savedPath = await saveAttachmentToDisk(nested, emailRecord.fromAddr);
-                if (savedPath) {
-                  nestedRecord.storedPath = savedPath;
-                }
-              } catch (err) {
-                appendLog(`  ⚠ Failed to save nested ${nested.filename}: ${err.message}`, 'warn');
-              }
             }
 
             await dbPut('attachments', nestedRecord);
@@ -590,9 +475,7 @@ async function processFilesForImport(fileArr) {
       allEmails.push(emailRecord);
       const totalAttachments = parsed.attachments.reduce((sum, att) =>
         sum + 1 + (att.nestedAttachments?.length || 0), 0);
-      const attInfo = totalAttachments > 0
-        ? ` [${totalAttachments} attach${attachmentDirHandle ? ' → saved' : ''}]`
-        : '';
+      const attInfo = totalAttachments > 0 ? ` [${totalAttachments} attach]` : '';
       appendLog(`✓ ${file.name}${attInfo}`, 'ok');
 
     } catch (err) {
@@ -632,78 +515,6 @@ async function processFilesForImport(fileArr) {
   title.textContent = 'Importing emails…';
 
   toast(`Imported ${ok} email(s)`, 'ok');
-}
-
-// ═══════════════════════════════════════════════════════
-//  ATTACHMENT FILE STORAGE
-// ═══════════════════════════════════════════════════════
-
-async function saveAttachmentToDisk(attachment, senderEmail) {
-  if (!attachmentDirHandle || !attachment.rawData) return null;
-
-  // Organize by sender domain: attachments/rcy.com.sg/filename.pdf
-  const domain = senderEmail.split('@')[1] || 'unknown';
-  // Sanitize domain and remove leading/trailing underscores
-  const sanitizedDomain = domain.replace(/[^a-zA-Z0-9.-]/g, '_').replace(/^_+|_+$/g, '');
-  
-  try {
-    // Check if this attachment already exists by hash (deduplication)
-    const existingByHash = await findAttachmentByHash(attachment.hash);
-    if (existingByHash && existingByHash.storedPath) {
-      console.log('Attachment already exists (duplicate):', attachment.filename, '→ reusing', existingByHash.storedPath);
-      return existingByHash.storedPath; // Return existing path, don't save again
-    }
-    
-    // Get or create domain subfolder
-    const domainFolder = await attachmentDirHandle.getDirectoryHandle(sanitizedDomain, { create: true });
-    
-    // Sanitize filename
-    let filename = attachment.filename.replace(/[<>:"/\\|?*]/g, '_');
-    
-    // Check if file exists by name - if so, add counter
-    let finalFilename = filename;
-    let counter = 1;
-    let fileHandle = null;
-    
-    while (counter < 1000) {
-      try {
-        fileHandle = await domainFolder.getFileHandle(finalFilename, { create: false });
-        // File exists - try next number
-        const extIndex = filename.lastIndexOf('.');
-        const basename = extIndex > 0 ? filename.substring(0, extIndex) : filename;
-        const ext = extIndex > 0 ? filename.substring(extIndex) : '';
-        finalFilename = `${basename}_${counter}${ext}`;
-        counter++;
-      } catch {
-        // File doesn't exist - good to use
-        break;
-      }
-    }
-    
-    // Create and write file
-    fileHandle = await domainFolder.getFileHandle(finalFilename, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(attachment.rawData);
-    await writable.close();
-    
-    const fullPath = `${sanitizedDomain}/${finalFilename}`;
-    console.log('Saved attachment:', attachment.filename, '→', fullPath);
-    return fullPath;
-  } catch (err) {
-    console.error('Failed to save attachment:', attachment.filename, err);
-    throw err;
-  }
-}
-
-async function findAttachmentByHash(hash) {
-  // Use the hash index instead of a full table scan
-  try {
-    const atts = await dbGetByIndex('attachments', 'hash', hash);
-    return atts.find(a => a.storedPath) || null;
-  } catch (err) {
-    console.error('Error checking for duplicate attachment:', err);
-    return null;
-  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -791,22 +602,10 @@ async function reimportEmlBody(emailId) {
       truncFindMatches();
     }
 
-    // Re-process attachments — add any that are missing from the DB.
+    // Re-process attachments — add any metadata records missing from the DB.
     // Existing attachment records are left untouched to preserve blacklist
-    // status and other persisted flags.
-
-    // If there are attachments to save but no folder is connected, prompt for one now.
-    // (We're still inside a user-gesture call chain so showDirectoryPicker is allowed.)
-    const hasRawData = parsed.attachments.some(a => a.rawData ||
-      (a.nestedAttachments || []).some(n => n.rawData));
-    if (!attachmentDirHandle && hasRawData && 'showDirectoryPicker' in window) {
-      const pick = confirm(
-        'This email has attachments to save.\n\n' +
-        'Select the attachment storage folder to save them to disk,\n' +
-        'or Cancel to record metadata only.'
-      );
-      if (pick) await setupAttachmentStorage();
-    }
+    // status and other persisted flags. Files are never written to disk —
+    // the archived .eml itself is the attachment store.
 
     let newAttCount = 0;
     for (const att of parsed.attachments) {
@@ -822,7 +621,6 @@ async function reimportEmlBody(emailId) {
           size: att.size,
           hash: att.hash,
           contentId: att.contentId || null,
-          storedPath: '',
           isNested: false,
           parentFilename: null,
           importedAt: new Date().toISOString(),
@@ -831,28 +629,11 @@ async function reimportEmlBody(emailId) {
         const existingForBlacklist = await dbGetByIndex('attachments', 'hash', att.hash);
         if (existingForBlacklist.some(a => a.isBlacklisted)) attRecord.isBlacklisted = true;
 
-        if (attachmentDirHandle && att.rawData) {
-          try {
-            const savedPath = await saveAttachmentToDisk(att, email.fromAddr);
-            if (savedPath) attRecord.storedPath = savedPath;
-          } catch (e) { /* non-fatal */ }
-        }
-
         await dbPut('attachments', attRecord);
         if (att.rawData && isExtractableType(att.contentType, att.filename)) {
           _extractAndStoreText(attId, att.rawData, att.contentType, att.filename).catch(() => {});
         }
         newAttCount++;
-      } else if (!existing.storedPath && attachmentDirHandle && att.rawData) {
-        // Record exists but file was never saved — save it now and patch storedPath
-        try {
-          const savedPath = await saveAttachmentToDisk(att, email.fromAddr);
-          if (savedPath) {
-            existing.storedPath = savedPath;
-            await dbPut('attachments', existing);
-            newAttCount++;
-          }
-        } catch (e) { /* non-fatal */ }
       }
 
       // Process nested attachments (embedded .eml files)
@@ -869,7 +650,6 @@ async function reimportEmlBody(emailId) {
             size: nested.size,
             hash: nested.hash,
             contentId: nested.contentId || null,
-            storedPath: '',
             isNested: true,
             parentFilename: att.filename,
             importedAt: new Date().toISOString(),
@@ -878,28 +658,11 @@ async function reimportEmlBody(emailId) {
           const existingNestedBL = await dbGetByIndex('attachments', 'hash', nested.hash);
           if (existingNestedBL.some(a => a.isBlacklisted)) nestedRecord.isBlacklisted = true;
 
-          if (attachmentDirHandle && nested.rawData) {
-            try {
-              const savedPath = await saveAttachmentToDisk(nested, email.fromAddr);
-              if (savedPath) nestedRecord.storedPath = savedPath;
-            } catch (e) { /* non-fatal */ }
-          }
-
           await dbPut('attachments', nestedRecord);
           if (nested.rawData && isExtractableType(nested.contentType, nested.filename)) {
             _extractAndStoreText(nestedId, nested.rawData, nested.contentType, nested.filename).catch(() => {});
           }
           newAttCount++;
-        } else if (!existingNested.storedPath && attachmentDirHandle && nested.rawData) {
-          // Patch missing storedPath for already-recorded nested attachment
-          try {
-            const savedPath = await saveAttachmentToDisk(nested, email.fromAddr);
-            if (savedPath) {
-              existingNested.storedPath = savedPath;
-              await dbPut('attachments', existingNested);
-              newAttCount++;
-            }
-          } catch (e) { /* non-fatal */ }
         }
       }
     }
@@ -907,23 +670,16 @@ async function reimportEmlBody(emailId) {
     // Update email's attachment count if new attachments were found
     if (newAttCount > 0) {
       const allAtts = await dbGetByIndex('attachments', 'emailId', emailId);
+      // email comes from emailIdIndex — same object as in allEmails/selectedEmail
       email.hasAttachments = allAtts.length > 0;
       email.attachmentCount = allAtts.length;
-      if (idx >= 0) {
-        allEmails[idx].hasAttachments = email.hasAttachments;
-        allEmails[idx].attachmentCount = email.attachmentCount;
-      }
       await dbPut('emails', email);
 
       // Refresh detail panel if email is still open
-      if (selectedEmail?.id === emailId) {
-        selectedEmail.hasAttachments = email.hasAttachments;
-        selectedEmail.attachmentCount = email.attachmentCount;
-        openDetail(email);
-      }
+      if (selectedEmail?.id === emailId) openDetail(email);
     }
 
-    const attMsg = newAttCount > 0 ? `, ${newAttCount} attachment${newAttCount > 1 ? 's' : ''} saved` : '';
+    const attMsg = newAttCount > 0 ? `, ${newAttCount} attachment${newAttCount > 1 ? 's' : ''} recorded` : '';
     toast(`Body loaded from ${sanitizedDomain}/${targetFilename}${attMsg} — pick truncation or Save Full`, 'ok');
   } catch (err) {
     toast('Reimport failed: ' + err.message, 'err');
@@ -948,66 +704,10 @@ async function openOriginalEml(emailId) {
   }
 }
 
-// Returns the File object for a stored attachment path, or null if unavailable.
-// Does NOT create an object URL — caller is responsible for that.
-async function getAttachmentFileObject(storedPath) {
-  if (!storedPath || !attachmentDirHandle) return null;
-  try {
-    const parts = storedPath.split('/');
-    const domainFolder = await attachmentDirHandle.getDirectoryHandle(parts[0]);
-    const fileHandle = await domainFolder.getFileHandle(parts[1]);
-    return await fileHandle.getFile();
-  } catch {
-    return null;
-  }
-}
-
-async function openAttachmentFromDisk(storedPath) {
-  if (!storedPath) {
-    toast('No file path stored for this attachment', 'err');
-    return;
-  }
-
-  // If we don't have the folder handle, ask user to restore it
-  if (!attachmentDirHandle) {
-    const restore = confirm(
-      'Attachment folder not connected.\n\n' +
-      'Click OK to select the attachment folder where files are stored.'
-    );
-    
-    if (restore) {
-      const success = await setupAttachmentStorage();
-      if (!success) {
-        toast('Cannot open attachment without folder access', 'err');
-        return;
-      }
-    } else {
-      return;
-    }
-  }
-
-  try {
-    const parts = storedPath.split('/');
-    const domainFolder = await attachmentDirHandle.getDirectoryHandle(parts[0]);
-    const fileHandle = await domainFolder.getFileHandle(parts[1]);
-    const file = await fileHandle.getFile();
-    
-    // Open file in new tab or download
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = parts[1];
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    toast('Attachment opened', 'ok');
-  } catch (err) {
-    console.error('Failed to open attachment:', err);
-    
-    if (err.name === 'NotFoundError') {
-      toast('File not found - it may have been moved or deleted', 'err');
-    } else {
-      toast('Failed to open attachment: ' + err.message, 'err');
-    }
-  }
+// Attachments are not extracted to disk — the archived .eml is the attachment
+// store. "Opening" an attachment downloads the email's .eml so the user can
+// open it in their mail client and view the attachment there.
+async function downloadEmlForAttachment(emailId) {
+  await openOriginalEml(emailId);
+  toast('Open the downloaded .eml in your email client to view the attachment', 'ok');
 }

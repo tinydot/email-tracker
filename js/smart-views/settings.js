@@ -401,10 +401,10 @@ function showSettings() {
           <input type="checkbox" id="setting-nested" ${extractNestedAttachments ? 'checked' : ''}
                  onchange="toggleNestedAttachments(this.checked)"
                  style="width:18px; height:18px; cursor:pointer;">
-          <label for="setting-nested" style="cursor:pointer; font-weight:500;">Extract nested attachments from forwarded emails</label>
+          <label for="setting-nested" style="cursor:pointer; font-weight:500;">Record nested attachments from forwarded emails</label>
         </div>
         <div style="color:var(--muted); font-size:12px; margin-left:30px;">
-          When enabled, attachments inside forwarded .eml files will be extracted and saved separately.
+          When enabled, attachments inside forwarded .eml files will be recorded separately in the attachments list.
           <br>Nested files will be marked with ↳ in the attachments list.
         </div>
       </div>

@@ -67,7 +67,7 @@ async function updateHeaderStats() {
   document.getElementById('h-attachments').textContent = atts.length;
 
   updateNavCounts();
-  await updateStorageIndicator(atts); // Pass attachments to avoid re-querying
+  await updateStorageIndicator();
 }
 
 // Fast in-memory stats update — no IndexedDB reads, used after single-email changes
@@ -81,38 +81,33 @@ function updateHeaderStatsFast() {
   _navCountsDebounceTimer = setTimeout(updateNavCounts, 300);
 }
 
-async function updateStorageIndicator(atts = null) {
+async function updateStorageIndicator() {
   const indicator = document.getElementById('storage-indicator');
   const label = document.getElementById('h-storage');
-  
-  if (attachmentDirHandle) {
+
+  if (emlArchiveDirHandle) {
     indicator.style.display = '';
     indicator.style.color = 'var(--accent)';
-    indicator.title = 'Attachment folder connected. Click to change.';
-    label.textContent = attachmentDirHandle.name;
+    indicator.title = 'EML archive folder connected. Click to change.';
+    label.textContent = emlArchiveDirHandle.name;
+  } else if (allEmails.some(e => e.emlArchivePath)) {
+    // Emails reference archived .eml files but the folder isn't connected
+    indicator.style.display = '';
+    indicator.style.color = 'var(--warn)';
+    indicator.title = 'EML archive folder disconnected. Click to reconnect.';
+    label.textContent = 'Disconnected';
   } else {
-    // Check if we have any stored attachments
-    if (!atts) atts = await dbGetAll('attachments');
-    const hasStoredFiles = atts.some(a => a.storedPath);
-    
-    if (hasStoredFiles) {
-      indicator.style.display = '';
-      indicator.style.color = 'var(--warn)';
-      indicator.title = 'Attachment folder disconnected. Click to reconnect.';
-      label.textContent = 'Disconnected';
-    } else {
-      indicator.style.display = 'none';
-    }
+    indicator.style.display = 'none';
   }
 }
 
-async function changeAttachmentFolder() {
-  if (attachmentDirHandle) {
-    const proceed = confirm('Change attachment storage folder?\n\nThis will not move existing files.');
+async function changeEmlArchiveFolder() {
+  if (emlArchiveDirHandle) {
+    const proceed = confirm('Change EML archive folder?\n\nThis will not move existing files.');
     if (!proceed) return;
   }
-  
-  await setupAttachmentStorage();
+
+  await setupEmlArchiveFolder();
   updateStorageIndicator();
 }
 

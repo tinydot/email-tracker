@@ -180,7 +180,6 @@ function selectEmail(id) {
 let _truncMatches = [];     // [{lineIndex, snippet}]
 let _truncCurrent = -1;     // which match is previewed (-1 = none)
 let _truncOrigBody = null;  // original textBody before any preview
-let _inlineImageUrls = [];  // blob URLs for inline CID images (revoked on close)
 
 // Clears match state, sets the status label, and hides all truncation buttons
 function _resetTruncControls(statusText) {
@@ -368,10 +367,6 @@ function openDetail(email) {
     _focusBeforeModal = document.activeElement;
   }
 
-  // Revoke any previous inline image blob URLs
-  for (const url of _inlineImageUrls) URL.revokeObjectURL(url);
-  _inlineImageUrls = [];
-
   // Reset truncation state for new email
   _truncMatches = [];
   _truncCurrent = -1;
@@ -473,11 +468,8 @@ function openDetail(email) {
       const ATTACH_THRESHOLD = 3;
 
       const renderAttachItem = (a, showingBlacklisted = false) => {
-        const hasFile = !!a.storedPath;
-        const action = hasFile
-          ? `onclick="openAttachmentFromDisk('${escHtml(a.storedPath)}')" title="Click to open"`
-          : 'title="File not stored on disk"';
-        const icon = hasFile ? '📎' : '📋';
+        const action = `onclick="downloadEmlForAttachment('${escHtml(a.emailId)}')" title="Download the original .eml to open this attachment"`;
+        const icon = '📎';
         const blacklistBtn = `<button class="btn" onclick="toggleAttachmentBlacklist('${a.id}')" style="padding:2px 6px; font-size:10px; ${a.isBlacklisted ? 'color:var(--accent);' : 'color:var(--muted);'}" title="${a.isBlacklisted ? 'Unblacklist (show in list)' : 'Blacklist (hide from list)'}">${a.isBlacklisted ? '🚫' : '○'}</button>`;
 
         const extractable = isExtractableType(a.contentType, a.filename);
@@ -487,13 +479,13 @@ function openDetail(email) {
           const status = a.extractionStatus;
           if (!status || status === 'failed') {
             const lbl = status === 'failed' ? '↺' : '⇩T';
-            extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:2px 6px; font-size:10px;" title="${status === 'failed' ? 'Retry extract' : 'Extract text'}">${lbl}</button>`;
+            extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="${status === 'failed' ? 'Retry extract' : 'Extract text'}">${lbl}</button>`;
           } else if (status === 'done') {
             if (a.extractedText) {
-              extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Toggle extracted text">T✓</button><button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
+              extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Toggle extracted text">T✓</button><button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
               textPreview = `<div id="att-text-${a.id}" style="display:none; margin:2px 0 4px 0; padding:8px 10px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:300px; overflow-y:auto;">${escHtml(a.extractedText)}</div>`;
             } else {
-              extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextManualFromDisk('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
+              extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
             }
           }
         }
@@ -501,7 +493,7 @@ function openDetail(email) {
         return `
           <div class="attach-item">
             <div class="attach-chip" ${action} style="flex:1; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-              ${icon} ${escHtml(a.filename)}<span class="attach-size" style="margin-left:6px;">${formatSize(a.size)}</span>${hasFile ? '<span style="color:var(--accent);margin-left:4px">●</span>' : ''}
+              ${icon} ${escHtml(a.filename)}<span class="attach-size" style="margin-left:6px;">${formatSize(a.size)}</span>
             </div>
             ${extractBtn}
             ${blacklistBtn}
@@ -535,28 +527,6 @@ function openDetail(email) {
         <div class="detail-attach-title">Attachments (${visibleAtts.length}${blacklistedAtts.length > 0 ? `+${blacklistedAtts.length}` : ''})</div>
         <div class="attach-list">${visibleHtml}${overflowHtml}${blacklistedHtml}</div>
       `;
-
-      // Resolve inline CID images and re-render body with <img> elements
-      const bodyText = email.textBody || '';
-      if (bodyText.includes('[cid:')) {
-        const inlineImages = atts.filter(a => a.contentId && a.storedPath &&
-          a.contentType && a.contentType.startsWith('image/'));
-        if (inlineImages.length > 0) {
-          const cidMap = new Map();
-          for (const att of inlineImages) {
-            const file = await getAttachmentFileObject(att.storedPath);
-            if (!file) continue;
-            if (!selectedEmail || selectedEmail.id !== emailIdAtLoad) return;
-            const url = URL.createObjectURL(file);
-            _inlineImageUrls.push(url);
-            cidMap.set(att.contentId, url);
-          }
-          if (cidMap.size > 0 && selectedEmail && selectedEmail.id === emailIdAtLoad) {
-            const el = document.getElementById('det-body-text');
-            if (el) _renderBodyText(el, bodyText, cidMap);
-          }
-        }
-      }
     });
   } else {
     attPanel.style.display = 'none';
@@ -621,8 +591,6 @@ function closeDetail() {
   const wasOpen = document.getElementById('email-modal-overlay').classList.contains('open');
   selectedEmail = null;
   selectedEmailIdx = -1;
-  for (const url of _inlineImageUrls) URL.revokeObjectURL(url);
-  _inlineImageUrls = [];
   document.getElementById('email-modal-overlay').classList.remove('open');
   // Restore focus to the element that opened the modal (a11y)
   if (wasOpen && _focusBeforeModal && document.contains(_focusBeforeModal)) {

@@ -17,7 +17,7 @@ email-tracker/
     ├── db.js         ← IndexedDB wrapper (openDB + db* helpers)
     ├── parser.js     ← EML parser (MIME, encodings, signature/quote stripping)
     ├── detection.js  ← system/automated email detection patterns
-    ├── import.js     ← import pipeline, attachment/EML file storage, reimport
+    ├── import.js     ← import pipeline, EML archiving, reimport
     ├── threading.js  ← msgId/emailId indexes + memoized thread root/depth caches
     ├── state.js      ← global state variables + showPanel
     ├── smart-views/  ← smart views (split into focused modules)
@@ -79,11 +79,11 @@ All JS files share a single global scope (loaded via `<script src>` tags in `ind
 
 ### IndexedDB stores (`DB_VERSION = 9` in `js/db.js`)
 - `emails` — email records (indexes: messageId, threadId, date, fromAddr, status, isActionable, importedAt)
-- `attachments` — attachment metadata (indexes: `emailId`, `hash`)
+- `attachments` — attachment metadata only (indexes: `emailId`, `hash`) — attachment files are **not** extracted to disk; the archived .eml is the attachment store, and "opening" an attachment downloads the email's .eml (`downloadEmlForAttachment`)
 - `tags` — global tag registry (keyPath: `name`) — note: tags are also stored inline on each email
 - `msgIndex` — messageId → emailId mapping
 - `smartViews` — user-defined filter views (keyPath: `id`)
-- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, persisted storage folder handles `attachmentDirHandle`/`emlArchiveDirHandle`, …)
+- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, persisted EML archive folder handle `emlArchiveDirHandle`, …)
 - `emailGroups` — named address lists used by smart view group rules
 - `seenIds` — tombstones for discarded email IDs (prevents reimport)
 - `addressBook` — contact profiles (keyPath: `email`)
@@ -157,7 +157,7 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
   #main
     #sidebar        — nav items (data-view attr), #smart-views-nav, import/export buttons
     #content
-      #import-panel — storage connection checklist (attachment folder, EML archive, import folder) + drop zone
+      #import-panel — storage connection checklist (EML archive, import folder) + drop zone
       #email-list-panel
         .toolbar    — #view-title, #sv-tab-toggle, search, sort
         .email-list-header
