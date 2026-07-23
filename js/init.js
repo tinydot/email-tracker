@@ -17,6 +17,7 @@ async function init() {
     loadSmartViews(),
     dbGetAll('emails'),
     restoreDirHandles(), // reconnect persisted storage folder handles
+    loadGDriveSettings(), // Google Drive backup config
   ]);
   if (emails.length > 0) {
     allEmails = emails;

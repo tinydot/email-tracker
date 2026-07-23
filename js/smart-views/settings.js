@@ -541,6 +541,8 @@ function showSettings() {
         ${renderEmailGroupsSection()}
       </div>
 
+      ${typeof renderGDriveSection === 'function' ? renderGDriveSection() : ''}
+
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
         <div style="color:var(--muted); font-size:12px; margin-bottom:16px;">These actions are irreversible. Use with caution.</div>
@@ -566,6 +568,11 @@ function showSettings() {
     </div>
   `;
   closeDetail(); // Close detail panel if open
+
+  // Populate the Google Drive backups list if already connected this session.
+  if (typeof gdriveIsConnected === 'function' && gdriveIsConnected()) {
+    refreshGDriveBackupsList();
+  }
 }
 
 function toggleNestedAttachments(enabled) {

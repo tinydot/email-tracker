@@ -27,6 +27,11 @@ and go.
 - **Action items** view — flat list of structured action items across all
   analysed emails, filterable by open / resolved / deferred.
 - **JSON export / import** of the full corpus.
+- **Google Drive backup** (optional) — back up the full corpus to a folder in
+  your own Google Drive, with one-click restore and optional auto-backup after
+  each import. Uses your own OAuth Client ID and the least-privilege
+  `drive.file` scope (the app only ever sees files it created). See Settings →
+  Google Drive backup.
 
 All data lives in IndexedDB in your browser. Nothing is sent anywhere unless
 you explicitly use the Claude API integration.

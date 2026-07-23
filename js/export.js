@@ -2,7 +2,10 @@
 //  EXPORT / CLEAR
 // ═══════════════════════════════════════════════════════
 
-async function exportData() {
+// Assemble the full-corpus backup payload used by both the JSON export and the
+// Google Drive backup. Folder handles are machine-local and not JSON-serializable,
+// so settings records carrying a `handle` are dropped.
+async function buildBackupPayload() {
   const [
     emails, attachments, tags, msgIndex,
     smartViews, settings, emailGroups, seenIds,
@@ -19,7 +22,7 @@ async function exportData() {
     dbGetAll('addressBook'),
   ]);
 
-  const payload = {
+  return {
     schemaVersion: 3,
     exportedAt:    new Date().toISOString(),
     emails,
@@ -27,12 +30,15 @@ async function exportData() {
     tags,
     msgIndex,
     smartViews,
-    // Folder handles are machine-local and not JSON-serializable — skip them
     settings: settings.filter(s => !s.handle),
     emailGroups,
     seenIds,
     addressBook,
   };
+}
+
+async function exportData() {
+  const payload = await buildBackupPayload();
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -56,6 +62,15 @@ async function importData(input) {
     return;
   }
 
+  const { parts, anyAdded, totalRecords } = await applyBackupData(data);
+  if (totalRecords === 0) return; // toast already shown by applyBackupData
+  toast(parts.length ? parts.join(', ') : 'Nothing new to import', anyAdded ? 'ok' : '');
+}
+
+// Merge a parsed backup payload into the local database. Shared by JSON import
+// and Google Drive restore. Uses skip-if-existing upserts so a restore never
+// clobbers the user's current state. Returns a summary for the caller to report.
+async function applyBackupData(data) {
   const arr = k => (Array.isArray(data[k]) ? data[k] : []);
   const emails        = arr('emails');
   const attachments   = arr('attachments');
@@ -74,7 +89,7 @@ async function importData(input) {
 
   if (totalRecords === 0) {
     toast('Nothing to import', 'err');
-    return;
+    return { parts: [], anyAdded: false, totalRecords: 0 };
   }
 
   // Restore settings (don't overwrite existing values)
@@ -136,6 +151,7 @@ async function importData(input) {
     await loadCustomSignaturePatterns();
     await loadSignatureRanges();
     await loadAttachTextLimit();
+    if (typeof loadGDriveSettings === 'function') await loadGDriveSettings();
   }
   if (emailGroupsIn.length) await loadEmailGroups();
   if (smartViewsIn.length || settings.length || emailGroupsIn.length) await loadSmartViews();
@@ -157,7 +173,7 @@ async function importData(input) {
 
   const anyAdded = emailsAdded || attsAdded || svAdded || groupsAdded ||
                    abAdded || tagsAdded || seenAdded || msgAdded;
-  toast(parts.length ? parts.join(', ') : 'Nothing new to import', anyAdded ? 'ok' : '');
+  return { parts, anyAdded, totalRecords };
 }
 
 async function clearDB() {
