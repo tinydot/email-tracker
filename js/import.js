@@ -515,6 +515,11 @@ async function processFilesForImport(fileArr) {
   title.textContent = 'Importing emails…';
 
   toast(`Imported ${ok} email(s)`, 'ok');
+
+  // Auto-backup to Google Drive if enabled and something actually changed.
+  if ((ok > 0 || updated > 0) && typeof gdriveMaybeAutoBackup === 'function') {
+    gdriveMaybeAutoBackup();
+  }
 }
 
 // ═══════════════════════════════════════════════════════

@@ -29,14 +29,15 @@ email-tracker/
     ├── render.js     ← virtual-scrolled email list, detail modal, body edit/truncation
     ├── actions.js    ← email actions (tags, automated toggle, delete)
     ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts, backfill
-    ├── export.js     ← JSON export/import, clearDB, discard automated
+    ├── export.js     ← JSON export/import (buildBackupPayload/applyBackupData), clearDB, discard automated
+    ├── gdrive.js     ← Google Drive backup/restore (GIS OAuth, drive.file scope)
     ├── address-book.js ← contact profiles (name, role, projects)
     ├── dashboard.js  ← email volume over time, import activity, sender domains
     ├── helpers.js    ← drag & drop, formatDate, escHtml, toast
     └── init.js       ← init(), keyboard shortcuts (j/k, Escape)
 ```
 
-All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, parser, detection, import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
+All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, parser, detection, import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, gdrive, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
 
 ### Companion scripts (outside the web app)
 
@@ -83,7 +84,7 @@ All JS files share a single global scope (loaded via `<script src>` tags in `ind
 - `tags` — global tag registry (keyPath: `name`) — note: tags are also stored inline on each email
 - `msgIndex` — messageId → emailId mapping
 - `smartViews` — user-defined filter views (keyPath: `id`)
-- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, persisted EML archive folder handle `emlArchiveDirHandle`, …)
+- `settings` — key-value store (custom automation/quote/signature patterns, signature ranges, attach text limit, persisted EML archive folder handle `emlArchiveDirHandle`, Google Drive backup config `gdrive` = `{clientId, autoBackup, lastBackup}`, …)
 - `emailGroups` — named address lists used by smart view group rules
 - `seenIds` — tombstones for discarded email IDs (prevents reimport)
 - `addressBook` — contact profiles (keyPath: `email`)
@@ -176,6 +177,32 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
 3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS` (group-style fields go in `GROUP_FIELDS`); add case in `getEmailFieldValue`
 4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed; include it in `exportData`/`importData` in `js/export.js`
 5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js` (`showSettings`)
+
+## Google Drive backup (`js/gdrive.js`)
+
+Optional cloud backup of the full corpus to the user's own Google Drive. Config
+lives in Settings (`renderGDriveSection`), state persists as the `gdrive` settings
+record. Design points:
+
+- **Auth**: Google Identity Services (GIS), lazy-loaded (`loadGisScript`) only when
+  the user connects — the core app stays dependency-free/offline. The user brings
+  their own OAuth Client ID (Google Cloud Console → Web application client),
+  mirroring the "bring your own key" model used for the Claude API.
+- **Scope**: `drive.file` only — the app can read/write just the files it creates,
+  never the rest of the user's Drive.
+- **Tokens** live in memory only (`gdriveAccessToken`/`gdriveTokenExpiry`), never
+  persisted. `gdriveEnsureToken(interactive)` acquires/reuses a token; `gdriveFetch`
+  wraps Drive REST calls with a single silent retry on 401.
+- **Backups**: `gdriveBackupNow` uploads `buildBackupPayload()` (shared with
+  `exportData`) as a timestamped JSON file into a `Email Tracker Backups` folder
+  (`gdriveGetBackupFolder` finds-or-creates it). `gdriveMaybeAutoBackup` runs after
+  import when auto-backup is on (non-interactive token only — never pops a consent
+  dialog mid-workflow).
+- **Restore**: `gdriveListBackups` / `gdriveRestoreBackup` download a file and feed
+  it to `applyBackupData` (shared with JSON import; skip-if-existing, never clobbers).
+
+Note: OAuth needs an http(s) origin whose domain is listed under the client's
+"Authorized JavaScript origins" — it won't work from `file://`.
 
 ---
 
