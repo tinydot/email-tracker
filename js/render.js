@@ -487,6 +487,11 @@ function openDetail(email) {
             } else {
               extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
             }
+          } else if (status === 'unsupported') {
+            // No retry button — retrying a format we have no extractor for
+            // can only fail again.  Show why on hover instead.
+            const why = a.extractionNote || 'no extractor for this format';
+            extractBtn = `<span style="padding:2px 6px; font-size:10px; color:var(--muted); cursor:help;" title="${escHtml(why)}">T—</span>`;
           }
         }
 

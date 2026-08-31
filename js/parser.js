@@ -698,12 +698,39 @@ async function saveAttachTextLimitFromUI() {
   toast(`Attachment text limit set to ${kb} KB`, 'ok');
 }
 
+// Thrown when an attachment is a recognised but non-extractable format (e.g. a
+// legacy binary .doc).  Distinguished from a genuine failure so the UI can say
+// "unsupported" instead of offering a retry that can never succeed.
+class UnsupportedAttachmentError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'UnsupportedAttachmentError';
+    this.unsupported = true;
+  }
+}
+
+// Filename extensions and Content-Type headers lie constantly in real mail —
+// legacy .doc sent as application/msword *and* as .docx, OOXML sent as
+// application/octet-stream, etc.  Sniff the container from its magic bytes and
+// dispatch on that instead.
+function _sniffFormat(bytes) {
+  const b = bytes;
+  if (b.length < 4) return 'other';
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'pdf';   // %PDF
+  if (b[0] === 0x50 && b[1] === 0x4B &&
+      (b[2] === 0x03 || b[2] === 0x05 || b[2] === 0x07)) return 'zip';                  // PK.. — OOXML / ODF
+  if (b[0] === 0xD0 && b[1] === 0xCF && b[2] === 0x11 && b[3] === 0xE0) return 'ole2';  // legacy Office compound file
+  if (b[0] === 0x7B && b[1] === 0x5C) return 'rtf';                                     // {\ — RTF
+  return 'other';
+}
+
 function isExtractableType(contentType, filename) {
   const ext  = (filename || '').split('.').pop().toLowerCase();
   const mime = (contentType || '').toLowerCase();
   return (
     mime.includes('pdf') || ext === 'pdf' ||
     mime.includes('wordprocessingml') || mime.includes('msword') || ext === 'docx' || ext === 'doc' ||
+    mime.includes('rtf') || ext === 'rtf' ||
     mime.includes('spreadsheetml') || mime.includes('excel') ||
       ext === 'xlsx' || ext === 'xls' || ext === 'csv' ||
     mime.includes('presentationml') || ext === 'pptx' || ext === 'pptm' ||
@@ -723,14 +750,21 @@ function _truncateToLimit(text) {
 // Returns extracted plain text string, or null for unsupported formats.
 // data: Uint8Array or ArrayBuffer
 async function extractAttachmentText(data, contentType, filename) {
-  const buf  = data instanceof Uint8Array ? data.buffer : data;
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  // .buffer is only safe when the view spans the whole backing buffer.
+  const buf  = (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength)
+    ? bytes.buffer
+    : bytes.slice().buffer;
   const ext  = (filename || '').split('.').pop().toLowerCase();
   const mime = (contentType || '').toLowerCase();
+  const fmt  = _sniffFormat(bytes);
 
   // ── PDF ──────────────────────────────────────────────
-  if (mime.includes('pdf') || ext === 'pdf') {
+  if (fmt === 'pdf' || ((mime.includes('pdf') || ext === 'pdf') && fmt === 'other')) {
     await loadLib('pdfjs');
-    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    // verbosity 0 = errors only; otherwise pdf.js floods the console with
+    // "TT: undefined function" font-hinting warnings on scanned/older PDFs.
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf), verbosity: 0 }).promise;
     let text = '';
     for (let i = 1; i <= pdf.numPages; i++) {
       const page    = await pdf.getPage(i);
@@ -744,9 +778,23 @@ async function extractAttachmentText(data, contentType, filename) {
   // ── DOCX / DOC ────────────────────────────────────────
   if (mime.includes('wordprocessingml') || mime.includes('msword') ||
       ext === 'docx' || ext === 'doc') {
+    // mammoth only reads OOXML (a zip).  A legacy binary .doc is an OLE2
+    // compound file and makes it throw "Could not find the body element".
+    if (fmt === 'ole2') {
+      throw new UnsupportedAttachmentError('legacy binary .doc — text extraction not supported');
+    }
+    if (fmt === 'rtf') return _truncateToLimit(_extractRtfText(bytes));
+    if (fmt !== 'zip') {
+      throw new UnsupportedAttachmentError('not a Word document (unrecognised file contents)');
+    }
     await loadLib('mammoth');
     const result = await mammoth.extractRawText({ arrayBuffer: buf });
     return _truncateToLimit(result.value);
+  }
+
+  // ── RTF (often arrives named .doc, handled above; also stand-alone) ───
+  if (fmt === 'rtf' || ext === 'rtf' || mime.includes('rtf')) {
+    return _truncateToLimit(_extractRtfText(bytes));
   }
 
   // ── XLSX / XLS / CSV ─────────────────────────────────
@@ -765,6 +813,9 @@ async function extractAttachmentText(data, contentType, filename) {
 
   // ── PPTX / PPTM ──────────────────────────────────────
   if (mime.includes('presentationml') || ext === 'pptx' || ext === 'pptm') {
+    if (fmt === 'ole2') {
+      throw new UnsupportedAttachmentError('legacy binary .ppt — text extraction not supported');
+    }
     await loadLib('jszip');
     const zip = await JSZip.loadAsync(buf);
     const slideNames = Object.keys(zip.files)
@@ -787,6 +838,9 @@ async function extractAttachmentText(data, contentType, filename) {
 
   // ── ODP / ODS / ODT ──────────────────────────────────
   if (ext === 'odp' || ext === 'ods' || ext === 'odt') {
+    if (fmt !== 'zip') {
+      throw new UnsupportedAttachmentError('not an OpenDocument file (unrecognised file contents)');
+    }
     await loadLib('jszip');
     const zip         = await JSZip.loadAsync(buf);
     const contentFile = zip.files['content.xml'];
@@ -799,6 +853,21 @@ async function extractAttachmentText(data, contentType, filename) {
   return null; // unsupported
 }
 
+// Minimal RTF de-control-word pass — enough to make an RTF body searchable.
+function _extractRtfText(bytes) {
+  const rtf = new TextDecoder('windows-1252').decode(bytes);
+  return rtf
+    // Drop header destinations (font/colour/style tables, doc info) — one level
+    // of nesting is enough for the `{\fonttbl{\f0 Arial;}}` shape.
+    .replace(/\{\\(?:fonttbl|colortbl|stylesheet|info|listtable|listoverridetable|rsidtbl|\*)(?:[^{}]|\{[^{}]*\})*\}/g, '')
+    .replace(/\\'([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\u(-?\d+)\??/g, (_, n) => String.fromCharCode(Number(n) & 0xFFFF))
+    .replace(/\\par[d]?\b/g, '\n')
+    .replace(/\\tab\b/g, ' ')
+    .replace(/\\[a-zA-Z]+-?\d* ?/g, '')                                 // remaining control words
+    .replace(/[{}]/g, '');
+}
+
 // Internal helper: extract and persist to DB.  data = Uint8Array (available at import time).
 async function _extractAndStoreText(attId, data, contentType, filename) {
   if (!isExtractableType(contentType, filename)) return;
@@ -808,13 +877,17 @@ async function _extractAndStoreText(attId, data, contentType, filename) {
     if (!att) return;
     att.extractedText      = text ?? '';
     att.extractionStatus   = text != null ? 'done' : 'unsupported';
+    att.extractionNote     = text != null ? null : 'no extractor for this format';
     att.extractedAt        = Date.now();
     await dbPut('attachments', att);
   } catch (err) {
-    console.warn('Auto-extract failed for', filename, err);
+    // An unsupported format is an expected outcome, not a bug — don't shout
+    // about it in the console during a bulk import.
+    if (!err.unsupported) console.warn('Auto-extract failed for', filename, err);
     const att = await dbGet('attachments', attId);
     if (!att) return;
-    att.extractionStatus = 'failed';
+    att.extractionStatus = err.unsupported ? 'unsupported' : 'failed';
+    att.extractionNote   = err.message;
     att.extractedAt      = Date.now();
     await dbPut('attachments', att);
   }
@@ -862,6 +935,7 @@ async function extractTextFromEml(attId) {
     const text = await extractAttachmentText(data, att.contentType, att.filename);
     att.extractedText    = text ?? '';
     att.extractionStatus = text != null ? 'done' : 'unsupported';
+    att.extractionNote   = text != null ? null : 'no extractor for this format';
     att.extractedAt      = Date.now();
     await dbPut('attachments', att);
     toast(
@@ -869,10 +943,14 @@ async function extractTextFromEml(attId) {
       text ? 'ok' : 'warn'
     );
   } catch (err) {
-    att.extractionStatus = 'failed';
+    att.extractionStatus = err.unsupported ? 'unsupported' : 'failed';
+    att.extractionNote   = err.message;
     att.extractedAt      = Date.now();
     await dbPut('attachments', att);
-    toast(`Extraction failed: ${err.message}`, 'err');
+    toast(
+      err.unsupported ? `${att.filename}: ${err.message}` : `Extraction failed: ${err.message}`,
+      err.unsupported ? 'warn' : 'err'
+    );
   }
 
   // Re-render the open detail panel so buttons + preview update
