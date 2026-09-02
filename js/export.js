@@ -2,45 +2,90 @@
 //  EXPORT / CLEAR
 // ═══════════════════════════════════════════════════════
 
-// Assemble the full-corpus backup payload used by both the JSON export and the
-// Google Drive backup. Folder handles are machine-local and not JSON-serializable,
-// so settings records carrying a `handle` are dropped.
-async function buildBackupPayload() {
-  const [
-    emails, attachments, tags, msgIndex,
-    smartViews, settings, emailGroups, seenIds,
-    addressBook,
-  ] = await Promise.all([
-    dbGetAll('emails'),
-    dbGetAll('attachments'),
-    dbGetAll('tags'),
-    dbGetAll('msgIndex'),
-    dbGetAll('smartViews'),
-    dbGetAll('settings'),
-    dbGetAll('emailGroups'),
-    dbGetAll('seenIds'),
-    dbGetAll('addressBook'),
-  ]);
+// The backup payload is written as a JSON *stream* rather than assembled as one
+// object and stringified: the corpus no longer has to fit in the JS heap twice
+// (once as records, once as a pretty-printed string). Records are serialized one
+// at a time and flushed into Blob chunks, which live in browser-managed storage
+// instead of the heap.
+//
+// The output shape is unchanged (schemaVersion 3, bodies re-inlined on each email
+// record), so backups stay portable in both directions — see applyBackupData for
+// the reverse split. Only the pretty-printing is gone, which also shrinks the file.
 
+const BACKUP_CHUNK_CHARS = 1 << 20; // flush to a Blob roughly every 1M chars
+
+// Collects written text into Blob chunks, keeping at most one chunk's worth of
+// string in the heap at a time. `write` is synchronous so it is safe to call
+// from inside an IndexedDB cursor callback.
+function makeBackupSink() {
+  const parts = [];
+  let buf = '';
   return {
-    schemaVersion: 3,
-    exportedAt:    new Date().toISOString(),
-    emails,
-    attachments,
-    tags,
-    msgIndex,
-    smartViews,
-    settings: settings.filter(s => !s.handle),
-    emailGroups,
-    seenIds,
-    addressBook,
+    write(str) {
+      buf += str;
+      if (buf.length >= BACKUP_CHUNK_CHARS) { parts.push(new Blob([buf])); buf = ''; }
+    },
+    // Concatenates the chunks by reference — no heap copy of the whole file
+    finish() {
+      if (buf) { parts.push(new Blob([buf])); buf = ''; }
+      return new Blob(parts, { type: 'application/json' });
+    },
   };
 }
 
-async function exportData() {
-  const payload = await buildBackupPayload();
+// Writes the whole backup document to `write`, store by store. Returns the number
+// of emails written, for the caller's progress reporting.
+async function streamBackupJson(write) {
+  write('{"schemaVersion":3,"exportedAt":' + JSON.stringify(new Date().toISOString()));
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  // Emails carry their body inline; the two stores are merge-joined on id so
+  // neither is ever fully resident.
+  write(',"emails":[');
+  let emailCount = 0;
+  await dbIterateEmailsWithBodies((email, text) => {
+    write((emailCount ? ',' : '') + JSON.stringify(text ? { ...email, textBody: text } : email));
+    emailCount++;
+  });
+  write(']');
+
+  // Every remaining store is streamed the same way. Attachments carry extracted
+  // text, so that one is no smaller a concern than the emails.
+  // Folder handles are machine-local and not JSON-serializable.
+  const stores = [
+    ['attachments', 'attachments', null],
+    ['tags',        'tags',        null],
+    ['msgIndex',    'msgIndex',    null],
+    ['smartViews',  'smartViews',  null],
+    ['settings',    'settings',    rec => !rec.handle],
+    ['emailGroups', 'emailGroups', null],
+    ['seenIds',     'seenIds',     null],
+    ['addressBook', 'addressBook', null],
+  ];
+  for (const [key, storeName, keep] of stores) {
+    write(',"' + key + '":[');
+    let n = 0;
+    await dbIterate(storeName, rec => {
+      if (keep && !keep(rec)) return;
+      write((n ? ',' : '') + JSON.stringify(rec));
+      n++;
+    });
+    write(']');
+  }
+
+  write('}');
+  return emailCount;
+}
+
+// Builds the backup as a Blob without ever holding the whole document in the heap.
+async function buildBackupBlob() {
+  const sink  = makeBackupSink();
+  const count = await streamBackupJson(sink.write);
+  return { blob: sink.finish(), emailCount: count };
+}
+
+async function exportData() {
+  const { blob } = await buildBackupBlob();
+
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
@@ -106,8 +151,12 @@ async function applyBackupData(data) {
     if (!email.id) continue;
     const existing = await dbGet('emails', email.id);
     if (existing) { emailsSkipped++; continue; }
-    if (email.textBody) email.textBody = email.textBody.replace(/(\n[ \t]*){2,}/g, '\n');
+    // Split the inlined body back out into the bodies store
+    let body = typeof email.textBody === 'string' ? email.textBody : '';
+    if (body) body = body.replace(/(\n[ \t]*){2,}/g, '\n');
+    delete email.textBody;
     await dbPut('emails', email);
+    if (body) await putBody(email.id, body);
     if (email.messageId) {
       await dbPut('msgIndex', { messageId: email.messageId, emailId: email.id });
     }
@@ -179,6 +228,7 @@ async function applyBackupData(data) {
 async function clearDB() {
   if (!confirm('Clear all data? This cannot be undone.')) return;
   await dbClear('emails');
+  await dbClear('bodies');
   await dbClear('attachments');
   await dbClear('msgIndex');
   await dbClear('tags');
@@ -186,6 +236,7 @@ async function clearDB() {
   allEmails = [];
   filteredEmails = [];
   selectedEmail = null;
+  searchBodyMatches = null;
   closeDetail();
   await updateHeaderStats();
   showPanel('import');
@@ -203,6 +254,7 @@ async function discardAutomatedEmails() {
   for (const email of automated) {
     await dbPut('seenIds', { id: email.id });
     await dbDelete('emails', email.id);
+    await deleteBody(email.id);
     await dbDelete('msgIndex', email.messageId);
     // Remove associated attachments
     const atts = await dbGetByIndex('attachments', 'emailId', email.id);

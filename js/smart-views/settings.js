@@ -147,18 +147,12 @@ async function rerunSignatureStripping() {
   const btn = document.getElementById('btn-rerun-signatures');
   if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
 
-  const emails = await dbGetAll('emails');
-  let fixed = 0;
-
-  for (const email of emails) {
-    if (!email.textBody) continue;
-    const stripped = cleanSignatures(email.textBody);
-    if (stripped && stripped !== email.textBody) {
-      email.textBody = stripped;
-      await dbPut('emails', email);
-      fixed++;
-    }
-  }
+  // Streamed over the bodies store — one cursor pass, updates written in place
+  const fixed = await dbIterate('bodies', rec => {
+    if (!rec.text) return;
+    const stripped = cleanSignatures(rec.text);
+    if (stripped && stripped !== rec.text) { rec.text = stripped; return rec; }
+  }, 'readwrite');
 
   if (btn) { btn.disabled = false; btn.textContent = 'Re-run signature stripping'; }
   toast(fixed ? `Stripped signatures from ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed stripping', fixed ? 'ok' : '');
@@ -589,22 +583,32 @@ async function fixMojibakeEmails() {
   const btn = document.getElementById('btn-fix-mojibake');
   if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
 
-  const emails = await dbGetAll('emails');
-  let fixed = 0;
+  // Returns the repaired string, or null when the value isn't mis-decoded UTF-8
+  const repair = orig => {
+    if (typeof orig !== 'string' || !/[\x80-\xFF]/.test(orig)) return null;
+    try {
+      const bytes = Uint8Array.from(orig, c => c.charCodeAt(0));
+      const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return repaired !== orig ? repaired : null;
+    } catch { return null; } // not mojibake — leave untouched
+  };
 
-  for (const email of emails) {
+  // Two cursor passes: header fields on `emails`, body text on `bodies`
+  const headersFixed = await dbIterate('emails', rec => {
     let changed = false;
-    for (const field of ['textBody', 'subject', 'fromName']) {
-      const orig = email[field];
-      if (typeof orig !== 'string' || !/[\x80-\xFF]/.test(orig)) continue;
-      try {
-        const bytes = Uint8Array.from(orig, c => c.charCodeAt(0));
-        const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-        if (repaired !== orig) { email[field] = repaired; changed = true; }
-      } catch { /* not mojibake — leave untouched */ }
+    for (const field of ['subject', 'fromName']) {
+      const repaired = repair(rec[field]);
+      if (repaired !== null) { rec[field] = repaired; changed = true; }
     }
-    if (changed) { await dbPut('emails', email); fixed++; }
-  }
+    if (changed) return rec;
+  }, 'readwrite');
+
+  const bodiesFixed = await dbIterate('bodies', rec => {
+    const repaired = repair(rec.text);
+    if (repaired !== null) { rec.text = repaired; return rec; }
+  }, 'readwrite');
+
+  const fixed = headersFixed + bodiesFixed;
 
   if (btn) { btn.disabled = false; btn.textContent = 'Fix garbled characters'; }
   toast(fixed ? `Repaired ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No garbled emails found', fixed ? 'ok' : '');
@@ -615,21 +619,13 @@ async function normalizeLineBreaks() {
   const btn = document.getElementById('btn-normalize-linebreaks');
   if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
 
-  const emails = await dbGetAll('emails');
-  let fixed = 0;
-
-  for (const email of emails) {
-    if (email.textBody) {
-      const orig = email.textBody;
-      email.textBody = email.textBody
-        .replace(/\r\n/g, '\n')
-        .replace(/\n([ \t]*\n)+/g, '\n');
-      if (email.textBody !== orig) {
-        await dbPut('emails', email);
-        fixed++;
-      }
-    }
-  }
+  const fixed = await dbIterate('bodies', rec => {
+    if (!rec.text) return;
+    const normalized = rec.text
+      .replace(/\r\n/g, '\n')
+      .replace(/\n([ \t]*\n)+/g, '\n');
+    if (normalized !== rec.text) { rec.text = normalized; return rec; }
+  }, 'readwrite');
 
   if (btn) { btn.disabled = false; btn.textContent = 'Normalize line breaks'; }
   toast(fixed ? `Fixed ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed fixing', fixed ? 'ok' : '');
@@ -640,18 +636,11 @@ async function rerunTruncation() {
   const btn = document.getElementById('btn-rerun-truncation');
   if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
 
-  const emails = await dbGetAll('emails');
-  let fixed = 0;
-
-  for (const email of emails) {
-    if (!email.textBody) continue;
-    const matches = findTruncationMatches(email.textBody);
-    if (matches.length) {
-      email.textBody = truncateAtLine(email.textBody, matches[0].lineIndex);
-      await dbPut('emails', email);
-      fixed++;
-    }
-  }
+  const fixed = await dbIterate('bodies', rec => {
+    if (!rec.text) return;
+    const matches = findTruncationMatches(rec.text);
+    if (matches.length) { rec.text = truncateAtLine(rec.text, matches[0].lineIndex); return rec; }
+  }, 'readwrite');
 
   if (btn) { btn.disabled = false; btn.textContent = 'Re-run truncation'; }
   toast(fixed ? `Truncated ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No emails needed truncation', fixed ? 'ok' : '');

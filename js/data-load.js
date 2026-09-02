@@ -2,20 +2,40 @@
 //  DATA LOAD
 // ═══════════════════════════════════════════════════════
 
+// Requires emailIdIndex to be current — call rebuildMsgIdIndex() first.
 async function backfillSystemEmailFlag() {
-  let flagged = 0;
+  // Candidates first: anything already flagged or manually overridden is skipped,
+  // so a settled corpus only needs a handful of bodies looked at.
+  const candidates = new Set();
   for (const e of allEmails) {
-    // Respect manual unmark — never re-flag what the user overrode
     if (e.isSystemEmail === true || e.manualSystemOverride) continue;
-    // rawHeaders not persisted — use available stored fields only
-    const detected = detectSystemEmail({}, e.fromAddr, e.subject, e.textBody);
-    if (detected) flagged++;
-    if (e.isSystemEmail !== detected) {
-      e.isSystemEmail = detected;
-      await dbPut('emails', e);
-    }
+    candidates.add(e.id);
   }
-  return flagged;
+  if (!candidates.size) return 0;
+
+  // Stream the candidate bodies rather than holding them — detection reads only
+  // the first 1000 chars (see detectSystemEmail) and we keep just the ids that flip.
+  const withBody = new Set();
+  const flagged  = new Set();
+  await dbGetMany('bodies', candidates, rec => {
+    withBody.add(rec.id);
+    const e = emailIdIndex.get(rec.id);
+    // rawHeaders not persisted — use available stored fields only
+    if (e && detectSystemEmail({}, e.fromAddr, e.subject, rec.text)) flagged.add(rec.id);
+  });
+  // Candidates with no stored body still get a sender/subject pass
+  for (const id of candidates) {
+    if (withBody.has(id)) continue;
+    const e = emailIdIndex.get(id);
+    if (e && detectSystemEmail({}, e.fromAddr, e.subject, '')) flagged.add(id);
+  }
+
+  for (const id of flagged) {
+    const e = emailIdIndex.get(id);
+    e.isSystemEmail = true;
+    await dbPut('emails', e);
+  }
+  return flagged.size;
 }
 
 async function rerunAutomatedDetection() {
@@ -30,10 +50,14 @@ async function rerunAutomatedDetection() {
 
 async function loadEmailList() {
   allEmails = await dbGetAll('emails');
-  await backfillSystemEmailFlag();
   rebuildMsgIdIndex();   // must precede buildThreadCache (thread walks use msgIdIndex)
+  await backfillSystemEmailFlag(); // resolves ids through emailIdIndex
   buildThreadCache();
   await buildAttachmentNameIndex();
+  // Bodies may have changed underneath us (import, restore, maintenance):
+  // drop the cached detail body and redo any active body search.
+  _loadedBodyId = null;
+  if (searchTerm) searchBodyMatches = await scanBodiesFor(searchTerm);
   applyFilters();
   updateNavCounts();
 }

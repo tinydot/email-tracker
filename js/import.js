@@ -380,7 +380,6 @@ async function processFilesForImport(fileArr) {
         toAddrs:      parsed.to.map(a => a.email),
         ccAddrs:      parsed.cc.map(a => a.email),
         date:         parsed.date,
-        textBody:     parsed.textBody,
         isSystemEmail,
         status:       'unread',
         tags:         [],
@@ -391,6 +390,8 @@ async function processFilesForImport(fileArr) {
       };
 
       await dbPut('emails', emailRecord);
+      // Body goes to its own store — see the `bodies` store in js/db.js
+      await putBody(id, parsed.textBody);
 
       // Organize EML file if enabled
       if (emlArchiveDirHandle && organizeEmlFiles) {
@@ -599,11 +600,12 @@ async function reimportEmlBody(emailId) {
     // The user will choose how much to keep via the truncation controls,
     // then confirm with "Save Truncated" or "Save Full".
     const bodyForTrunc = parsed.rawTextBody || parsed.textBody;
-    // email comes from emailIdIndex — same object as in allEmails
-    email.textBody = bodyForTrunc;
 
-    // Load into truncation UI if this email is still open
+    // Held unsaved in selectedEmailBody — "Save Truncated" / "Save Full" is what
+    // commits it to the bodies store.
     if (selectedEmail?.id === emailId) {
+      selectedEmailBody = bodyForTrunc;
+      _loadedBodyId     = emailId;
       const bodyEl = document.getElementById('det-body-text');
       if (bodyEl) bodyEl.textContent = bodyForTrunc || '(no plain text body)';
 
@@ -612,7 +614,7 @@ async function reimportEmlBody(emailId) {
       if (saveFullBtn) saveFullBtn.style.display = '';
 
       // Auto-scan for truncation points and populate the controls
-      // (truncFindMatches reads selectedEmail.textBody, which we just updated above)
+      // (truncFindMatches reads selectedEmailBody, which we just updated above)
       truncFindMatches();
     }
 

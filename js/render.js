@@ -179,7 +179,7 @@ function selectEmail(id) {
 // ── Truncation controls state ────────────────────────────
 let _truncMatches = [];     // [{lineIndex, snippet}]
 let _truncCurrent = -1;     // which match is previewed (-1 = none)
-let _truncOrigBody = null;  // original textBody before any preview
+let _truncOrigBody = null;  // original body before any preview
 
 // Clears match state, sets the status label, and hides all truncation buttons
 function _resetTruncControls(statusText) {
@@ -196,7 +196,7 @@ function _resetTruncControls(statusText) {
 function truncFindMatches() {
   const email = selectedEmail;
   if (!email) return;
-  _truncOrigBody = email.textBody || '';
+  _truncOrigBody = selectedEmailBody || '';
   _truncMatches = findTruncationMatches(_truncOrigBody);
 
   if (!_truncMatches.length) {
@@ -241,9 +241,9 @@ async function truncSave() {
   if (!email || _truncCurrent < 0 || !_truncMatches.length) return;
   const match = _truncMatches[_truncCurrent];
   const truncated = truncateAtLine(_truncOrigBody, match.lineIndex);
-  // selectedEmail is the same object stored in allEmails — no separate sync needed
-  email.textBody = truncated;
-  await dbPut('emails', email);
+  selectedEmailBody = truncated;
+  await putBody(email.id, truncated);
+  updateSearchMatchForBody(email.id, truncated);
   _truncOrigBody = truncated;
   _resetTruncControls('Saved');
   toast('Body truncated and saved');
@@ -252,8 +252,9 @@ async function truncSave() {
 async function truncSaveFull() {
   const email = selectedEmail;
   if (!email || _truncOrigBody === null) return;
-  email.textBody = _truncOrigBody;
-  await dbPut('emails', email);
+  selectedEmailBody = _truncOrigBody;
+  await putBody(email.id, _truncOrigBody);
+  updateSearchMatchForBody(email.id, _truncOrigBody);
   _resetTruncControls('Saved');
   toast('Full body saved');
 }
@@ -277,7 +278,7 @@ function editBodyText() {
     return;
   }
 
-  const currentText = selectedEmail.textBody || '';
+  const currentText = selectedEmailBody || '';
   const ta = document.createElement('textarea');
   ta.id = 'body-edit-textarea';
   ta.value = currentText;
@@ -306,9 +307,9 @@ async function saveBodyEdit() {
   if (!ta || !selectedEmail) return;
 
   const newText = ta.value;
-  // selectedEmail is the same object stored in allEmails — no separate sync needed
-  selectedEmail.textBody = newText;
-  await dbPut('emails', selectedEmail);
+  selectedEmailBody = newText;
+  await putBody(selectedEmail.id, newText);
+  updateSearchMatchForBody(selectedEmail.id, newText);
 
   const bodyTextEl = document.getElementById('det-body-text');
   if (bodyTextEl) _renderBodyText(bodyTextEl, newText || '(no plain text body)', null);
@@ -320,7 +321,7 @@ function cancelBodyEdit() {
   const editBtn = document.getElementById('body-edit-btn');
   const bodyTextEl = document.getElementById('det-body-text');
   if (bodyTextEl && selectedEmail) {
-    _renderBodyText(bodyTextEl, selectedEmail.textBody || '(no plain text body)', null);
+    _renderBodyText(bodyTextEl, selectedEmailBody || '(no plain text body)', null);
   }
   if (editBtn) editBtn.textContent = '✏ Edit Body';
 }
@@ -360,6 +361,12 @@ function _renderBodyText(el, text, cidMap) {
 
 // Element focused before the detail modal opened, restored on close
 let _focusBeforeModal = null;
+
+// Id of the email whose body currently sits in selectedEmailBody, while the modal
+// is open on it. Lets openDetail tell a re-render of the same email (attachment
+// action, automated toggle) from opening a different one. Cleared on close, so
+// reopening an email always re-reads the stored body.
+let _loadedBodyId = null;
 
 function openDetail(email) {
   // Remember focus so we can restore it when the modal closes (a11y)
@@ -449,8 +456,28 @@ function openDetail(email) {
 
   const bodyTextEl = document.createElement('div');
   bodyTextEl.id = 'det-body-text';
-  _renderBodyText(bodyTextEl, email.textBody || '(no plain text body)', null);
   bodyEl.appendChild(bodyTextEl);
+
+  if (_loadedBodyId === email.id) {
+    // Re-render of the email already open (attachment actions, automated toggle)
+    // — reuse the loaded body rather than re-reading it, which would also throw
+    // away a reimported body the user hasn't saved yet.
+    _renderBodyText(bodyTextEl, selectedEmailBody || '(no plain text body)', null);
+  } else {
+    // Bodies aren't held in allEmails — fetch this one, same placeholder-then-fill
+    // pattern as the attachment panel below.
+    selectedEmailBody = '';
+    _loadedBodyId     = null;
+    bodyTextEl.textContent = 'Loading…';
+    const bodyIdAtLoad = email.id;
+    getBody(bodyIdAtLoad).then(text => {
+      if (!selectedEmail || selectedEmail.id !== bodyIdAtLoad) return;
+      selectedEmailBody = text;
+      _loadedBodyId     = bodyIdAtLoad;
+      const el = document.getElementById('det-body-text');
+      if (el) _renderBodyText(el, text || '(no plain text body)', null);
+    });
+  }
 
   // Attachments — show placeholder immediately, load in background
   const attPanel = document.getElementById('det-attachments');
@@ -596,6 +623,10 @@ function closeDetail() {
   const wasOpen = document.getElementById('email-modal-overlay').classList.contains('open');
   selectedEmail = null;
   selectedEmailIdx = -1;
+  // Drop the loaded body — reopening re-reads it, so the panel can't show a stale
+  // one. A reimported body that was never saved is discarded here too.
+  selectedEmailBody = '';
+  _loadedBodyId     = null;
   document.getElementById('email-modal-overlay').classList.remove('open');
   // Restore focus to the element that opened the modal (a11y)
   if (wasOpen && _focusBeforeModal && document.contains(_focusBeforeModal)) {

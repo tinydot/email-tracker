@@ -191,22 +191,24 @@ async function gdriveBackupNow({ silent = false } = {}) {
   try {
     if (!silent) toast('Backing up to Google Drive…', '');
     const folderId = await gdriveGetBackupFolder();
-    const payload  = await buildBackupPayload();
-    const json     = JSON.stringify(payload);
+    const { blob, emailCount } = await buildBackupBlob();
     const stamp    = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `email-tracker-${stamp}.json`;
 
-    // Multipart upload: metadata part + media part in one request.
+    // Multipart upload: metadata part + media part in one request. Assembled as a
+    // Blob so the corpus is never concatenated into a single heap string — fetch
+    // streams it from blob storage.
     const boundary = 'etbackup' + Math.random().toString(36).slice(2);
     const metadata = { name: filename, parents: [folderId], mimeType: 'application/json' };
-    const body =
+    const body = new Blob([
       `--${boundary}\r\n` +
       'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
       JSON.stringify(metadata) + '\r\n' +
       `--${boundary}\r\n` +
-      'Content-Type: application/json\r\n\r\n' +
-      json + '\r\n' +
-      `--${boundary}--`;
+      'Content-Type: application/json\r\n\r\n',
+      blob,
+      `\r\n--${boundary}--`,
+    ]);
 
     await gdriveFetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
@@ -219,8 +221,8 @@ async function gdriveBackupNow({ silent = false } = {}) {
 
     gdriveLastBackup = new Date().toISOString();
     await saveGDriveSettings();
-    const sizeKb = Math.round(json.length / 1024);
-    toast(`Backed up ${payload.emails.length} emails to Google Drive (${sizeKb} KB)`, 'ok');
+    const sizeKb = Math.round(blob.size / 1024);
+    toast(`Backed up ${emailCount} emails to Google Drive (${sizeKb} KB)`, 'ok');
     if (typeof isSettingsOpen === 'function' && isSettingsOpen()) refreshGDriveBackupsList();
     return true;
   } catch (err) {

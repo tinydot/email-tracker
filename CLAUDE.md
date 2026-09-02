@@ -29,7 +29,7 @@ email-tracker/
     ├── render.js     ← virtual-scrolled email list, detail modal, body edit/truncation
     ├── actions.js    ← email actions (tags, automated toggle, delete)
     ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts, backfill
-    ├── export.js     ← JSON export/import (buildBackupPayload/applyBackupData), clearDB, discard automated
+    ├── export.js     ← JSON export/import (streamBackupJson/applyBackupData), clearDB, discard automated
     ├── gdrive.js     ← Google Drive backup/restore (GIS OAuth, drive.file scope)
     ├── address-book.js ← contact profiles (name, role, projects)
     ├── dashboard.js  ← email volume over time, import activity, sender domains
@@ -64,7 +64,7 @@ All JS files share a single global scope (loaded via `<script src>` tags in `ind
   toAddrs,        // array of recipient emails
   ccAddrs,        // array of CC emails
   date,           // ISO string
-  textBody,       // plain-text body (signature/quote-stripped at import)
+                  // NB: no textBody — bodies live in the separate `bodies` store
   status,         // 'unread' | 'read'
   isSystemEmail,  // boolean — auto-detected automated/bulk email
   manualSystemOverride, // boolean — user unmarked automated; detection won't re-flag
@@ -78,8 +78,14 @@ All JS files share a single global scope (loaded via `<script src>` tags in `ind
 }
 ```
 
-### IndexedDB stores (`DB_VERSION = 9` in `js/db.js`)
-- `emails` — email records (indexes: messageId, threadId, date, fromAddr, status, isActionable, importedAt)
+### IndexedDB stores (`DB_VERSION = 10` in `js/db.js`)
+- `emails` — email records, **metadata only** (indexes: messageId, threadId, date, fromAddr, status, isActionable, importedAt)
+- `bodies` — `{ id, text }`, one record per email, keyed by email id. Split out of
+  `emails` in v10 so loading the corpus into `allEmails` doesn't pull every body
+  into the heap — bodies were ~90% of resident size. Accessed only through
+  `getBody` / `putBody` / `deleteBody`, or streamed with `dbIterate` / `dbGetMany`.
+  An email with an empty body has no record here. `onupgradeneeded` migrates
+  existing inline bodies across with a cursor.
 - `attachments` — attachment metadata only (indexes: `emailId`, `hash`) — attachment files are **not** extracted to disk; the archived .eml is the attachment store, and "opening" an attachment downloads the email's .eml (`downloadEmlForAttachment`)
 - `tags` — global tag registry (keyPath: `name`) — note: tags are also stored inline on each email
 - `msgIndex` — messageId → emailId mapping
@@ -113,6 +119,16 @@ emailGroups      // email groups for smart view rules
 **Filtering:** `applyFilters()` rebuilds `filteredEmails` from `allEmails` in a single pass: smart-view rules or built-in view filter, system-email exclusion (all views except `automated`; smart views can opt out via `excludeAutomated`), full-text search, then sort.
 
 **DB writes:** always `await dbPut('emails', email)` — email objects in `allEmails` are mutated in-place, then saved. `selectedEmail` is the same object reference, so no separate sync is needed.
+
+**Bodies are not in memory.** Never park a body on an email object in `allEmails` — that's what the `bodies` store exists to prevent. The access patterns are:
+- *One email* (detail panel): `await getBody(id)`. `openDetail` renders a placeholder and fills it in, keeping the result in `selectedEmailBody` for the truncation/edit controls; `_loadedBodyId` marks which email that body belongs to, and `closeDetail` clears both.
+- *A known subset* (links sub-view, detection backfill): `dbGetMany('bodies', ids, fn)` — one transaction, callback per record, nothing accumulated.
+- *The whole store* (search, maintenance): `dbIterate('bodies', fn, mode)` — a cursor pass; in `'readwrite'` mode a record returned by `fn` is written back in place. `fn` must be synchronous or the transaction closes underneath it.
+- *Writes*: `putBody(id, text)` (an empty string deletes the record) and `deleteBody(id)` alongside every `dbDelete('emails', …)`.
+
+**Backup writing:** the backup is streamed, not assembled. `streamBackupJson(write)` walks each store with a cursor and serializes records one at a time; `makeBackupSink()` flushes the text into Blob chunks every ~1M chars so the document never sits in the JS heap. `buildBackupBlob()` wraps both and is what `exportData` and `gdriveBackupNow` call — the Drive upload builds its multipart body as a Blob around it. Emails are paired with their bodies by `dbIterateEmailsWithBodies`, a merge join over the two id-ordered stores in one transaction. Import is *not* streamed — `applyBackupData` still takes a parsed object, so restoring a large backup still peaks at its full size.
+
+**Body search:** `applyFilters()` is synchronous and bodies are not, so `searchEmails()` first runs `scanBodiesFor(term)` — one cursor pass keeping only the matching ids — into `searchBodyMatches`, then filters. A generation counter discards a scan the user has typed past. After editing one body, call `updateSearchMatchForBody(id, text)` rather than rescanning.
 
 **In-memory caches** (rebuild after `allEmails` changes):
 - `rebuildMsgIdIndex()` — rebuilds `msgIdIndex` (messageId → email) and `emailIdIndex` (id → email; use this instead of `allEmails.find`). Also invalidates the thread caches.
@@ -176,6 +192,8 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
 2. **New view** → add entry to `VIEW_LABELS` in `js/state.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views/routing.js`
 3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS` (group-style fields go in `GROUP_FIELDS`); add case in `getEmailFieldValue`
 4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed; include it in `exportData`/`importData` in `js/export.js`
+   - Add it to the `stores` list in `streamBackupJson` (js/export.js) and to `applyBackupData`.
+   - Bodies are the exception: `streamBackupJson` re-inlines them onto each email record and `applyBackupData` splits them back out, so the backup JSON keeps its `schemaVersion: 3` shape and stays portable in both directions.
 5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js` (`showSettings`)
 
 ## Google Drive backup (`js/gdrive.js`)
@@ -193,7 +211,7 @@ record. Design points:
 - **Tokens** live in memory only (`gdriveAccessToken`/`gdriveTokenExpiry`), never
   persisted. `gdriveEnsureToken(interactive)` acquires/reuses a token; `gdriveFetch`
   wraps Drive REST calls with a single silent retry on 401.
-- **Backups**: `gdriveBackupNow` uploads `buildBackupPayload()` (shared with
+- **Backups**: `gdriveBackupNow` uploads `buildBackupBlob()` (shared with
   `exportData`) as a timestamped JSON file into a `Email Tracker Backups` folder
   (`gdriveGetBackupFolder` finds-or-creates it). `gdriveMaybeAutoBackup` runs after
   import when auto-backup is on (non-interactive token only — never pops a consent
