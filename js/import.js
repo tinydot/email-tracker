@@ -298,11 +298,15 @@ async function processFilesForImport(fileArr) {
   bar.style.display = '';
   document.getElementById('email-list-panel').classList.add('import-running');
 
+  // The log is a scrollback, not a record — keep only the tail so a 25k-file
+  // import doesn't leave 25k nodes (and their text) in the DOM.
+  const MAX_LOG_LINES = 400;
   const appendLog = (msg, cls = '') => {
     const d = document.createElement('div');
     d.className = 'log-line ' + cls;
     d.textContent = msg;
     log.appendChild(d);
+    while (log.childElementCount > MAX_LOG_LINES) log.removeChild(log.firstElementChild);
     log.scrollTop = log.scrollHeight;
   };
 
@@ -316,6 +320,8 @@ async function processFilesForImport(fileArr) {
   }
 
   let ok = 0, errs = 0, updated = 0;
+  const LIST_REFRESH_MS = 1500;
+  let lastListRefresh = performance.now();
 
   for (let i = 0; i < fileArr.length; i++) {
     const file = fileArr[i];
@@ -433,10 +439,8 @@ async function processFilesForImport(fileArr) {
 
         await dbPut('attachments', attRecord);
 
-        // Extract text in the background (non-blocking)
-        if (att.rawData && isExtractableType(att.contentType, att.filename)) {
-          _extractAndStoreText(attId, att.rawData, att.contentType, att.filename).catch(() => {});
-        }
+        // Extract text alongside the import — bounded, so it can't outpace us
+        await queueAttachmentTextExtraction(attId, att.rawData, att.contentType, att.filename);
 
         // Process nested attachments (from embedded .eml files)
         if (att.nestedAttachments && att.nestedAttachments.length > 0) {
@@ -462,10 +466,8 @@ async function processFilesForImport(fileArr) {
 
             await dbPut('attachments', nestedRecord);
 
-            // Extract text in the background (non-blocking)
-            if (nested.rawData && isExtractableType(nested.contentType, nested.filename)) {
-              _extractAndStoreText(nestedId, nested.rawData, nested.contentType, nested.filename).catch(() => {});
-            }
+            // Extract text alongside the import — bounded, so it can't outpace us
+            await queueAttachmentTextExtraction(nestedId, nested.rawData, nested.contentType, nested.filename);
           }
         }
       }
@@ -483,13 +485,20 @@ async function processFilesForImport(fileArr) {
       errs++;
     }
 
-    // Yield to UI every 5 emails and refresh the list so new emails appear live
-    if (i % 5 === 0) {
+    // Yield to the UI often (cheap), but refresh the list on a timer rather
+    // than every 5 files — applyFilters() re-scans and re-sorts the whole
+    // corpus, which at 25k emails is far too costly to run thousands of times.
+    if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+    if (performance.now() - lastListRefresh > LIST_REFRESH_MS) {
+      lastListRefresh = performance.now();
       applyFilters();
       updateHeaderStatsFast();
-      await new Promise(r => setTimeout(r, 0));
     }
   }
+
+  // Extraction runs alongside the loop; let the tail of it land before the
+  // reload below so attachment text is in the DB when the list rebuilds.
+  await drainExtractionQueue();
 
   fill.style.width  = '100%';
   pct.textContent   = '100%';
@@ -635,9 +644,7 @@ async function reimportEmlBody(emailId) {
         if (existingForBlacklist.some(a => a.isBlacklisted)) attRecord.isBlacklisted = true;
 
         await dbPut('attachments', attRecord);
-        if (att.rawData && isExtractableType(att.contentType, att.filename)) {
-          _extractAndStoreText(attId, att.rawData, att.contentType, att.filename).catch(() => {});
-        }
+        await queueAttachmentTextExtraction(attId, att.rawData, att.contentType, att.filename);
         newAttCount++;
       }
 
@@ -664,9 +671,7 @@ async function reimportEmlBody(emailId) {
           if (existingNestedBL.some(a => a.isBlacklisted)) nestedRecord.isBlacklisted = true;
 
           await dbPut('attachments', nestedRecord);
-          if (nested.rawData && isExtractableType(nested.contentType, nested.filename)) {
-            _extractAndStoreText(nestedId, nested.rawData, nested.contentType, nested.filename).catch(() => {});
-          }
+          await queueAttachmentTextExtraction(nestedId, nested.rawData, nested.contentType, nested.filename);
           newAttCount++;
         }
       }
