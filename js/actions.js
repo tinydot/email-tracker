@@ -69,6 +69,7 @@ async function unexcludeTag(id, tag) {
 async function deleteEmail(id) {
   if (!confirm('Delete this email?')) return;
   await dbDelete('emails', id);
+  await deleteBody(id);
   const atts = await dbGetByIndex('attachments', 'emailId', id);
   for (const a of atts) await dbDelete('attachments', a.id);
   allEmails = allEmails.filter(e => e.id !== id);

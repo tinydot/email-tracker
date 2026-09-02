@@ -49,12 +49,39 @@ function applySort(val) {
 }
 
 let _searchDebounceTimer = null;
+let _searchGeneration = 0;  // discards results of a scan the user has typed past
+
 function searchEmails(val) {
   clearTimeout(_searchDebounceTimer);
-  _searchDebounceTimer = setTimeout(() => {
-    searchTerm = val.toLowerCase();
+  _searchDebounceTimer = setTimeout(async () => {
+    const term = val.toLowerCase();
+    const gen  = ++_searchGeneration;
+    // Bodies live in their own store, so a body search is a cursor pass rather
+    // than an in-memory scan. Only the matching ids are kept.
+    const matches = term ? await scanBodiesFor(term) : null;
+    if (gen !== _searchGeneration) return; // a newer search superseded this one
+    searchTerm        = term;
+    searchBodyMatches = matches;
     applyFilters();
   }, 150);
+}
+
+// One streaming pass over the `bodies` store, collecting the ids whose text
+// contains `term`. Only ids are retained — bodies are released as we go.
+async function scanBodiesFor(term) {
+  const ids = new Set();
+  await dbIterate('bodies', rec => {
+    if (rec.text && rec.text.toLowerCase().includes(term)) ids.add(rec.id);
+  });
+  return ids;
+}
+
+// Keeps the active search result honest after a body is edited in place,
+// without re-running the whole scan.
+function updateSearchMatchForBody(id, text) {
+  if (!searchBodyMatches || !searchTerm) return;
+  if (text && text.toLowerCase().includes(searchTerm)) searchBodyMatches.add(id);
+  else searchBodyMatches.delete(id);
 }
 
 function applyFilters() {
@@ -90,7 +117,7 @@ function applyFilters() {
         !(e.subject  || '').toLowerCase().includes(term) &&
         !(e.fromAddr || '').toLowerCase().includes(term) &&
         !(e.fromName || '').toLowerCase().includes(term) &&
-        !(e.textBody || '').toLowerCase().includes(term) &&
+        !(searchBodyMatches && searchBodyMatches.has(e.id)) &&
         !(attNames && attNames.includes(term))
       ) continue;
     }

@@ -8,11 +8,16 @@ let currentView    = 'all';
 let currentSort    = 'date-desc';
 let searchTerm     = '';
 let selectedEmail  = null;
+let selectedEmailBody = '';  // body of selectedEmail, loaded on demand from the `bodies` store
 let selectedEmailIdx = -1; // index in filteredEmails for navigation
 let smartViews     = []; // user-created smart views
 let svSubView      = 'emails'; // 'emails' | 'attachments' | 'links' — sub-view within smart views
 let emailGroups    = []; // user-created email groups for smart view rules
 let attachmentNameIndex = new Map(); // emailId → lowercase attachment filenames (joined), for search
+// Ids whose body matches the current searchTerm, or null when no search is active.
+// Bodies aren't in memory, so applyFilters() consults this set instead of scanning
+// them; searchEmails() rebuilds it with a cursor pass whenever the term changes.
+let searchBodyMatches = null;
 
 const VIEW_LABELS = {
   all:          'All Emails',

@@ -201,9 +201,14 @@ async function showSvLinks() {
   const container = document.getElementById('email-list');
 
   // Build link rows from the filtered emails' (truncated) bodies, deduped by URL.
+  // Bodies are fetched from their own store one at a time and released again —
+  // only the extracted URLs are retained.
   const byUrl = new Map();
-  for (const email of filteredEmails) {
-    const urls = extractLinksFromText(email.textBody);
+  const ids = filteredEmails.map(e => e.id);
+  await dbGetMany('bodies', ids, rec => {
+    const email = emailIdIndex.get(rec.id);
+    if (!email) return;
+    const urls = extractLinksFromText(rec.text);
     const seenInEmail = new Set();
     for (const url of urls) {
       const key = url.toLowerCase();
@@ -215,7 +220,7 @@ async function showSvLinks() {
         byUrl.get(key)._emails.push(email);
       }
     }
-  }
+  });
 
   let rows = [...byUrl.values()];
   if (_svLinksTransfersOnly) rows = rows.filter(r => r.isFileTransfer);
