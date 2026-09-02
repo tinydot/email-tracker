@@ -660,6 +660,7 @@ const _LIB_URLS = {
   xlsx:    'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
 };
 const _libLoaded = {};
+let _pdfWorker = null; // shared across all PDF extractions — see extractAttachmentText
 
 async function loadLib(name) {
   if (_libLoaded[name]) return;
@@ -762,17 +763,30 @@ async function extractAttachmentText(data, contentType, filename) {
   // ── PDF ──────────────────────────────────────────────
   if (fmt === 'pdf' || ((mime.includes('pdf') || ext === 'pdf') && fmt === 'other')) {
     await loadLib('pdfjs');
+    // One shared worker for every PDF. Left to itself pdf.js spins up a new
+    // worker per getDocument() call, and an un-destroyed loading task keeps
+    // both the worker and the document's bytes alive for the life of the page
+    // — which is what exhausted the renderer on bulk imports.
+    if (!_pdfWorker) _pdfWorker = new pdfjsLib.PDFWorker({ name: 'et-attach-pdf-worker' });
     // verbosity 0 = errors only; otherwise pdf.js floods the console with
     // "TT: undefined function" font-hinting warnings on scanned/older PDFs.
-    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf), verbosity: 0 }).promise;
-    let text = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page    = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map(item => item.str).join(' ') + '\n';
-      if (text.length > attachTextLimit * 1.5) break;
+    const task = pdfjsLib.getDocument({ data: new Uint8Array(buf), worker: _pdfWorker, verbosity: 0 });
+    try {
+      const pdf = await task.promise;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page    = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(' ') + '\n';
+        page.cleanup();
+        if (text.length > attachTextLimit * 1.5) break;
+      }
+      return _truncateToLimit(text);
+    } finally {
+      // Releases the document's buffers on the shared worker. The worker was
+      // passed in, so pdf.js leaves it running for the next document.
+      try { await task.destroy(); } catch {}
     }
-    return _truncateToLimit(text);
   }
 
   // ── DOCX / DOC ────────────────────────────────────────
@@ -866,6 +880,68 @@ function _extractRtfText(bytes) {
     .replace(/\\tab\b/g, ' ')
     .replace(/\\[a-zA-Z]+-?\d* ?/g, '')                                 // remaining control words
     .replace(/[{}]/g, '');
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOUNDED EXTRACTION QUEUE
+//  Extraction used to be fire-and-forget: every attachment started a job that
+//  held its full decoded bytes (and a pdf.js worker) until it finished. On a
+//  bulk import the import loop outruns extraction, so those jobs pile up and
+//  take the renderer down. Callers now await a free slot before handing over
+//  the bytes, which caps how much attachment data can be in flight at once.
+// ═══════════════════════════════════════════════════════
+
+const EXTRACT_CONCURRENCY = 2;
+const EXTRACT_MAX_BYTES   = 25 * 1024 * 1024; // don't try to extract huge files
+
+let _extractActive  = 0;
+const _extractQueue = [];
+
+function _acquireExtractSlot() {
+  if (_extractActive < EXTRACT_CONCURRENCY) {
+    _extractActive++;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => _extractQueue.push(resolve));
+}
+
+function _releaseExtractSlot() {
+  const next = _extractQueue.shift();
+  if (next) next();          // hand the slot straight to the next waiter
+  else _extractActive--;
+}
+
+// Await this before passing attachment bytes in. It resolves once a slot is
+// free and the job has *started* — not when extraction finishes — so the
+// import loop keeps moving while staying bounded.
+async function queueAttachmentTextExtraction(attId, data, contentType, filename) {
+  if (!data || !isExtractableType(contentType, filename)) return;
+
+  if (data.length > EXTRACT_MAX_BYTES) {
+    try {
+      const att = await dbGet('attachments', attId);
+      if (att) {
+        att.extractionStatus = 'skipped';
+        att.extractionNote   = `too large to extract (${Math.round(data.length / 1048576)} MB)`;
+        att.extractedAt      = Date.now();
+        await dbPut('attachments', att);
+      }
+    } catch {}
+    return;
+  }
+
+  await _acquireExtractSlot();
+  _extractAndStoreText(attId, data, contentType, filename)
+    .catch(() => {})
+    .finally(_releaseExtractSlot);
+}
+
+// Resolves once every queued extraction has finished — used at the end of an
+// import so the "done" state reflects reality.
+async function drainExtractionQueue() {
+  while (_extractActive > 0 || _extractQueue.length > 0) {
+    await new Promise(r => setTimeout(r, 100));
+  }
 }
 
 // Internal helper: extract and persist to DB.  data = Uint8Array (available at import time).
