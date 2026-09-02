@@ -265,8 +265,8 @@ async function gdriveRestoreBackup(fileId, fileName) {
     const resp = await gdriveFetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
     );
-    const data = await resp.json();
-    const { parts, anyAdded, totalRecords } = await applyBackupData(data);
+    // Applied straight off the download — the backup is never held whole
+    const { parts, anyAdded, totalRecords } = await applyBackupStream(resp.body);
     if (totalRecords === 0) return;
     toast(parts.length ? 'Restored: ' + parts.join(', ') : 'Nothing new to restore', anyAdded ? 'ok' : '');
   } catch (err) {

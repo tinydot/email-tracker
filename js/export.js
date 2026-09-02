@@ -9,7 +9,7 @@
 // instead of the heap.
 //
 // The output shape is unchanged (schemaVersion 3, bodies re-inlined on each email
-// record), so backups stay portable in both directions — see applyBackupData for
+// record), so backups stay portable in both directions — see applyBackupStream for
 // the reverse split. Only the pretty-printing is gone, which also shrinks the file.
 
 const BACKUP_CHUNK_CHARS = 1 << 20; // flush to a Blob roughly every 1M chars
@@ -99,102 +99,260 @@ async function importData(input) {
   if (!file) return;
   input.value = '';
 
-  let data;
+  let result;
   try {
-    data = JSON.parse(await file.text());
-  } catch {
-    toast('Invalid JSON file', 'err');
+    result = await applyBackupStream(file.stream());
+  } catch (err) {
+    toast(err.message || 'Invalid JSON file', 'err');
     return;
   }
-
-  const { parts, anyAdded, totalRecords } = await applyBackupData(data);
-  if (totalRecords === 0) return; // toast already shown by applyBackupData
-  toast(parts.length ? parts.join(', ') : 'Nothing new to import', anyAdded ? 'ok' : '');
+  if (result.totalRecords === 0) return; // toast already shown by applyBackupStream
+  toast(result.parts.length ? result.parts.join(', ') : 'Nothing new to import',
+        result.anyAdded ? 'ok' : '');
 }
 
-// Merge a parsed backup payload into the local database. Shared by JSON import
-// and Google Drive restore. Uses skip-if-existing upserts so a restore never
-// clobbers the user's current state. Returns a summary for the caller to report.
-async function applyBackupData(data) {
-  const arr = k => (Array.isArray(data[k]) ? data[k] : []);
-  const emails        = arr('emails');
-  const attachments   = arr('attachments');
-  const tagsReg       = arr('tags');
-  const msgIndex      = arr('msgIndex');
-  const smartViewsIn  = arr('smartViews');
-  const settings      = arr('settings');
-  const emailGroupsIn = arr('emailGroups');
-  const seenIds       = arr('seenIds');
-  const addressBook   = arr('addressBook');
+// ── Reading a backup back in ──────────────────────────────
+// The mirror of streamBackupJson: the file is consumed as a stream and applied
+// record by record, so restoring a large backup no longer peaks at its full
+// size (the text plus the parsed object graph, twice over).
+//
+// A full JSON parser isn't needed for this. The document is a flat object whose
+// values are arrays of records, so the scanner below only has to find record
+// *boundaries*; each record's text is then handed to JSON.parse, which does the
+// real parsing. All it must get right is string state — quotes, and escapes
+// inside them — so that braces in a subject line don't count as structure.
 
-  const totalRecords =
-    emails.length + attachments.length + tagsReg.length + msgIndex.length +
-    smartViewsIn.length + settings.length + emailGroupsIn.length +
-    seenIds.length + addressBook.length;
+const _BK_AWAIT_ROOT = 0, _BK_KEY = 1, _BK_IN_KEY = 2, _BK_COLON = 3,
+      _BK_VALUE = 4, _BK_ELEMENT = 5, _BK_CAPTURE = 6, _BK_DONE = 7;
 
-  if (totalRecords === 0) {
+const _bkIsSpace = ch => ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t';
+
+// Feed chunks in order, then call end(). onValue(key, value) fires once per
+// element of each top-level array, and once for each scalar top-level field.
+function makeBackupScanner(onValue) {
+  let phase = _BK_AWAIT_ROOT;
+  let keyRaw = '', curKey = null;
+  let keyInStr = false, keyEsc = false;
+  // capture state
+  let buf = '', kind = '', depth = 0, inStr = false, esc = false, fromArray = false;
+
+  const startCapture = (ch, inArray) => {
+    buf = ch; depth = 0; inStr = false; esc = false; fromArray = inArray;
+    if (ch === '{' || ch === '[') { kind = 'struct'; depth = 1; }
+    else if (ch === '"')          { kind = 'string'; inStr = true; }
+    else                          { kind = 'scalar'; }
+    phase = _BK_CAPTURE;
+  };
+
+  const emit = () => {
+    onValue(curKey, JSON.parse(buf));
+    buf = '';
+    phase = fromArray ? _BK_ELEMENT : _BK_KEY;
+  };
+
+  return {
+    feed(chunk) {
+      for (let i = 0; i < chunk.length; i++) {
+        const ch = chunk[i];
+
+        switch (phase) {
+          case _BK_CAPTURE: {
+            // A bare scalar ends at the first delimiter, which belongs to the
+            // enclosing structure and must be re-read in the next phase.
+            if (kind === 'scalar' && !inStr &&
+                (_bkIsSpace(ch) || ch === ',' || ch === '}' || ch === ']')) {
+              emit();
+              i--;
+              break;
+            }
+            buf += ch;
+            if (inStr) {
+              if (esc)                 esc = false;
+              else if (ch === '\\')    esc = true;
+              else if (ch === '"') {
+                inStr = false;
+                if (kind === 'string' && depth === 0) emit();
+              }
+            } else if (ch === '"')                     inStr = true;
+            else if (ch === '{' || ch === '[')         depth++;
+            else if (ch === '}' || ch === ']') {
+              depth--;
+              if (depth === 0) emit();
+            }
+            break;
+          }
+
+          case _BK_AWAIT_ROOT:
+            if (_bkIsSpace(ch)) break;
+            if (ch !== '{') throw new Error('Not a backup file');
+            phase = _BK_KEY;
+            break;
+
+          case _BK_KEY:
+            if (_bkIsSpace(ch) || ch === ',') break;
+            if (ch === '}') { phase = _BK_DONE; break; }
+            if (ch !== '"') throw new Error('Malformed backup near "' + ch + '"');
+            keyRaw = ''; keyInStr = true; keyEsc = false;
+            phase = _BK_IN_KEY;
+            break;
+
+          case _BK_IN_KEY:
+            if (keyEsc)              { keyRaw += ch; keyEsc = false; }
+            else if (ch === '\\')    { keyRaw += ch; keyEsc = true; }
+            else if (ch === '"')     { curKey = JSON.parse('"' + keyRaw + '"'); phase = _BK_COLON; }
+            else                       keyRaw += ch;
+            break;
+
+          case _BK_COLON:
+            if (_bkIsSpace(ch)) break;
+            if (ch !== ':') throw new Error('Malformed backup: expected ":"');
+            phase = _BK_VALUE;
+            break;
+
+          case _BK_VALUE:
+            if (_bkIsSpace(ch)) break;
+            // A top-level array is walked element by element; anything else is a
+            // scalar field (schemaVersion, exportedAt) and captured whole.
+            if (ch === '[') phase = _BK_ELEMENT;
+            else            startCapture(ch, false);
+            break;
+
+          case _BK_ELEMENT:
+            if (_bkIsSpace(ch) || ch === ',') break;
+            if (ch === ']') { phase = _BK_KEY; break; }
+            startCapture(ch, true);
+            break;
+
+          case _BK_DONE:
+            if (!_bkIsSpace(ch)) throw new Error('Trailing data after backup');
+            break;
+        }
+      }
+    },
+
+    end() {
+      if (phase !== _BK_DONE) throw new Error('Backup file ended unexpectedly');
+    },
+  };
+}
+
+// Drives the scanner over a ReadableStream of bytes. `onChunkEnd` is awaited
+// between chunks — that's where the caller writes what it has collected, and
+// what keeps the document from piling up in memory.
+async function readBackupStream(stream, onValue, onChunkEnd) {
+  const reader  = stream.pipeThrough(new TextDecoderStream()).getReader();
+  const scanner = makeBackupScanner(onValue);
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    scanner.feed(value);          // may emit many records synchronously
+    await onChunkEnd();
+  }
+  scanner.end();
+  await onChunkEnd();
+}
+
+// Which field each store is keyed by — records missing it can't be inserted.
+const BACKUP_STORE_KEYS = {
+  emails: 'id', attachments: 'id', tags: 'name', msgIndex: 'messageId',
+  smartViews: 'id', settings: 'key', emailGroups: 'id', seenIds: 'id',
+  addressBook: 'email',
+};
+
+// Merge a backup into the local database, reading it as a stream. Shared by JSON
+// import and Google Drive restore. Skip-if-existing throughout, so a restore
+// never clobbers the user's current state.
+//
+// Records are buffered only between chunks and written in batched transactions,
+// so memory stays flat regardless of backup size. The trade-off against the old
+// parse-it-all-first approach is that a file which turns out to be malformed
+// partway through leaves the records before that point already restored; the
+// caller reports how many. Re-running a fixed file is safe — it skips them.
+async function applyBackupStream(stream) {
+  const pending = {};
+  for (const k of Object.keys(BACKUP_STORE_KEYS)) pending[k] = [];
+
+  const added = { emails: 0, attachments: 0, tags: 0, msgIndex: 0, smartViews: 0,
+                  settings: 0, emailGroups: 0, seenIds: 0, addressBook: 0 };
+  let emailsSkipped = 0, total = 0;
+  const seenStores = new Set();
+
+  // Emails need their inlined body split back out, and a msgIndex entry, but
+  // only for the ones that were actually new.
+  const flushEmails = async () => {
+    const batch = pending.emails;
+    if (!batch.length) return;
+    pending.emails = [];
+    const metas = [];
+    const extras = new Map(); // id → { body, messageId }
+    for (const email of batch) {
+      if (!email.id) continue;
+      let body = typeof email.textBody === 'string' ? email.textBody : '';
+      if (body) body = body.replace(/(\n[ \t]*){2,}/g, '\n');
+      delete email.textBody;
+      metas.push(email);
+      extras.set(email.id, { body, messageId: email.messageId });
+    }
+    const { addedKeys, skipped } = await dbAddMissing('emails', metas);
+    emailsSkipped += skipped;
+    added.emails  += addedKeys.length;
+
+    const bodies = [], msgIds = [];
+    for (const id of addedKeys) {
+      const x = extras.get(id);
+      if (!x) continue;
+      if (x.body)      bodies.push({ id, text: x.body });
+      if (x.messageId) msgIds.push({ messageId: x.messageId, emailId: id });
+    }
+    await dbPutMany('bodies', bodies);
+    await dbPutMany('msgIndex', msgIds);   // overwrites, as the old code did
+  };
+
+  const flushStore = async name => {
+    const batch = pending[name];
+    if (!batch.length) return;
+    pending[name] = [];
+    const keyField = BACKUP_STORE_KEYS[name];
+    const valid = batch.filter(r => r && r[keyField] != null &&
+                                    !(name === 'settings' && r.handle)); // machine-local
+    const { addedKeys } = await dbAddMissing(name, valid);
+    added[name] += addedKeys.length;
+  };
+
+  // Settings before emails so a restored config is in place; emails before
+  // msgIndex so an email's own index entry wins over a stale one in the file.
+  const flush = async () => {
+    await flushStore('settings');
+    await flushEmails();
+    for (const name of ['attachments', 'tags', 'msgIndex', 'smartViews',
+                        'emailGroups', 'seenIds', 'addressBook']) {
+      await flushStore(name);
+    }
+  };
+
+  const onValue = (key, value) => {
+    if (!pending[key]) return; // schemaVersion, exportedAt, unknown keys
+    pending[key].push(value);
+    seenStores.add(key);
+    total++;
+  };
+
+  try {
+    await readBackupStream(stream, onValue, flush);
+  } catch (err) {
+    await flush(); // keep whatever was already parsed
+    const done = Object.values(added).reduce((a, b) => a + b, 0);
+    if (done) await loadEmailList();
+    throw new Error(err.message + (done ? ` — ${done} record${done !== 1 ? 's' : ''} were restored before the error` : ''));
+  }
+
+  if (total === 0) {
     toast('Nothing to import', 'err');
     return { parts: [], anyAdded: false, totalRecords: 0 };
   }
 
-  // Restore settings (don't overwrite existing values)
-  for (const s of settings) {
-    if (!s.key || s.handle) continue; // handle records are machine-local
-    const existing = await dbGet('settings', s.key);
-    if (!existing) await dbPut('settings', s);
-  }
-
-  let emailsAdded = 0, emailsSkipped = 0;
-  let attsAdded   = 0, attsSkipped   = 0;
-
-  for (const email of emails) {
-    if (!email.id) continue;
-    const existing = await dbGet('emails', email.id);
-    if (existing) { emailsSkipped++; continue; }
-    // Split the inlined body back out into the bodies store
-    let body = typeof email.textBody === 'string' ? email.textBody : '';
-    if (body) body = body.replace(/(\n[ \t]*){2,}/g, '\n');
-    delete email.textBody;
-    await dbPut('emails', email);
-    if (body) await putBody(email.id, body);
-    if (email.messageId) {
-      await dbPut('msgIndex', { messageId: email.messageId, emailId: email.id });
-    }
-    emailsAdded++;
-  }
-
-  for (const att of attachments) {
-    if (!att.id) continue;
-    const existing = await dbGet('attachments', att.id);
-    if (existing) { attsSkipped++; continue; }
-    await dbPut('attachments', att);
-    attsAdded++;
-  }
-
-  // Skip-if-existing upserts for the remaining config/AI stores so a restore
-  // never silently clobbers the user's current state.
-  const upsertSkip = async (store, key, records) => {
-    let added = 0;
-    for (const r of records) {
-      const k = r?.[key];
-      if (k == null) continue;
-      const existing = await dbGet(store, k);
-      if (existing) continue;
-      await dbPut(store, r);
-      added++;
-    }
-    return added;
-  };
-
-  const tagsAdded   = await upsertSkip('tags',        'name',      tagsReg);
-  const msgAdded    = await upsertSkip('msgIndex',    'messageId', msgIndex);
-  const svAdded     = await upsertSkip('smartViews',  'id',        smartViewsIn);
-  const groupsAdded = await upsertSkip('emailGroups', 'id',        emailGroupsIn);
-  const seenAdded   = await upsertSkip('seenIds',     'id',        seenIds);
-  const abAdded     = await upsertSkip('addressBook', 'email',     addressBook);
-
   // Reload in-memory caches and redraw affected UI.
-  if (settings.length) {
+  if (seenStores.has('settings')) {
     await loadCustomPatterns();
     await loadCustomQuotePatterns();
     await loadCustomSignaturePatterns();
@@ -202,27 +360,29 @@ async function applyBackupData(data) {
     await loadAttachTextLimit();
     if (typeof loadGDriveSettings === 'function') await loadGDriveSettings();
   }
-  if (emailGroupsIn.length) await loadEmailGroups();
-  if (smartViewsIn.length || settings.length || emailGroupsIn.length) await loadSmartViews();
+  if (seenStores.has('emailGroups')) await loadEmailGroups();
+  if (seenStores.has('smartViews') || seenStores.has('settings') || seenStores.has('emailGroups')) {
+    await loadSmartViews();
+  }
 
   await loadEmailList();
   await updateHeaderStats();
   showPanel('list');
 
   const parts = [];
-  if (emailsAdded)   parts.push(`${emailsAdded} email${emailsAdded !== 1 ? 's' : ''}`);
-  if (emailsSkipped) parts.push(`${emailsSkipped} skipped`);
-  if (attsAdded)     parts.push(`${attsAdded} attachment${attsAdded !== 1 ? 's' : ''}`);
-  if (svAdded)       parts.push(`${svAdded} smart view${svAdded !== 1 ? 's' : ''}`);
-  if (groupsAdded)   parts.push(`${groupsAdded} email group${groupsAdded !== 1 ? 's' : ''}`);
-  if (abAdded)       parts.push(`${abAdded} contact${abAdded !== 1 ? 's' : ''}`);
-  if (tagsAdded)     parts.push(`${tagsAdded} tag${tagsAdded !== 1 ? 's' : ''}`);
-  if (seenAdded)     parts.push(`${seenAdded} tombstone${seenAdded !== 1 ? 's' : ''}`);
-  if (msgAdded)      parts.push(`${msgAdded} msgId`);
+  const plural = (n, word) => `${n} ${word}${n !== 1 ? 's' : ''}`;
+  if (added.emails)      parts.push(plural(added.emails, 'email'));
+  if (emailsSkipped)     parts.push(`${emailsSkipped} skipped`);
+  if (added.attachments) parts.push(plural(added.attachments, 'attachment'));
+  if (added.smartViews)  parts.push(plural(added.smartViews, 'smart view'));
+  if (added.emailGroups) parts.push(plural(added.emailGroups, 'email group'));
+  if (added.addressBook) parts.push(plural(added.addressBook, 'contact'));
+  if (added.tags)        parts.push(plural(added.tags, 'tag'));
+  if (added.seenIds)     parts.push(plural(added.seenIds, 'tombstone'));
+  if (added.msgIndex)    parts.push(`${added.msgIndex} msgId`);
 
-  const anyAdded = emailsAdded || attsAdded || svAdded || groupsAdded ||
-                   abAdded || tagsAdded || seenAdded || msgAdded;
-  return { parts, anyAdded, totalRecords };
+  const anyAdded = Object.values(added).some(Boolean);
+  return { parts, anyAdded, totalRecords: total };
 }
 
 async function clearDB() {

@@ -29,7 +29,7 @@ email-tracker/
     ├── render.js     ← virtual-scrolled email list, detail modal, body edit/truncation
     ├── actions.js    ← email actions (tags, automated toggle, delete)
     ├── data-load.js  ← loadEmailList, updateHeaderStats, updateNavCounts, backfill
-    ├── export.js     ← JSON export/import (streamBackupJson/applyBackupData), clearDB, discard automated
+    ├── export.js     ← JSON export/import (streamBackupJson/applyBackupStream), clearDB, discard automated
     ├── gdrive.js     ← Google Drive backup/restore (GIS OAuth, drive.file scope)
     ├── address-book.js ← contact profiles (name, role, projects)
     ├── dashboard.js  ← email volume over time, import activity, sender domains
@@ -126,7 +126,11 @@ emailGroups      // email groups for smart view rules
 - *The whole store* (search, maintenance): `dbIterate('bodies', fn, mode)` — a cursor pass; in `'readwrite'` mode a record returned by `fn` is written back in place. `fn` must be synchronous or the transaction closes underneath it.
 - *Writes*: `putBody(id, text)` (an empty string deletes the record) and `deleteBody(id)` alongside every `dbDelete('emails', …)`.
 
-**Backup writing:** the backup is streamed, not assembled. `streamBackupJson(write)` walks each store with a cursor and serializes records one at a time; `makeBackupSink()` flushes the text into Blob chunks every ~1M chars so the document never sits in the JS heap. `buildBackupBlob()` wraps both and is what `exportData` and `gdriveBackupNow` call — the Drive upload builds its multipart body as a Blob around it. Emails are paired with their bodies by `dbIterateEmailsWithBodies`, a merge join over the two id-ordered stores in one transaction. Import is *not* streamed — `applyBackupData` still takes a parsed object, so restoring a large backup still peaks at its full size.
+**Backups stream in both directions** — neither the export nor the restore ever holds the document whole.
+
+*Writing:* `streamBackupJson(write)` walks each store with a cursor and serializes records one at a time; `makeBackupSink()` flushes the text into Blob chunks every ~1M chars, so it lives in browser storage rather than the JS heap. `buildBackupBlob()` wraps both and is what `exportData` and `gdriveBackupNow` call — the Drive upload builds its multipart body as a Blob around it. Emails are paired with their bodies by `dbIterateEmailsWithBodies`, a merge join over the two id-ordered stores in one transaction.
+
+*Reading:* `applyBackupStream(stream)` takes a `ReadableStream` (`file.stream()` for JSON import, the download's `resp.body` for a Drive restore). `makeBackupScanner` is not a full JSON parser — the document is a flat object of record arrays, so it only finds record *boundaries* (tracking string/escape state so braces in a subject don't count) and hands each record's text to `JSON.parse`. Records are buffered only between stream chunks and written with `dbAddMissing` / `dbPutMany`, one transaction per batch. Because records are applied as they arrive, a file that turns out to be malformed partway through leaves the earlier records restored — the error names the count, and re-running a fixed file skips them.
 
 **Body search:** `applyFilters()` is synchronous and bodies are not, so `searchEmails()` first runs `scanBodiesFor(term)` — one cursor pass keeping only the matching ids — into `searchBodyMatches`, then filters. A generation counter discards a scan the user has typed past. After editing one body, call `updateSearchMatchForBody(id, text)` rather than rescanning.
 
@@ -192,8 +196,8 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
 2. **New view** → add entry to `VIEW_LABELS` in `js/state.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views/routing.js`
 3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS` (group-style fields go in `GROUP_FIELDS`); add case in `getEmailFieldValue`
 4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed; include it in `exportData`/`importData` in `js/export.js`
-   - Add it to the `stores` list in `streamBackupJson` (js/export.js) and to `applyBackupData`.
-   - Bodies are the exception: `streamBackupJson` re-inlines them onto each email record and `applyBackupData` splits them back out, so the backup JSON keeps its `schemaVersion: 3` shape and stays portable in both directions.
+   - Add it to the `stores` list in `streamBackupJson` and to `BACKUP_STORE_KEYS` + the flush order in `applyBackupStream` (both js/export.js).
+   - Bodies are the exception: `streamBackupJson` re-inlines them onto each email record and `applyBackupStream` splits them back out, so the backup JSON keeps its `schemaVersion: 3` shape and stays portable in both directions.
 5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js` (`showSettings`)
 
 ## Google Drive backup (`js/gdrive.js`)
@@ -217,7 +221,9 @@ record. Design points:
   import when auto-backup is on (non-interactive token only — never pops a consent
   dialog mid-workflow).
 - **Restore**: `gdriveListBackups` / `gdriveRestoreBackup` download a file and feed
-  it to `applyBackupData` (shared with JSON import; skip-if-existing, never clobbers).
+  it to `applyBackupStream` (shared with JSON import; skip-if-existing, never clobbers).
+  The restore is applied straight off the download stream, so the backup is never
+  held whole in memory.
 
 Note: OAuth needs an http(s) origin whose domain is listed under the client's
 "Authorized JavaScript origins" — it won't work from `file://`.

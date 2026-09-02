@@ -218,6 +218,41 @@ function dbGetMany(storeName, keys, fn) {
   });
 }
 
+// Batch skip-if-existing insert — one transaction for the whole batch instead of
+// a get + a put per record. store.add() rejects a duplicate key with a
+// ConstraintError, which is exactly the skip we want; preventDefault stops that
+// from aborting the transaction. Resolves with the keys actually added, so the
+// caller can do follow-up writes (bodies, msgIndex) only for new records.
+function dbAddMissing(storeName, records) {
+  return new Promise((res, rej) => {
+    if (!records.length) return res({ addedKeys: [], skipped: 0 });
+    const tx    = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    const addedKeys = [];
+    let skipped = 0;
+    for (const rec of records) {
+      let req;
+      try { req = store.add(rec); } catch { skipped++; continue; } // unusable key
+      req.onsuccess = () => addedKeys.push(req.result);
+      req.onerror   = e => { skipped++; e.preventDefault(); e.stopPropagation(); };
+    }
+    tx.oncomplete = () => res({ addedKeys, skipped });
+    tx.onerror    = () => rej(tx.error);
+  });
+}
+
+// Batch unconditional put — one transaction for the whole batch.
+function dbPutMany(storeName, records) {
+  return new Promise((res, rej) => {
+    if (!records.length) return res();
+    const tx    = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    for (const rec of records) store.put(rec);
+    tx.oncomplete = () => res();
+    tx.onerror    = () => rej(tx.error);
+  });
+}
+
 // Streams every email paired with its body text, in key order, from a single
 // readonly transaction. Both stores are keyed by the email id, so the body
 // cursor is walked forward to each email's key rather than issuing a get per
