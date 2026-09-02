@@ -14,6 +14,7 @@ const RULE_FIELDS = [
   { value: 'ccAddr',            label: 'CC Email' },
   { value: 'ccDomain',          label: 'CC Domain' },
   { value: 'subject',           label: 'Subject' },
+  { value: 'date',              label: 'Date' },
   { value: 'status',            label: 'Status' },
   { value: 'tags',              label: 'Tags' },
   { value: 'hasAttachments',    label: 'Has Attachments' },
@@ -25,6 +26,7 @@ const RULE_FIELDS = [
 
 const BOOL_FIELDS  = new Set(['hasAttachments', 'isSystemEmail']);
 const GROUP_FIELDS = new Set(['fromInGroup', 'recipientInGroup', 'participantInGroup']);
+const DATE_FIELDS  = new Set(['date']);
 
 function getOperatorOptions(field, selected) {
   if (BOOL_FIELDS.has(field)) {
@@ -34,6 +36,15 @@ function getOperatorOptions(field, selected) {
   if (GROUP_FIELDS.has(field)) {
     return `<option value="in_group" ${selected === 'in_group' ? 'selected' : ''}>is in group</option>
             <option value="not_in_group" ${selected === 'not_in_group' ? 'selected' : ''}>is not in group</option>`;
+  }
+  if (DATE_FIELDS.has(field)) {
+    const dops = [
+      ['is_between', 'is between'],
+      ['is_on',      'is on'],
+      ['is_after',   'is after'],
+      ['is_before',  'is before'],
+    ];
+    return dops.map(([v, l]) => `<option value="${v}" ${selected === v ? 'selected' : ''}>${l}</option>`).join('');
   }
   const ops = [
     ['contains',     'contains'],
@@ -48,8 +59,19 @@ function getOperatorOptions(field, selected) {
   return ops.map(([v, l]) => `<option value="${v}" ${selected === v ? 'selected' : ''}>${l}</option>`).join('');
 }
 
-function getValueInputHTML(field, value, operator) {
+function getValueInputHTML(field, value, operator, value2 = '') {
   if (BOOL_FIELDS.has(field)) return '<span style="color:var(--muted);font-size:11px;">—</span>';
+  if (DATE_FIELDS.has(field)) {
+    // The picker's value is already a YYYY-MM-DD key, the same shape evaluateRule compares against.
+    if (operator === 'is_between') {
+      return `<div class="rule-date-range">
+                <input type="date" value="${escHtml(value)}" title="From (inclusive)">
+                <span>→</span>
+                <input type="date" value="${escHtml(value2)}" title="To (inclusive)">
+              </div>`;
+    }
+    return `<input type="date" value="${escHtml(value)}">`;
+  }
   if (operator === 'is_empty' || operator === 'is_not_empty') {
     return '<span style="color:var(--muted);font-size:11px;">—</span>';
   }
@@ -93,9 +115,21 @@ function getEmailLC(email) {
       ccDomain:   ccList.map(a => a.split('@')[1] || '').join(' '),
       toList,
       ccList,
+      dateKey:    localDateKey(email.date),
     };
   }
   return c;
+}
+
+// Local-time YYYY-MM-DD key for an email's ISO date. Local rather than UTC so a
+// date rule matches the day the list shows (formatDate renders local too).
+// Returns '' for a missing or unparseable date.
+function localDateKey(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const m = d.getMonth() + 1, day = d.getDate();
+  return `${d.getFullYear()}-${m < 10 ? '0' : ''}${m}-${day < 10 ? '0' : ''}${day}`;
 }
 
 function invalidateEmailLC(email) {
@@ -113,6 +147,7 @@ function getEmailFieldValue(email, field) {
     case 'ccAddr':         return lc.ccAddr;
     case 'ccDomain':       return lc.ccDomain;
     case 'subject':        return lc.subject;
+    case 'date':           return lc.dateKey;
     case 'status':         return (email.status || '').toLowerCase();
     case 'tags':           return (email.tags   || []).join(' ').toLowerCase();
     case 'hasAttachments': return email.hasAttachments ? 'true' : 'false';
@@ -159,6 +194,22 @@ function evaluateRule(email, rule) {
     }
     return operator === 'in_group' ? match : !match;
   }
+  if (DATE_FIELDS.has(field)) {
+    const from = (value || '').trim();
+    const to   = (rule.value2 || '').trim();
+    // A range with neither bound filled in is a no-op, not a filter that excludes everything.
+    if (operator === 'is_between' && !from && !to) return true;
+    const key = getEmailLC(email).dateKey;
+    if (!key) return false;  // an undated email matches no date rule
+    switch (operator) {
+      case 'is_on':      return !!from && key === from;
+      case 'is_before':  return !!from && key <   from;
+      case 'is_after':   return !!from && key >   from;
+      case 'is_between': return (!from || key >= from) && (!to || key <= to);  // both ends inclusive
+      default: return false;
+    }
+  }
+
   const fv = getEmailFieldValue(email, field);
   // Cache rule.value lowercase on the rule object — rules are immutable for
   // the lifetime of a smart view (edits create a fresh rules array).

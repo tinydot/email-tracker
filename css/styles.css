@@ -974,7 +974,7 @@
 
   #sv-modal {
     width: 100%;
-    max-width: 620px;
+    max-width: 720px;
     background: var(--surface);
     border: 1px solid var(--border2);
     border-radius: 8px;
@@ -1039,7 +1039,7 @@
 
   .rule-row {
     display: grid;
-    grid-template-columns: 160px 160px 1fr 28px;
+    grid-template-columns: minmax(0, 160px) minmax(0, 160px) minmax(0, 1fr) 28px;
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
@@ -1048,7 +1048,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
   }
-  .rule-row select, .rule-row input[type=text] {
+  .rule-row select, .rule-row input[type=text], .rule-row input[type=date] {
     background: var(--surface);
     border: 1px solid var(--border2);
     border-radius: 3px;
@@ -1059,7 +1059,22 @@
     width: 100%;
     outline: none;
   }
-  .rule-row select:focus, .rule-row input[type=text]:focus { border-color: var(--accent); }
+  .rule-row select:focus, .rule-row input[type=text]:focus,
+  .rule-row input[type=date]:focus { border-color: var(--accent); }
+
+  /* Pin the UA calendar widget to the app's light palette rather than the OS setting. */
+  .rule-row input[type=date] { color-scheme: light; min-width: 0; }
+
+  /* Wraps to two lines rather than clipping the year when the row is narrow. */
+  .rule-date-range {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+  .rule-date-range input[type=date] { flex: 1 1 112px; }
+  .rule-date-range > span { color: var(--muted); font-size: 12px; }
 
   .rule-remove {
     background: none;
@@ -1151,6 +1166,13 @@
     .search-input { flex: 1 1 140px; width: auto; }
     .email-row, .email-list-header { grid-template-columns: 24px 150px 1fr 110px 80px; }
     .col-status { display: none; }
+    /* Too narrow for field + operator + value side by side — drop the value
+       onto its own full-width line so date ranges stay readable. */
+    .rule-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px; }
+    .rule-row > .rule-field       { grid-area: 1 / 1; }
+    .rule-row > .rule-operator    { grid-area: 1 / 2; }
+    .rule-row > .rule-remove      { grid-area: 1 / 3; }
+    .rule-row > .rule-value-container { grid-area: 2 / 1 / auto / -1; }
   }
 
   @media (max-width: 620px) {
