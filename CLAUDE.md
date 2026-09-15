@@ -156,9 +156,13 @@ Smart views use a **grouped rules** format (legacy flat `{ruleOperator, rules}` 
 }
 ```
 
-**Rule fields:** `fromAddr`, `fromName`, `fromDomain`, `toAddr`, `toDomain`, `ccAddr`, `ccDomain`, `subject`, `status`, `tags`, `hasAttachments`, `isSystemEmail`, plus group fields `fromInGroup`, `recipientInGroup`, `participantInGroup`
+**Rule fields:** `fromAddr`, `fromName`, `fromDomain`, `toAddr`, `toDomain`, `ccAddr`, `ccDomain`, `subject`, `date`, `status`, `tags`, `hasAttachments`, `isSystemEmail`, plus group fields `fromInGroup`, `recipientInGroup`, `participantInGroup`
 
-**Operators:** `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty` (text fields); `is_true`, `is_false` (boolean fields); `in_group`, `not_in_group` (group fields)
+**Operators:** `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty` (text fields); `is_true`, `is_false` (boolean fields); `in_group`, `not_in_group` (group fields); `is_between`, `is_on`, `is_after`, `is_before` (date field)
+
+**Date rules** (`DATE_FIELDS` in rule-engine.js) are the "emails between two dates" mechanism — save a range as a smart view and it becomes a sidebar entry. They're the one rule kind that uses a second value: `is_between` stores its upper bound in `rule.value2`, so a rule is `{ field:'date', operator:'is_between', value:'2025-01-01', value2:'2025-03-31' }`. Both ends are inclusive and either may be left blank for an open-ended range; a range with neither bound set is a no-op rather than a filter matching nothing. Comparison is string comparison of `YYYY-MM-DD` keys — `localDateKey()` derives the email's key in **local** time (cached in the `_lc` slot as `dateKey`) so a rule matches the day the list shows, since `formatDate` also renders local. An email with a missing or unparseable date matches no date rule.
+
+Because a rule can now carry two values, `collectGroupsFromDOM` reads the value cell's inputs positionally via `readRuleValues(row)` rather than looking for a specific input type — a new multi-value operator just renders its inputs in order.
 
 Rule evaluation: `evaluateRule(email, rule)` → `applySmartViewRules(email, sv)` → used in `applyFilters()` and `renderSmartViewsSidebar()` (sidebar badges count *unread* matches).
 
@@ -194,7 +198,7 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
 
 1. **New email action** → add button in the `det-actions` block (inside `openDetail` in `js/render.js`) + async handler in `js/actions.js`
 2. **New view** → add entry to `VIEW_LABELS` in `js/state.js`, add `nav-item` in `index.html`, add case in `switchView` and `applyFilters` in `js/smart-views/routing.js`
-3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS` (group-style fields go in `GROUP_FIELDS`); add case in `getEmailFieldValue`
+3. **New smart view rule field** → add to `RULE_FIELDS` array in `js/smart-views/rule-engine.js`; if boolean add to `BOOL_FIELDS` (group-style fields go in `GROUP_FIELDS`, date-style in `DATE_FIELDS`); add case in `getEmailFieldValue`, and a branch in `getOperatorOptions` / `getValueInputHTML` / `evaluateRule` if the field needs its own operators or input widget
 4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed; include it in `exportData`/`importData` in `js/export.js`
    - Add it to the `stores` list in `streamBackupJson` and to `BACKUP_STORE_KEYS` + the flush order in `applyBackupStream` (both js/export.js).
    - Bodies are the exception: `streamBackupJson` re-inlines them onto each email record and `applyBackupStream` splits them back out, so the backup JSON keeps its `schemaVersion: 3` shape and stays portable in both directions.

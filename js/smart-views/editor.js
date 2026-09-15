@@ -17,7 +17,7 @@ function buildRuleRowHTML(rule = {}) {
       <select class="rule-operator" onchange="onRuleOperatorChange(this)">
         ${getOperatorOptions(field, operator)}
       </select>
-      <div class="rule-value-container" style="min-width:0;">${getValueInputHTML(field, value, operator)}</div>
+      <div class="rule-value-container" style="min-width:0;">${getValueInputHTML(field, value, operator, rule.value2 || '')}</div>
       <button class="rule-remove" onclick="this.closest('.rule-row').remove()" title="Remove rule">×</button>
     </div>`;
 }
@@ -25,7 +25,10 @@ function buildRuleRowHTML(rule = {}) {
 function onRuleFieldChange(select) {
   const row = select.closest('.rule-row');
   const field = select.value;
-  const defaultOp = GROUP_FIELDS.has(field) ? 'in_group' : BOOL_FIELDS.has(field) ? 'is_true' : 'contains';
+  const defaultOp = GROUP_FIELDS.has(field) ? 'in_group'
+                  : BOOL_FIELDS.has(field)  ? 'is_true'
+                  : DATE_FIELDS.has(field)  ? 'is_between'
+                  : 'contains';
   row.querySelector('.rule-operator').innerHTML = getOperatorOptions(field, defaultOp);
   row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', defaultOp);
 }
@@ -34,7 +37,17 @@ function onRuleOperatorChange(select) {
   const row = select.closest('.rule-row');
   const field = row.querySelector('.rule-field').value;
   const operator = select.value;
-  row.querySelector('.rule-value-container').innerHTML = getValueInputHTML(field, '', operator);
+  const container = row.querySelector('.rule-value-container');
+  // Dates already typed survive a switch between "is between" and the single-date operators.
+  const [v1, v2] = DATE_FIELDS.has(field) ? readRuleValues(row) : ['', ''];
+  container.innerHTML = getValueInputHTML(field, v1, operator, v2);
+}
+
+// The value cell holds 1–2 inputs/selects depending on field and operator
+// (a date range renders two). Reads them in document order.
+function readRuleValues(row) {
+  const els = row.querySelectorAll('.rule-value-container input, .rule-value-container select');
+  return [els[0] ? els[0].value : '', els[1] ? els[1].value : ''];
 }
 
 function addRuleToGroup(btn) {
@@ -219,10 +232,11 @@ function collectGroupsFromDOM() {
     groupEl.querySelectorAll('.rule-row').forEach(row => {
       const field    = row.querySelector('.rule-field')?.value;
       const operator = row.querySelector('.rule-operator')?.value;
-      const textIn   = row.querySelector('.rule-value-container input[type=text]');
-      const selIn    = row.querySelector('.rule-value-container select');
-      const value    = textIn ? textIn.value : (selIn ? selIn.value : '');
-      if (field) rules.push({ field, operator: operator || 'contains', value: value || '' });
+      const [value, value2] = readRuleValues(row);
+      if (!field) return;
+      const rule = { field, operator: operator || 'contains', value: value || '' };
+      if (value2) rule.value2 = value2;   // second bound of a date range
+      rules.push(rule);
     });
     groups.push({ operator, rules });
   });
