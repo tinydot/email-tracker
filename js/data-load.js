@@ -17,7 +17,7 @@ async function backfillSystemEmailFlag() {
   // the first 1000 chars (see detectSystemEmail) and we keep just the ids that flip.
   const withBody = new Set();
   const flagged  = new Set();
-  await dbGetMany('bodies', candidates, rec => {
+  await apiForEachBody(candidates, rec => {
     withBody.add(rec.id);
     const e = emailIdIndex.get(rec.id);
     // rawHeaders not persisted — use available stored fields only
@@ -30,11 +30,13 @@ async function backfillSystemEmailFlag() {
     if (e && detectSystemEmail({}, e.fromAddr, e.subject, '')) flagged.add(id);
   }
 
+  const changed = [];
   for (const id of flagged) {
     const e = emailIdIndex.get(id);
     e.isSystemEmail = true;
-    await dbPut('emails', e);
+    changed.push(e);
   }
+  await apiSaveEmails(changed);
   return flagged.size;
 }
 
@@ -49,7 +51,7 @@ async function rerunAutomatedDetection() {
 }
 
 async function loadEmailList() {
-  allEmails = await dbGetAll('emails');
+  allEmails = await apiLoadEmails();
   rebuildMsgIdIndex();   // must precede buildThreadCache (thread walks use msgIdIndex)
   await backfillSystemEmailFlag(); // resolves ids through emailIdIndex
   buildThreadCache();
@@ -67,7 +69,7 @@ async function loadEmailList() {
 // Accepts a preloaded attachments array to avoid re-querying when the caller
 // already has one.
 async function buildAttachmentNameIndex(atts = null) {
-  if (!atts) atts = await dbGetAll('attachments');
+  if (!atts) atts = await apiListAttachments();
   attachmentNameIndex.clear();
   for (const a of atts) {
     if (!a.emailId || !a.filename || a.isBlacklisted) continue;
@@ -83,7 +85,7 @@ async function buildAttachmentNameIndex(atts = null) {
 async function updateHeaderStats() {
   rebuildMsgIdIndex();
   buildThreadCache();
-  const atts = await dbGetAll('attachments');
+  const atts = await apiListAttachments();
   await buildAttachmentNameIndex(atts);
 
   document.getElementById('h-total').textContent      = allEmails.length;

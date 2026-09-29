@@ -679,7 +679,7 @@ async function loadLib(name) {
 }
 
 async function loadAttachTextLimit() {
-  const saved = await dbGet('settings', 'attachTextLimit');
+  const saved = await apiGetSetting('attachTextLimit');
   if (saved?.kb > 0) {
     attachTextLimitKb = saved.kb;
     attachTextLimit   = attachTextLimitKb * 1000;
@@ -695,7 +695,7 @@ async function saveAttachTextLimitFromUI() {
   }
   attachTextLimitKb = kb;
   attachTextLimit   = kb * 1000;
-  await dbPut('settings', { key: 'attachTextLimit', kb });
+  await apiPutSetting({ key: 'attachTextLimit', kb });
   toast(`Attachment text limit set to ${kb} KB`, 'ok');
 }
 

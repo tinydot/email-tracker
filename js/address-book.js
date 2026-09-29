@@ -9,7 +9,7 @@
 async function showAddressBook() {
   showPanel('list');
   const container = document.getElementById('email-list');
-  const contacts = await dbGetAll('addressBook');
+  const contacts = await apiListContacts();
   contacts.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
 
   const toolbar = `
@@ -88,7 +88,7 @@ function filterAddressBook(term) {
 async function showAddressBookEditor(emailKey) {
   let contact = null;
   if (emailKey) {
-    contact = await dbGet('addressBook', emailKey);
+    contact = await apiGetContact(emailKey);
   }
   const isNew  = !contact;
   const c      = contact || { email: '', name: '', role: '', jobScope: '', projects: [], notes: '' };
@@ -179,7 +179,7 @@ async function saveContact(isEdit) {
   const projects = projRaw.split(',').map(p => p.trim()).filter(Boolean);
 
   const contact = { email, name, role, jobScope, projects, notes, updatedAt: Date.now() };
-  await dbPut('addressBook', contact);
+  await apiPutContact(contact);
 
   closeAddressBookEditor();
   toast(isEdit ? 'Contact updated' : 'Contact added', 'ok');
@@ -188,7 +188,7 @@ async function saveContact(isEdit) {
 
 async function deleteContact(email) {
   if (!confirm(`Delete contact ${email}?`)) return;
-  await dbDelete('addressBook', email);
+  await apiDeleteContact(email);
   toast('Contact deleted', 'ok');
   if (currentView === 'addressbook') showAddressBook();
 }
@@ -197,7 +197,7 @@ async function deleteContact(email) {
 
 // Called from the email detail panel to add/edit sender as a contact
 async function quickAddContact(emailAddr, displayName) {
-  const existing = await dbGet('addressBook', emailAddr.toLowerCase());
+  const existing = await apiGetContact(emailAddr.toLowerCase());
   await showAddressBookEditor(existing ? emailAddr.toLowerCase() : null);
   if (!existing) {
     // Pre-fill email and name from the email header
@@ -218,7 +218,7 @@ async function getContactContextForAddresses(addresses) {
   for (const addr of addresses) {
     const clean = addr.replace(/^.*<|>.*$/g, '').trim().toLowerCase();
     if (!clean) continue;
-    const c = await dbGet('addressBook', clean);
+    const c = await apiGetContact(clean);
     if (!c) continue;
     const parts = [];
     if (c.name) parts.push(c.name);

@@ -6,15 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project at a glance
 
-A client-side web app with no build step, no npm, no server, and no external runtime dependencies. Open `index.html` in a browser and it runs entirely in-browser using the File System Access API and IndexedDB.
+A client-side web app with no build step, no npm, and no external runtime dependencies. Open `index.html` in a browser and it runs entirely in-browser using the File System Access API and IndexedDB (**v1**, the GitHub Pages version).
+
+**Migration in progress (2026-09-29):** the same page can also be served by a local Python server that owns an SQLite `email.db` (**v2**), so other processes (the life-mcp MCP server) can read live data. See [v2 server](#v2-server-migration-in-progress) below, `HANDOVER.md` in the main checkout, and `~/Developer/life-mcp/HANDOVER.md`. v1 and its Pages URL stay untouched as the rollback until v2 meets the acceptance criteria.
 
 ```
 email-tracker/
 ├── index.html        ← HTML structure only (~190 lines)
 ├── css/
 │   └── styles.css    ← all styles (~1050 lines)
+├── email_tracker/    ← v2 server (Python; see "v2 server" below)
+├── tests/            ← pytest suite + Playwright e2e for v2
+├── pyproject.toml    ← v2 package (uv)
 └── js/
     ├── db.js         ← IndexedDB wrapper (openDB + db* helpers)
+    ├── api.js        ← data API: one function per UI operation, IndexedDB (v1) or server (v2)
     ├── parser.js     ← EML parser (MIME, encodings, signature/quote stripping)
     ├── detection.js  ← system/automated email detection patterns
     ├── import.js     ← import pipeline, EML archiving, reimport
@@ -37,7 +43,7 @@ email-tracker/
     └── init.js       ← init(), keyboard shortcuts (j/k, Escape)
 ```
 
-All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, parser, detection, import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, gdrive, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
+All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, api, parser, detection, import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, gdrive, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
 
 ### Companion scripts (outside the web app)
 
@@ -118,13 +124,15 @@ emailGroups      // email groups for smart view rules
 
 **Filtering:** `applyFilters()` rebuilds `filteredEmails` from `allEmails` in a single pass: smart-view rules or built-in view filter, system-email exclusion (all views except `automated`; smart views can opt out via `excludeAutomated`), full-text search, then sort.
 
-**DB writes:** always `await dbPut('emails', email)` — email objects in `allEmails` are mutated in-place, then saved. `selectedEmail` is the same object reference, so no separate sync is needed.
+**Data access goes through `js/api.js`.** UI code calls `api*` functions (`apiSaveEmail`, `apiGetBody`, `apiPutDoc`, `apiGetSetting`, …), never the `db*` helpers directly — each `api*` function runs the original db.js calls in v1 and the matching server route in v2. The exceptions are v1-only code paths (the .eml import pipeline in `import.js`, attachment text extraction in `parser.js`, `gdrive.js`, `clearDB`, the backup stream in `export.js`), which are hidden in v2.
+
+**DB writes:** always `await apiSaveEmail(email)` — email objects in `allEmails` are mutated in-place, then saved. `selectedEmail` is the same object reference, so no separate sync is needed. In v2 only the user-editable fields travel (`_EMAIL_PATCHABLE` in api.js, `EMAIL_PATCHABLE` in store.py); everything else is set at ingest.
 
 **Bodies are not in memory.** Never park a body on an email object in `allEmails` — that's what the `bodies` store exists to prevent. The access patterns are:
-- *One email* (detail panel): `await getBody(id)`. `openDetail` renders a placeholder and fills it in, keeping the result in `selectedEmailBody` for the truncation/edit controls; `_loadedBodyId` marks which email that body belongs to, and `closeDetail` clears both.
-- *A known subset* (links sub-view, detection backfill): `dbGetMany('bodies', ids, fn)` — one transaction, callback per record, nothing accumulated.
+- *One email* (detail panel): `await apiGetBody(id)`. `openDetail` renders a placeholder and fills it in, keeping the result in `selectedEmailBody` for the truncation/edit controls; `_loadedBodyId` marks which email that body belongs to, and `closeDetail` clears both.
+- *A known subset* (links sub-view, detection backfill): `apiForEachBody(ids, fn)` (v1: `dbGetMany` — one transaction, callback per record, nothing accumulated; v2: batched `POST /api/bodies`).
 - *The whole store* (search, maintenance): `dbIterate('bodies', fn, mode)` — a cursor pass; in `'readwrite'` mode a record returned by `fn` is written back in place. `fn` must be synchronous or the transaction closes underneath it.
-- *Writes*: `putBody(id, text)` (an empty string deletes the record) and `deleteBody(id)` alongside every `dbDelete('emails', …)`.
+- *Writes*: `apiPutBody(id, text)` (an empty string deletes the record); `apiDeleteEmail` / `apiDiscardAutomated` remove bodies with their emails.
 
 **Backups stream in both directions** — neither the export nor the restore ever holds the document whole.
 
@@ -132,7 +140,7 @@ emailGroups      // email groups for smart view rules
 
 *Reading:* `applyBackupStream(stream)` takes a `ReadableStream` (`file.stream()` for JSON import, the download's `resp.body` for a Drive restore). `makeBackupScanner` is not a full JSON parser — the document is a flat object of record arrays, so it only finds record *boundaries* (tracking string/escape state so braces in a subject don't count) and hands each record's text to `JSON.parse`. Records are buffered only between stream chunks and written with `dbAddMissing` / `dbPutMany`, one transaction per batch. Because records are applied as they arrive, a file that turns out to be malformed partway through leaves the earlier records restored — the error names the count, and re-running a fixed file skips them.
 
-**Body search:** `applyFilters()` is synchronous and bodies are not, so `searchEmails()` first runs `scanBodiesFor(term)` — one cursor pass keeping only the matching ids — into `searchBodyMatches`, then filters. A generation counter discards a scan the user has typed past. After editing one body, call `updateSearchMatchForBody(id, text)` rather than rescanning.
+**Body search:** `applyFilters()` is synchronous and bodies are not, so `searchEmails()` first runs `scanBodiesFor(term)` — one cursor pass keeping only the matching ids (v2: `GET /api/search/bodies`, the same case-insensitive substring test run in SQLite) — into `searchBodyMatches`, then filters. A generation counter discards a scan the user has typed past. After editing one body, call `updateSearchMatchForBody(id, text)` rather than rescanning.
 
 **In-memory caches** (rebuild after `allEmails` changes):
 - `rebuildMsgIdIndex()` — rebuilds `msgIdIndex` (messageId → email) and `emailIdIndex` (id → email; use this instead of `allEmails.find`). Also invalidates the thread caches.
@@ -202,7 +210,8 @@ Each smart view has an Emails/Attachments/Links tab toggle (`svSubView`); the at
 4. **New DB store** → increment `DB_VERSION` in `js/db.js`, add `createObjectStore` in `onupgradeneeded`, add wrapper calls as needed; include it in `exportData`/`importData` in `js/export.js`
    - Add it to the `stores` list in `streamBackupJson` and to `BACKUP_STORE_KEYS` + the flush order in `applyBackupStream` (both js/export.js).
    - Bodies are the exception: `streamBackupJson` re-inlines them onto each email record and `applyBackupStream` splits them back out, so the backup JSON keeps its `schemaVersion: 3` shape and stays portable in both directions.
-5. **New persistent setting** → use `dbGet/dbPut('settings', { key: '...', ... })`; setting UI goes in `js/smart-views/settings.js` (`showSettings`)
+5. **New persistent setting** → use `apiGetSetting(key)` / `apiPutSetting({ key: '...', ... })`; setting UI goes in `js/smart-views/settings.js` (`showSettings`)
+6. **Any new data access** → add an `api*` function to `js/api.js` with both branches, plus the route in `email_tracker/server.py` and the method in `email_tracker/store.py` (and a test in `tests/test_server.py`). Something that can't work in v2 yet gets `data-v1-only`.
 
 ## Google Drive backup (`js/gdrive.js`)
 
@@ -234,9 +243,38 @@ Note: OAuth needs an http(s) origin whose domain is listed under the client's
 
 ---
 
+## v2 server (migration in progress)
+
+A FastAPI app on 127.0.0.1 that owns `email.db` (SQLite, WAL) and serves the unchanged UI. Why and the acceptance criteria: `HANDOVER.md` (main checkout).
+
+```bash
+uv run --extra server python -m email_tracker serve                  # http://127.0.0.1:8767
+uv run python -m email_tracker import-backup email-tracker-YYYY-MM-DD.json   # v1 export → email.db
+uv run python -m email_tracker backup                                # VACUUM INTO snapshot + prune
+uv run python -m email_tracker install-backup-job                    # nightly LaunchAgent (02:45)
+uv run --extra server --group dev pytest tests/
+uv run --extra server --with playwright python tests/e2e_v2.py      # system Chrome, throwaway DB
+```
+
+Config lives outside the repo (public; the corpus is work email): `~/.config/email-tracker/config.json` (`$EMAIL_TRACKER_CONFIG`) — `db_path` (default `~/.local/share/email-tracker/email.db`, or `$EMAIL_TRACKER_DB`), `port` (8767; bank-consolidator uses 8765/8766), `allowed_hosts`, `backup_dir`, `my_addresses`.
+
+**Modules** (`email_tracker/`): `schema.py` (DDL + camelCase⇄column mapping; unknown record keys go to an `extra` JSON column so backups round-trip), `store.py` (`EmailStore`, the only writer: one connection + lock, per-thread read connections), `threading_ids.py` (thread roots), `backup_json.py` (streaming v3 JSON reader/writer — a port of `makeBackupScanner`/`applyBackupStream`), `server.py` (routes), `backup.py`, `__main__.py`.
+
+**v2 mode in the page:** `GET /` injects `window.EMAIL_V2_SERVER = true` into `<head>`; `js/api.js` reads it into `V2_SERVER` and puts `.v2-server` on `<html>`, which hides `[data-v1-only]` elements (CSS at the end of styles.css). GitHub Pages / `file://` never get the flag, so the same files run v1. The API is purpose-built — one route per UI operation — and returns v1's record shapes, so filtering, the rule engine, rendering and threading.js still run in the browser on `allEmails` (metadata only; ~27k rows is fine).
+
+**Derived state is the server's job:** `thread_id` is persisted and recomputed after every insert/delete (v1's inReplyTo walk, plus a `References` fallback that threads replies Outlook sent without In-Reply-To). `emails_fts` (FTS5 over subject/sender/body, rowid = `emails.seq`) is refreshed on every email/body write — life-mcp's search joins on it.
+
+**Security:** loopback bind only; `TrustedHostMiddleware` against DNS rebinding; non-GET with a foreign `Origin` → 403; request bodies must be `application/json` (415 otherwise), so a cross-site form can't write without a preflight the server never approves.
+
+**Status — Phase 1 done:** server, schema, backup import (the 2026-09-03 export imports to exactly 27,238 emails / 75,396 attachments; re-import adds nothing), UI read/write through the API, JSON export/import, mojibake and line-break maintenance, nightly snapshots.
+
+**Phase 2+ (not yet in v2, hidden via `data-v1-only`):** .eml ingest ported to Python (parser, detection, `imap_sync.py` as the acquisition path, raw archive kept server-side) · re-run truncation/signature stripping and attachment text extraction (need the parser port) · `needs_my_reply` · life-mcp repoint (live DB in its config, `email.py` reading `bodies`/`is_system_email`, retire `ingest/ingest_email.py`) · Clear DB (restore a snapshot instead). Google Drive backup is superseded by snapshots/Litestream and won't be ported. "Open Original" and attachment downloads still work in v2 through the folder picker (no DB involved).
+
+---
+
 ## Analysis: Migration from IndexedDB to SQL
 
-*Recorded 2026-02-27 — kept as a decision record; some schema details reference stores/fields that have since been removed (e.g. issues).*
+*Recorded 2026-02-27 — kept as a decision record; some schema details reference stores/fields that have since been removed (e.g. issues). **Superseded 2026-09-29:** v2 went server-side (see above), which drops the no-server constraint this analysis assumed; its schema sketch informed `email_tracker/schema.py`, its WASM/OPFS sections no longer apply.*
 
 ### Motivation
 

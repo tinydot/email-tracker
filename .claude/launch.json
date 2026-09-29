@@ -4,16 +4,38 @@
     {
       "name": "Email Tracker",
       "runtimeExecutable": "node",
-      "runtimeArgs": [".claude/serve.js"],
+      "runtimeArgs": [
+        ".claude/serve.js"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "Email Tracker (python)",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3001"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "3001"
+      ],
       "port": 3001,
       "autoPort": true
+    },
+    {
+      "name": "email-tracker-v2",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "EMAIL_TRACKER_DB=.claude/v2-preview.db",
+        "uv",
+        "run",
+        "--extra",
+        "server",
+        "python",
+        "-m",
+        "email_tracker",
+        "serve"
+      ],
+      "port": 8767
     }
   ]
 }

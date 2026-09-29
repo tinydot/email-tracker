@@ -309,7 +309,7 @@ async function saveSmartView() {
     createdAt: existing?.createdAt || new Date().toISOString(),
   };
 
-  await dbPut('smartViews', svRecord);
+  await apiPutDoc('smartViews', svRecord);
 
   const idx = smartViews.findIndex(s => s.id === svRecord.id);
   if (idx >= 0) smartViews[idx] = svRecord;
@@ -324,7 +324,7 @@ async function saveSmartView() {
 
 async function deleteSmartView(id) {
   if (!confirm('Delete this smart view?')) return;
-  await dbDelete('smartViews', id);
+  await apiDeleteDoc('smartViews', id);
   smartViews = smartViews.filter(s => s.id !== id);
   closeSmartViewEditor();
   renderSmartViewsSidebar();

@@ -1187,3 +1187,7 @@
     .detail-header { padding: 12px 12px 14px 16px; }
     .detail-actions, .detail-body, .detail-attachments { padding-left: 16px; padding-right: 16px; }
   }
+
+/* v1 (static) vs v2 (server) — js/api.js sets .v2-server on <html> */
+.v2-server [data-v1-only] { display: none !important; }
+html:not(.v2-server) [data-v2-only] { display: none !important; }

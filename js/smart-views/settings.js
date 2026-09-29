@@ -11,14 +11,14 @@ async function createEmailGroup(name) {
   const trimmed = name.trim();
   if (!trimmed) return null;
   const group = { id: 'eg-' + Date.now(), name: trimmed, members: [], createdAt: new Date().toISOString() };
-  await dbPut('emailGroups', group);
+  await apiPutDoc('emailGroups', group);
   emailGroups.push(group);
   return group;
 }
 
 async function deleteEmailGroup(id) {
   if (!confirm('Delete this group? Smart view rules using it will no longer match.')) return;
-  await dbDelete('emailGroups', id);
+  await apiDeleteDoc('emailGroups', id);
   emailGroups = emailGroups.filter(g => g.id !== id);
   toast('Group deleted', 'ok');
   showSettings();
@@ -32,7 +32,7 @@ async function addGroupMember(groupId, email) {
   if (group.members.includes(addr)) { toast('Already in group', 'warn'); return; }
   group.members.push(addr);
   invalidateGroupCache(group);
-  await dbPut('emailGroups', group);
+  await apiPutDoc('emailGroups', group);
   toast(`Added ${addr}`, 'ok');
   showSettings();
 }
@@ -42,7 +42,7 @@ async function removeGroupMember(groupId, email) {
   if (!group) return;
   group.members = group.members.filter(m => m !== email);
   invalidateGroupCache(group);
-  await dbPut('emailGroups', group);
+  await apiPutDoc('emailGroups', group);
   toast('Removed', 'ok');
   showSettings();
 }
@@ -53,7 +53,7 @@ async function renameEmailGroup(groupId) {
   const name = prompt('New name for group:', group.name);
   if (!name || !name.trim()) return;
   group.name = name.trim();
-  await dbPut('emailGroups', group);
+  await apiPutDoc('emailGroups', group);
   toast('Group renamed', 'ok');
   showSettings();
 }
@@ -61,7 +61,7 @@ async function renameEmailGroup(groupId) {
 // --- Custom automation patterns ---
 
 async function loadCustomPatterns() {
-  const saved = await dbGet('settings', 'customAutomationPatterns');
+  const saved = await apiGetSetting('customAutomationPatterns');
   if (saved) {
     customPatterns.senders  = saved.senders  || [];
     customPatterns.subjects = saved.subjects || [];
@@ -81,7 +81,7 @@ function safeRegex(src) {
 }
 
 async function saveCustomPatterns() {
-  await dbPut('settings', { key: 'customAutomationPatterns', ...customPatterns });
+  await apiPutSetting({ key: 'customAutomationPatterns', ...customPatterns });
   mergeCustomPatterns();
 }
 
@@ -90,13 +90,13 @@ async function saveCustomPatterns() {
 let customSignaturePatternSrcs = [];
 
 async function loadCustomSignaturePatterns() {
-  const saved = await dbGet('settings', 'customSignaturePatterns');
+  const saved = await apiGetSetting('customSignaturePatterns');
   customSignaturePatternSrcs = (saved && saved.patterns) ? saved.patterns : [];
   customSignaturePatterns = customSignaturePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
 }
 
 async function saveCustomSignaturePatterns() {
-  await dbPut('settings', { key: 'customSignaturePatterns', patterns: customSignaturePatternSrcs });
+  await apiPutSetting({ key: 'customSignaturePatterns', patterns: customSignaturePatternSrcs });
   customSignaturePatterns = customSignaturePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
 }
 
@@ -162,12 +162,12 @@ async function rerunSignatureStripping() {
 // --- Signature ranges (explicit start/end keyword pairs) ---
 
 async function loadSignatureRanges() {
-  const saved = await dbGet('settings', 'signatureRanges');
+  const saved = await apiGetSetting('signatureRanges');
   signatureRanges = (saved && saved.ranges) ? saved.ranges : [];
 }
 
 async function saveSignatureRanges() {
-  await dbPut('settings', { key: 'signatureRanges', ranges: signatureRanges });
+  await apiPutSetting({ key: 'signatureRanges', ranges: signatureRanges });
 }
 
 async function addSignatureRange() {
@@ -234,13 +234,13 @@ const DEFAULT_QUOTE_PATTERNS = [
 ];
 
 async function loadCustomQuotePatterns() {
-  const saved = await dbGet('settings', 'customQuotePatterns');
+  const saved = await apiGetSetting('customQuotePatterns');
   customQuotePatternSrcs = (saved && saved.patterns) ? saved.patterns : [];
   customQuotePatterns = customQuotePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
 }
 
 async function saveCustomQuotePatterns() {
-  await dbPut('settings', { key: 'customQuotePatterns', patterns: customQuotePatternSrcs });
+  await apiPutSetting({ key: 'customQuotePatterns', patterns: customQuotePatternSrcs });
   customQuotePatterns = customQuotePatternSrcs.map(s => safeRegex(s)).filter(Boolean);
 }
 
@@ -453,7 +453,7 @@ function showSettings() {
             Re-run truncation on all existing emails in the library using the current patterns above.
             Only emails whose body contains a matching pattern will be updated.
           </div>
-          <button id="btn-rerun-truncation" class="btn" onclick="rerunTruncation()">Re-run truncation</button>
+          <button id="btn-rerun-truncation" class="btn" data-v1-only onclick="rerunTruncation()">Re-run truncation</button>
         </div>
       </div>
 
@@ -480,7 +480,7 @@ function showSettings() {
           <div style="color:var(--muted); font-size:12px; margin-bottom:8px;">
             Re-run signature stripping on all existing emails using the current patterns and ranges above.
           </div>
-          <button id="btn-rerun-signatures" class="btn" onclick="rerunSignatureStripping()">Re-run signature stripping</button>
+          <button id="btn-rerun-signatures" class="btn" data-v1-only onclick="rerunSignatureStripping()">Re-run signature stripping</button>
         </div>
       </div>
 
@@ -535,7 +535,7 @@ function showSettings() {
         ${renderEmailGroupsSection()}
       </div>
 
-      ${typeof renderGDriveSection === 'function' ? renderGDriveSection() : ''}
+      ${!V2_SERVER && typeof renderGDriveSection === 'function' ? renderGDriveSection() : ''}
 
       <div style="margin-top:32px; padding:16px; background:rgba(220,53,69,0.06); border:1px solid var(--danger); border-radius:6px;">
         <div style="font-weight:600; color:var(--danger); margin-bottom:4px;">⚠ Danger Zone</div>
@@ -549,7 +549,7 @@ function showSettings() {
           <button class="btn btn-danger" onclick="discardAutomatedEmails()">✕ Discard Automated Emails</button>
         </div>
 
-        <div>
+        <div data-v1-only>
           <div style="font-weight:500; margin-bottom:4px;">Clear database</div>
           <div style="color:var(--muted); font-size:12px; margin-bottom:10px;">
             Permanently deletes all emails, attachments, and tags from the local database.
@@ -564,7 +564,7 @@ function showSettings() {
   closeDetail(); // Close detail panel if open
 
   // Populate the Google Drive backups list if already connected this session.
-  if (typeof gdriveIsConnected === 'function' && gdriveIsConnected()) {
+  if (!V2_SERVER && typeof gdriveIsConnected === 'function' && gdriveIsConnected()) {
     refreshGDriveBackupsList();
   }
 }
@@ -593,6 +593,15 @@ async function fixMojibakeEmails() {
     } catch { return null; } // not mojibake — leave untouched
   };
 
+  // v2: the same repair runs server-side (repair_mojibake in email_tracker/store.py)
+  if (V2_SERVER) {
+    const fixed = await apiMaintenance('fix-mojibake');
+    if (btn) { btn.disabled = false; btn.textContent = 'Fix garbled characters'; }
+    toast(fixed ? `Repaired ${fixed} email${fixed !== 1 ? 's' : ''}` : 'No garbled emails found', fixed ? 'ok' : '');
+    if (fixed) { await loadEmailList(); applyFilters(); }
+    return;
+  }
+
   // Two cursor passes: header fields on `emails`, body text on `bodies`
   const headersFixed = await dbIterate('emails', rec => {
     let changed = false;
@@ -619,7 +628,7 @@ async function normalizeLineBreaks() {
   const btn = document.getElementById('btn-normalize-linebreaks');
   if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
 
-  const fixed = await dbIterate('bodies', rec => {
+  const fixed = V2_SERVER ? await apiMaintenance('normalize-linebreaks') : await dbIterate('bodies', rec => {
     if (!rec.text) return;
     const normalized = rec.text
       .replace(/\r\n/g, '\n')

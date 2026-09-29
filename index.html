@@ -15,7 +15,7 @@
       <div class="stat">EMAILS <b id="h-total">0</b></div>
       <div class="stat">UNREAD <b id="h-unread">0</b></div>
       <div class="stat">ATTACHMENTS <b id="h-attachments">0</b></div>
-      <div class="stat" id="storage-indicator" style="display:none;color:var(--accent);cursor:pointer" onclick="changeEmlArchiveFolder()" title="Click to change folder">
+      <div class="stat" id="storage-indicator" data-v1-only style="display:none;color:var(--accent);cursor:pointer" onclick="changeEmlArchiveFolder()" title="Click to change folder">
         💾 <b id="h-storage">—</b>
       </div>
     </div>
@@ -59,7 +59,7 @@
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Actions</div>
-        <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
+        <button class="nav-item" data-v1-only onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
         <input type="file" id="json-import-input" accept=".json" style="display:none" onchange="importData(this)">
         <button class="nav-item" onclick="document.getElementById('json-import-input').click()">⬆ Import JSON</button>
@@ -75,9 +75,10 @@
         <div class="import-card">
           <span class="import-icon">📬</span>
           <h2>Import EML Files</h2>
-          <p>Connect your storage folders, then choose the folder to import. Emails are parsed locally — nothing leaves your device.</p>
+          <p data-v1-only>Connect your storage folders, then choose the folder to import. Emails are parsed locally — nothing leaves your device.</p>
+          <p data-v2-only>This is the v2 server. Importing .eml files here isn't built yet. For now, load a v1 backup with <b>Import JSON</b> in the sidebar, or run <code>python -m email_tracker import-backup &lt;file&gt;</code>.</p>
 
-          <div class="conn-list">
+          <div class="conn-list" data-v1-only>
             <div class="conn-row">
               <span class="conn-num">1</span>
               <div class="conn-info">
@@ -98,9 +99,9 @@
             </div>
           </div>
 
-          <div class="import-divider"><span>or</span></div>
+          <div class="import-divider" data-v1-only><span>or</span></div>
 
-          <div class="drop-zone" id="drop-zone">
+          <div class="drop-zone" id="drop-zone" data-v1-only>
             <input type="file" id="file-input" accept=".eml" multiple onchange="handleFiles(this.files)">
             <div class="drop-zone-text">
               <strong>Click to select</strong> or drag & drop .eml files<br>
@@ -122,7 +123,7 @@
             <option value="from">From A–Z</option>
             <option value="subject">Subject A–Z</option>
           </select>
-          <button class="btn btn-primary" onclick="showImport()">+ Import</button>
+          <button class="btn btn-primary" data-v1-only onclick="showImport()">+ Import</button>
         </div>
         <div class="email-list-header">
           <div class="col-flag"></div>
@@ -187,6 +188,7 @@
 
 
 <script src="js/db.js"></script>
+<script src="js/api.js"></script>
 <script src="js/parser.js"></script>
 <script src="js/detection.js"></script>
 <script src="js/import.js"></script>
