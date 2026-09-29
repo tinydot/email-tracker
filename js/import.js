@@ -433,8 +433,10 @@ async function mboxMessageFile(mboxFile, start, end) {
 function toggleImportLog() {
   const log = document.getElementById('ipb-log');
   const btn = document.getElementById('ipb-toggle-btn');
-  const visible = log.style.display !== 'none';
-  log.style.display = visible ? 'none' : '';
+  // Hidden by the stylesheet initially, so check the computed style — the
+  // inline style is empty until the first toggle.
+  const visible = getComputedStyle(log).display !== 'none';
+  log.style.display = visible ? 'none' : 'block';
   btn.textContent = visible ? '▲ Log' : '▼ Log';
   // when log is shown, adjust bottom padding
   document.getElementById('email-list-panel').style.paddingBottom =
