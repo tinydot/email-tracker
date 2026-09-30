@@ -442,7 +442,7 @@ function openDetail(email) {
   truncCtrl.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 8px 0;font-size:11px;';
   truncCtrl.innerHTML = `
     <button class="btn" id="trunc-find-btn" onclick="truncFindMatches()" style="padding:2px 8px;font-size:11px;" title="Scan body for reply/quote markers and show truncation options">✂ Truncation</button>
-    <button class="btn" data-v1-only onclick="reimportEmlBody('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Pick the original .eml file to reimport its full body text">↺ Reimport EML</button>
+    <button class="btn" onclick="reimportEmlBody('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Pick the original .eml file to reimport its full body text">↺ Reimport EML</button>
     <button class="btn" onclick="openOriginalEml('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Download the original .eml file to open in your email client">⬇ Open Original</button>
     <button class="btn" id="body-edit-btn" onclick="editBodyText()" style="padding:2px 8px;font-size:11px;" title="Manually edit the body text">✏ Edit Body</button>
     <span id="trunc-status" style="color:var(--muted);"></span>

@@ -1,4 +1,4 @@
-"""python -m email_tracker [serve | import-backup FILE | backup | install-backup-job]"""
+"""python -m email_tracker [serve | ingest PATH… | ingest-thunderbird | import-backup FILE | rederive | backup | install-backup-job]"""
 from __future__ import annotations
 
 import argparse
@@ -12,10 +12,55 @@ from pathlib import Path
 from . import config
 
 
+def _store(cfg: config.Config):
+    from .store import EmailStore
+    return EmailStore(cfg.db_path, cfg.my_addresses)
+
+
+def _print_result(label: str, res, t0: float) -> None:
+    d = res.as_dict()
+    errors = d.pop("errors")
+    print(f"{label} in {time.monotonic() - t0:.1f}s: " + ", ".join(f"{k} {v}" for k, v in d.items()))
+    for e in errors[:20]:
+        print(f"  failed: {e}", file=sys.stderr)
+
+
+def _ingest(cfg: config.Config, paths: list[Path]) -> int:
+    from .ingest import Ingestor, ingest_paths
+    store = _store(cfg)
+    t0 = time.monotonic()
+    res = ingest_paths(Ingestor(store, cfg.archive_dir), paths,
+                       progress=lambda i, n, r: print(f"  {i:,}/{n:,}  added {r.added:,}", flush=True))
+    _print_result("Ingested", res, t0)
+    print("  now in database: " + ", ".join(f"{k} {v:,}" for k, v in store.counts().items()))
+    store.close()
+    return 1 if res.failed else 0
+
+
+def _ingest_thunderbird(cfg: config.Config, profile: Path | None) -> int:
+    from .ingest import Ingestor
+    from .mbox import default_profile, scan_profile
+    profile = profile or cfg.thunderbird_profile or default_profile()
+    if not profile or not Path(profile).is_dir():
+        sys.exit("No Thunderbird profile found; pass --profile or set thunderbird_profile in the config.")
+    store = _store(cfg)
+    t0 = time.monotonic()
+    last = [0.0]
+
+    def progress(folder, done, total, r):
+        if time.monotonic() - last[0] > 2:
+            last[0] = time.monotonic()
+            print(f"  {100 * done // total:3d}%  {folder}  messages {r.messages:,}", flush=True)
+    print(f"Scanning {profile}")
+    res = scan_profile(Ingestor(store, cfg.archive_dir), Path(profile), progress)
+    _print_result("Scanned", res, t0)
+    store.close()
+    return 0
+
+
 def _import_backup(cfg: config.Config, path: Path) -> int:
     from .backup_json import apply_backup, read_text_chunks
-    from .store import EmailStore
-    store = EmailStore(cfg.db_path)
+    store = _store(cfg)
     t0 = time.monotonic()
     with open(path, "rb") as fh:
         res = apply_backup(store, read_text_chunks(fh))
@@ -36,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m email_tracker")
     sub = p.add_subparsers(dest="cmd")
     sub.add_parser("serve", help="run the server on 127.0.0.1 (default)")
+    g = sub.add_parser("ingest", help="ingest .eml files (files or folders, recursively)")
+    g.add_argument("paths", type=Path, nargs="+")
+    t = sub.add_parser("ingest-thunderbird", help="ingest a Thunderbird profile's mail folders")
+    t.add_argument("--profile", type=Path, help="profile folder (default: config, then auto-detect)")
+    sub.add_parser("rederive", help="recompute thread ids and needs_my_reply")
     i = sub.add_parser("import-backup", help="merge a v1 'Export JSON' backup into the database (skip-if-existing)")
     i.add_argument("file", type=Path)
     sub.add_parser("backup", help="snapshot the live database now (VACUUM INTO) and prune old ones")
@@ -46,6 +96,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "import-backup":
         return _import_backup(cfg, args.file)
+
+    if args.cmd == "ingest":
+        return _ingest(cfg, args.paths)
+
+    if args.cmd == "ingest-thunderbird":
+        return _ingest_thunderbird(cfg, args.profile)
+
+    if args.cmd == "rederive":
+        store = _store(cfg)
+        store.rederive()
+        n = store.con.execute("SELECT COUNT(*) FROM emails WHERE needs_my_reply = 1").fetchone()[0]
+        print(f"Rederived: {store.counts()['threaded']:,} replies threaded, {n:,} threads need a reply"
+              + ("" if cfg.my_addresses else " (my_addresses is not set in the config)"))
+        store.close()
+        return 0
 
     if args.cmd == "backup":
         from . import backup

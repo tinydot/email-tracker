@@ -6,12 +6,16 @@ corpus is work email.
     {
       "db_path": "~/.local/share/email-tracker/email.db",
       "backup_dir": "~/.local/share/email-tracker/backups",
+      "archive_dir": "~/.local/share/email-tracker/eml",
+      "thunderbird_profile": "~/Library/Thunderbird/Profiles/xxxx.default-release",
       "port": 8767,
       "allowed_hosts": ["my-mac.tailnet-name.ts.net"],
       "my_addresses": ["me@work.example", "me@alias.example"]
     }
 
 Every key is optional. ``$EMAIL_TRACKER_DB`` overrides ``db_path``.
+``archive_dir`` (raw .eml originals) defaults to ``eml/`` beside the database;
+``thunderbird_profile`` defaults to the profile Thunderbird itself opens.
 """
 from __future__ import annotations
 
@@ -34,6 +38,8 @@ def _expand(p: str | Path) -> Path:
 class Config:
     db_path: Path = field(default_factory=lambda: _expand(DEFAULT_DB))
     backup_dir: Path | None = None  # None: <db_path's folder>/backups
+    archive_dir_: Path | None = None  # None: <db_path's folder>/eml
+    thunderbird_profile: Path | None = None  # None: auto-detect (mbox.default_profile)
     port: int = 8767  # bank-consolidator runs on 8765/8766
     # Extra Host names to accept, e.g. the Tailscale Serve name later. The
     # server always binds loopback only; this list just stops DNS rebinding.
@@ -43,6 +49,10 @@ class Config:
     my_addresses: list[str] = field(default_factory=list)
     static_root: Path = REPO_ROOT
     config_path: Path | None = None
+
+    @property
+    def archive_dir(self) -> Path:
+        return self.archive_dir_ or self.db_path.parent / "eml"
 
     @property
     def hosts(self) -> list[str]:
@@ -57,6 +67,10 @@ def load() -> Config:
         cfg.db_path = _expand(raw["db_path"])
     if raw.get("backup_dir"):
         cfg.backup_dir = _expand(raw["backup_dir"])
+    if raw.get("archive_dir"):
+        cfg.archive_dir_ = _expand(raw["archive_dir"])
+    if raw.get("thunderbird_profile"):
+        cfg.thunderbird_profile = _expand(raw["thunderbird_profile"])
     if raw.get("port"):
         cfg.port = int(raw["port"])
     cfg.allowed_hosts = [str(h) for h in raw.get("allowed_hosts", [])]

@@ -20,6 +20,7 @@ async function init() {
     V2_SERVER ? null : restoreDirHandles(), // reconnect persisted storage folder handles
     V2_SERVER ? null : loadGDriveSettings(), // Google Drive backup config
   ]);
+  if (V2_SERVER) refreshThunderbirdRow();
   if (emails.length > 0) {
     allEmails = emails;
     await updateHeaderStats(); // rebuilds msgId index + thread cache, updates nav counts

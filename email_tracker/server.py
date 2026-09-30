@@ -23,12 +23,15 @@ from datetime import date
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from . import maintenance
 from .backup_json import apply_backup, stream_backup_json
 from .config import Config
+from .ingest import Ingestor, reparse
+from .jobs import JobRunner
 from .store import DOC_TABLES, EmailStore, NotFound
 
 V2_FLAG = "<script>window.EMAIL_V2_SERVER = true;</script>\n"
@@ -82,7 +85,10 @@ def _stream_export(store: EmailStore) -> Iterator[bytes]:
 
 
 def create_app(cfg: Config, store: EmailStore | None = None) -> FastAPI:
-    store = store or EmailStore(cfg.db_path)
+    store = store or EmailStore(cfg.db_path, cfg.my_addresses)
+    store.rederive_if_pending()  # an ingest interrupted last time
+    ingestor = Ingestor(store, cfg.archive_dir)
+    jobs = JobRunner()
     app = FastAPI(title="email-tracker", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=cfg.hosts)
     app.state.store = store
@@ -98,8 +104,10 @@ def create_app(cfg: Config, store: EmailStore | None = None) -> FastAPI:
             ctype = request.headers.get("content-type", "")
             body_len = request.headers.get("content-length")
             has_body = (body_len not in (None, "0")) or "transfer-encoding" in request.headers
+            # Neither is a CORS "simple" type, so a cross-site page can't send
+            # one without a preflight, which this server never approves.
             if has_body and not (ctype.startswith("application/json")
-                                 or ctype.startswith("application/x-ndjson")):
+                                 or ctype.startswith("message/rfc822")):
                 return JSONResponse({"error": "writes must be application/json"}, status_code=415)
         return await call_next(request)
 
@@ -307,6 +315,86 @@ def create_app(cfg: Config, store: EmailStore | None = None) -> FastAPI:
             await run_in_threadpool(q.put, END)
         res = await job
         return res.as_dict()
+
+    # ── ingest (.eml upload, Thunderbird) ──────────────────────────────────
+
+    @app.post("/api/ingest/eml")
+    async def ingest_eml(request: Request, name: str = "message.eml") -> dict:
+        """One raw message per request (the page uploads files one by one).
+        Derived state is left pending for /api/ingest/finish."""
+        raw = await request.body()
+        if not raw:
+            raise HTTPException(400, "empty message")
+
+        def work() -> dict:
+            b = ingestor.batch()
+            status = b.add(raw, name)
+            b._commit()  # no rederive per file; /finish does it once
+            return {"status": status, "error": (b.result.errors or [None])[0],
+                    "id": (b.result.added_ids or [None])[0]}
+        return await run_in_threadpool(work)
+
+    @app.post("/api/ingest/finish")
+    def ingest_finish() -> dict:
+        store.rederive_if_pending()
+        return {"ok": True}
+
+    @app.get("/api/ingest/thunderbird")
+    def thunderbird_info() -> dict:
+        from .mbox import default_profile
+        p = cfg.thunderbird_profile or default_profile()
+        return {"profile": str(p) if p else None, "job": jobs.state("thunderbird")}
+
+    @app.post("/api/ingest/thunderbird")
+    def thunderbird_scan() -> dict:
+        from .mbox import default_profile, scan_profile
+        p = cfg.thunderbird_profile or default_profile()
+        if not p or not p.is_dir():
+            raise HTTPException(404, "no Thunderbird profile found; set thunderbird_profile in the server config")
+
+        def run(report) -> dict:
+            res = scan_profile(ingestor, p, lambda folder, done, total, r: report(
+                folder=folder, percent=round(100 * done / total), messages=r.messages, added=r.added))
+            return res.as_dict()
+        return jobs.start("thunderbird", run)
+
+    @app.get("/api/ingest/job/{name}")
+    def job_state(name: str) -> dict:
+        return jobs.state(name)
+
+    # ── archived originals ─────────────────────────────────────────────────
+
+    @app.get("/api/emails/{email_id:path}/eml")
+    def email_original(email_id: str) -> FileResponse:   # import.js openOriginalEml
+        try:
+            rec = store.get_email(email_id)
+        except NotFound as e:
+            raise nf(e)
+        path = ingestor.archived_path(rec.get("emlArchivePath"))
+        if path is None:
+            raise HTTPException(404, "no archived original for this email — re-ingest its .eml to add one")
+        return FileResponse(path, media_type="message/rfc822", filename=path.name)
+
+    @app.post("/api/emails/{email_id:path}/reparse")
+    def email_reparse(email_id: str) -> dict:          # import.js reimportEmlBody
+        try:
+            return reparse(ingestor, email_id)
+        except NotFound as e:
+            raise nf(e)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+
+    @app.post("/api/maintenance/rerun-truncation")
+    def rerun_truncation() -> dict:
+        return {"fixed": maintenance.rerun_truncation(store)}
+
+    @app.post("/api/maintenance/rerun-signatures")
+    def rerun_signatures() -> dict:
+        return {"fixed": maintenance.rerun_signatures(store)}
+
+    @app.post("/api/maintenance/rerun-detection")
+    def rerun_detection() -> dict:
+        return {"fixed": maintenance.rerun_detection(store)}
 
     @app.get("/api/health")
     def health() -> dict:

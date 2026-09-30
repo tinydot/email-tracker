@@ -23,7 +23,8 @@ email-tracker/
     ├── api.js        ← data API: one function per UI operation, IndexedDB (v1) or server (v2)
     ├── parser.js     ← EML parser (MIME, encodings, signature/quote stripping)
     ├── detection.js  ← system/automated email detection patterns
-    ├── import.js     ← import pipeline, EML archiving, reimport, Thunderbird mbox import
+    ├── import.js     ← import pipeline, EML archiving, reimport, Thunderbird mbox import (v1)
+    ├── server-import.js ← v2: upload .eml to the server, Thunderbird scan on the server
     ├── threading.js  ← msgId/emailId indexes + memoized thread root/depth caches
     ├── state.js      ← global state variables + showPanel
     ├── smart-views/  ← smart views (split into focused modules)
@@ -43,7 +44,7 @@ email-tracker/
     └── init.js       ← init(), keyboard shortcuts (j/k, Escape)
 ```
 
-All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, api, parser, detection, import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, gdrive, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
+All JS files share a single global scope (loaded via `<script src>` tags in `index.html`), so there are no module imports. **Script load order matters** — load order is: db, api, parser, detection, import, server-import, threading, state, smart-views/{rule-engine, editor, sidebar, routing, settings}, render, actions, data-load, export, gdrive, address-book, dashboard, helpers, init. The section banners (`// ═══…`) within each file mark sub-sections.
 
 ### Companion scripts (outside the web app)
 
@@ -60,7 +61,7 @@ All JS files share a single global scope (loaded via `<script src>` tags in `ind
 ### Email record (stored in IndexedDB `emails` store)
 ```js
 {
-  id,             // messageId or "filename-date"
+  id,             // messageId; else v1: "filename-date", v2: "sha256:<raw bytes>"
   messageId,      // RFC Message-ID header
   inReplyTo,      // RFC In-Reply-To header
   references,     // array of referenced message IDs
@@ -252,15 +253,29 @@ A FastAPI app on 127.0.0.1 that owns `email.db` (SQLite, WAL) and serves the unc
 ```bash
 uv run --extra server python -m email_tracker serve                  # http://127.0.0.1:8767
 uv run python -m email_tracker import-backup email-tracker-YYYY-MM-DD.json   # v1 export → email.db
+uv run python -m email_tracker ingest ~/Downloads/email                   # .eml files/folders (skip-if-known)
+uv run python -m email_tracker ingest-thunderbird [--profile DIR]        # Thunderbird mbox folders
+uv run python -m email_tracker rederive                              # recompute threads + needs_my_reply
 uv run python -m email_tracker backup                                # VACUUM INTO snapshot + prune
 uv run python -m email_tracker install-backup-job                    # nightly LaunchAgent (02:45)
 uv run --extra server --group dev pytest tests/
 uv run --extra server --with playwright python tests/e2e_v2.py      # system Chrome, throwaway DB
 ```
 
-Config lives outside the repo (public; the corpus is work email): `~/.config/email-tracker/config.json` (`$EMAIL_TRACKER_CONFIG`) — `db_path` (default `~/.local/share/email-tracker/email.db`, or `$EMAIL_TRACKER_DB`), `port` (8767; bank-consolidator uses 8765/8766), `allowed_hosts`, `backup_dir`, `my_addresses`.
+Config lives outside the repo (public; the corpus is work email): `~/.config/email-tracker/config.json` (`$EMAIL_TRACKER_CONFIG`) — `db_path` (default `~/.local/share/email-tracker/email.db`, or `$EMAIL_TRACKER_DB`), `port` (8767; bank-consolidator uses 8765/8766), `allowed_hosts`, `backup_dir`, `archive_dir` (raw originals; default `eml/` beside the DB), `thunderbird_profile` (default: the profile Thunderbird opens, from `profiles.ini`), `my_addresses` (needs_my_reply is off until set — never commit them).
 
-**Modules** (`email_tracker/`): `schema.py` (DDL + camelCase⇄column mapping; unknown record keys go to an `extra` JSON column so backups round-trip), `store.py` (`EmailStore`, the only writer: one connection + lock, per-thread read connections), `threading_ids.py` (thread roots), `backup_json.py` (streaming v3 JSON reader/writer — a port of `makeBackupScanner`/`applyBackupStream`), `server.py` (routes), `backup.py`, `__main__.py`.
+**Modules** (`email_tracker/`): `schema.py` (DDL + camelCase⇄column mapping; unknown record keys go to an `extra` JSON column so backups round-trip; `SCHEMA_VERSION` migrations run in `EmailStore.__init__`), `store.py` (`EmailStore`, the only writer: one connection + lock, per-thread read connections; derived state), `threading_ids.py` (thread roots), `parse.py` (raw RFC 822 → fields, stdlib `email`), `clean.py` (HTML→text, quote truncation, signature stripping — ports of parser.js), `detect.py` (automated detection — port of detection.js), `ingest.py` (the one ingest path: batches, archive, reparse), `mbox.py` (Thunderbird profiles), `maintenance.py` (Settings re-runs), `jobs.py` (background jobs the page polls), `backup_json.py` (streaming v3 JSON reader/writer — a port of `makeBackupScanner`/`applyBackupStream`), `server.py` (routes), `backup.py`, `__main__.py`.
+
+**Ingest** (`ingest.py`) — every source arrives as raw bytes + a file name: `POST /api/ingest/eml` (the page uploads one file per request, then `POST /api/ingest/finish`), `ingest` (CLI, folders), or a message cut from an mbox (`mbox.py`). A header peek settles known ids without a full parse, so re-imports are cheap. Rules:
+- id = Message-ID, else `sha256:<raw bytes>`; dates ISO 8601 UTC; addresses bare + lowercase (schema v2 normalised the v1 data the same way); attachment hashes SHA-256.
+- Skip-if-known, never rewrite: tags/status/edits survive. Tombstoned ids stay out. The only change to an existing email is archiving its original if it had none (v1-imported emails).
+- Originals go to `<archive_dir>/<sender domain>/<name>` — hard-linked from a source file on the same volume, copied otherwise. `GET /api/emails/{id}/eml` serves one; `POST /api/emails/{id}/reparse` re-reads it for the detail panel's Reimport button.
+- Body clean-up uses the same custom patterns the Settings page edits (settings records `customQuotePatterns`, `customSignaturePatterns`, `signatureRanges`); detection uses `customAutomationPatterns` and the real headers.
+- Threads and needs_my_reply are recomputed once per batch (`Batch.close()` → `rederive_if_pending`); `meta.derive_pending` makes an interrupted batch finish on the next start.
+
+**Thunderbird** (`mbox.py`) — reads the profile directly (no Chrome `~/Library` blocklist on the server). v1's rules: separator = `From ` at file start or after a blank line; `X-Mozilla-Status` expunged messages and Trash/Junk/Drafts/… skipped. Per-folder state in `meta.mbox_state` lets a folder that only grew resume at its old end; a compacted folder is rescanned (known ids skipped by header peek). `POST /api/ingest/thunderbird` runs it as a background job; the page polls `GET /api/ingest/job/thunderbird`.
+
+**needs_my_reply** (`EmailStore._needs_reply`) — the newest message of a thread is flagged when it's from someone else, not automated, has me in **To**, isn't a calendar response/auto-reply, and either I've written in the thread or it's a direct note (≤ `DIRECT_MAX_TO` To recipients) from someone I've emailed. Only that message carries it (`needsMyReply` on the record); the "Needs Reply" view (v2-only) lists them, and life-mcp's `email_open_actions` reads the column.
 
 **v2 mode in the page:** `GET /` injects `window.EMAIL_V2_SERVER = true` into `<head>`; `js/api.js` reads it into `V2_SERVER` and puts `.v2-server` on `<html>`, which hides `[data-v1-only]` elements (CSS at the end of styles.css). GitHub Pages / `file://` never get the flag, so the same files run v1. The API is purpose-built — one route per UI operation — and returns v1's record shapes, so filtering, the rule engine, rendering and threading.js still run in the browser on `allEmails` (metadata only; ~27k rows is fine).
 
@@ -268,9 +283,11 @@ Config lives outside the repo (public; the corpus is work email): `~/.config/ema
 
 **Security:** loopback bind only; `TrustedHostMiddleware` against DNS rebinding; non-GET with a foreign `Origin` → 403; request bodies must be `application/json` (415 otherwise), so a cross-site form can't write without a preflight the server never approves.
 
-**Status — Phase 1 done:** server, schema, backup import (the 2026-09-03 export imports to exactly 27,238 emails / 75,396 attachments; re-import adds nothing), UI read/write through the API, JSON export/import, mojibake and line-break maintenance, nightly snapshots.
-
-**Phase 2+ (not yet in v2, hidden via `data-v1-only`):** .eml ingest ported to Python (parser, detection, `imap_sync.py` as the acquisition path, raw archive kept server-side) · re-run truncation/signature stripping and attachment text extraction (need the parser port) · `needs_my_reply` · life-mcp repoint (live DB in its config, `email.py` reading `bodies`/`is_system_email`, retire `ingest/ingest_email.py`) · Clear DB (restore a snapshot instead). Google Drive backup is superseded by snapshots/Litestream and won't be ported. "Open Original" and attachment downloads still work in v2 through the folder picker (no DB involved).
+**Status:**
+- *Phase 1 done:* server, schema, backup import (the 2026-09-03 export imports to exactly 27,238 emails / 75,396 attachments; re-import adds nothing), UI read/write through the API, JSON export/import, mojibake and line-break maintenance, nightly snapshots.
+- *Phase 2 done:* Python ingest (.eml upload/folders + Thunderbird), archived originals (Open Original, Reimport EML), truncation/signature/detection re-runs server-side, needs_my_reply + Needs Reply view, life-mcp's email domain reads the live DB (schema-adaptive `life_mcp/domains/email.py`). On a 3,000-file sample of the v1 archive the Python parser matches v1's stored body for 99.7%; the differences are fixes (ISO-2022-JP, broken subject folding, BOMs).
+- *Still v1-only (`data-v1-only`):* attachment text extraction (needs PDF/Office libraries server-side — a later step), Google Drive (superseded by snapshots/Litestream, won't be ported), Clear DB (restore a snapshot instead), the browser-side archive folder and import toggles.
+- `imap_sync.py` is not part of v2 (mail arrives as manual .eml exports and via Thunderbird).
 
 ---
 

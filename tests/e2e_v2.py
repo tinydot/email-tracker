@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from email_tracker.backup_json import apply_backup  # noqa: E402
 from email_tracker.store import EmailStore  # noqa: E402
 from tests.fixtures import backup_text  # noqa: E402
+from tests.mail import eml  # noqa: E402
 
 READY = "() => typeof allEmails !== 'undefined' && document.getElementById('h-total').textContent !== '0'"
 failures: list[str] = []
@@ -52,7 +53,7 @@ def main() -> int:
 
     port = free_port()
     cfg = tmp / "config.json"
-    cfg.write_text(f'{{"port": {port}}}')
+    cfg.write_text(f'{{"port": {port}, "archive_dir": "{tmp / "eml"}", "thunderbird_profile": "{tmp / "no-profile"}"}}')
     env = {**os.environ, "EMAIL_TRACKER_CONFIG": str(cfg), "EMAIL_TRACKER_DB": str(db)}
     server = subprocess.Popen([sys.executable, "-m", "email_tracker", "serve"], cwd=ROOT, env=env)
     base = f"http://127.0.0.1:{port}"
@@ -87,8 +88,8 @@ def main() -> int:
             page.wait_for_function(READY)
             check("served page runs in v2 mode", page.evaluate("V2_SERVER") is True)
             check("all fixture emails listed", page.evaluate("allEmails.length") == 6)  # "gone" is only tombstoned after its own import
-            check(".eml import hidden in v2", page.evaluate(
-                "document.querySelector('.nav-item[onclick=\"showImport()\"]').offsetParent === null"))
+            check("Needs Reply view offered in v2", page.evaluate(
+                "document.querySelector('.nav-item[data-view=\"needsreply\"]').offsetParent !== null"))
 
             # 3. Open an email, tag it, edit its body; reload; both persisted.
             page.evaluate("switchView('all')")
@@ -120,6 +121,19 @@ def main() -> int:
             page.evaluate("switchView('sv-sv-1')")
             ids = sorted(page.evaluate("filteredEmails.map(e => e.id)"))
             check("smart view filters", ids == ["gone@x", "orphan@x", "r2@x", "root@x"], str(ids))
+            # 6. Upload an .eml through the import panel's drop zone input.
+            eml_path = tmp / "upload" / "fresh.eml"
+            eml_path.parent.mkdir()
+            eml_path.write_bytes(eml(mid="fresh@x", subject="Uploaded in e2e", frm="a@corp.com"))
+            page.evaluate("showImport()")
+            check("server import rows shown", page.evaluate(
+                "document.getElementById('srv-tb-btn').offsetParent !== null"))
+            page.set_input_files("#file-input", str(eml_path))
+            page.wait_for_function("() => allEmails.some(e => e.id === 'fresh@x')", timeout=15000)
+            check("uploaded .eml listed", page.evaluate(
+                "emailIdIndex.get('fresh@x').subject") == "Uploaded in e2e")
+            check("original served", page.evaluate(
+                "fetch(apiOriginalUrl('fresh@x')).then(r => r.text())").startswith("From:"))
             check("v2 has no page errors", not errors, "; ".join(errors))
             browser.close()
     finally:
