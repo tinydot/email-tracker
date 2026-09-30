@@ -97,6 +97,15 @@
               </div>
               <button class="btn btn-primary conn-btn" id="conn-import-btn" onclick="handleFolderImport()">Choose &amp; Import</button>
             </div>
+            <div class="conn-row">
+              <span class="conn-num">3</span>
+              <div class="conn-info">
+                <div class="conn-name">🦅 Import from Thunderbird</div>
+                <div class="conn-detail" title="macOS: ~/Library/Thunderbird/Profiles/<profile> — press ⌘⇧G in the picker to type the path. Already-imported emails are skipped, so re-run it any time.">Pick the profile folder; re-run for new mail</div>
+              </div>
+              <button class="btn conn-btn" id="conn-tb-btn" onclick="handleThunderbirdImport()">Choose &amp; Import</button>
+              <input type="file" id="mbox-dir-input" webkitdirectory hidden onchange="handleThunderbirdFiles(this.files)">
+            </div>
           </div>
 
           <div class="import-divider" data-v1-only><span>or</span></div>

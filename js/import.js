@@ -272,11 +272,171 @@ async function collectEmlFilesRecursively(dirHandle, path = '') {
   return files;
 }
 
+// ═══════════════════════════════════════════════════════
+//  THUNDERBIRD (MBOX) IMPORT
+//  Thunderbird keeps each folder as one mbox file (a run of messages,
+//  each preceded by a "From " separator line) with a sibling .msf index.
+//  We only record byte offsets while scanning, then hand
+//  processFilesForImport one File per message built from a Blob slice —
+//  slices are lazy, so a 3.5 GB folder never lands in memory, and the
+//  normal pipeline (dedup by Message-ID, EML archiving, attachments)
+//  applies unchanged.
+//
+//  The folder is chosen with <input webkitdirectory>, not
+//  showDirectoryPicker: Chrome's File System Access blocklist refuses
+//  anything under ~/Library, which is where Thunderbird profiles live.
+// ═══════════════════════════════════════════════════════
+
+// Folders not worth importing; matched against the mbox file's name.
+const MBOX_SKIP_FOLDERS = /^(trash|junk|spam|drafts|templates|outbox|unsent messages|deleted items|deleted messages|junk e-?mail)$/i;
+const MOZ_STATUS_EXPUNGED = 0x0008;
+
+function handleThunderbirdImport() {
+  document.getElementById('mbox-dir-input').click();
+}
+
+async function handleThunderbirdFiles(fileList) {
+  const input = document.getElementById('mbox-dir-input');
+  const files = Array.from(fileList || []);
+  input.value = '';   // allow picking the same folder again for a re-scan
+  if (!files.length) return;
+
+  const mboxes = findMboxFiles(files);
+  if (!mboxes.length) {
+    toast('No Thunderbird mail folders found — pick the profile, or its Mail / ImapMail folder', 'warn');
+    return;
+  }
+
+  const messages = [];
+  const skippedFolders = [];
+  let expunged = 0;
+  const totalBytes = mboxes.reduce((s, m) => s + m.file.size, 0);
+  let scannedBytes = 0;
+
+  for (const mbox of mboxes) {
+    if (MBOX_SKIP_FOLDERS.test(mbox.file.name)) { skippedFolders.push(mbox.folder); continue; }
+    const offsets = await scanMboxOffsets(mbox.file, done => {
+      const pct = Math.round(((scannedBytes + done) / totalBytes) * 100);
+      toast(`Scanning Thunderbird folders… ${pct}% (${mbox.folder})`, 'ok');
+    });
+    scannedBytes += mbox.file.size;
+    for (let k = 0; k < offsets.length; k++) {
+      const end = k + 1 < offsets.length ? offsets[k + 1] : mbox.file.size;
+      const msg = await mboxMessageFile(mbox.file, offsets[k], end);
+      if (!msg) continue;
+      if (msg.expunged) { expunged++; continue; }
+      messages.push(msg.file);
+    }
+  }
+
+  if (!messages.length) {
+    toast('No messages found in the Thunderbird folders', 'warn');
+    return;
+  }
+  const notes = [];
+  if (skippedFolders.length) notes.push(`skipped ${skippedFolders.join(', ')}`);
+  if (expunged) notes.push(`${expunged} deleted`);
+  toast(`Found ${messages.length} message(s) in ${mboxes.length - skippedFolders.length} folder(s)` +
+        (notes.length ? ` (${notes.join('; ')})` : ''), 'ok');
+
+  await processFilesForImport(messages);
+}
+
+// An mbox is a file with a sibling "<name>.msf" (Thunderbird's index), or
+// anything named *.mbox. Returns [{ file, folder }] with a readable folder
+// path ("Thunderbird/Sep 3" rather than "Thunderbird.sbd/Sep 3").
+function findMboxFiles(files) {
+  const paths = new Set(files.map(f => f.webkitRelativePath || f.name));
+  const out = [];
+  for (const f of files) {
+    const path = f.webkitRelativePath || f.name;
+    if (f.size === 0 || path.endsWith('.msf')) continue;
+    if (!paths.has(path + '.msf') && !/\.mbox$/i.test(f.name)) continue;
+    // Drop the picked folder's own name and account dir noise from the label
+    const parts = path.split('/').slice(1);
+    const folder = (parts.length ? parts.join('/') : path).replace(/\.sbd\//g, '/');
+    out.push({ file: f, folder });
+  }
+  return out;
+}
+
+// Byte offsets of each "From " separator line. A separator is "From " at
+// the very start of the file or directly after a blank line — Thunderbird
+// escapes body lines that start with "From ", so this doesn't split
+// messages. Only a few bytes are carried between stream chunks.
+async function scanMboxOffsets(file, onProgress) {
+  const F = 70, NL = 10, CR = 13;
+  const offsets = [];
+  const reader = file.stream().getReader();
+  let carry = new Uint8Array(0);
+  let base = 0;               // file offset of buf[0]
+  let lastReport = 0;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const buf = new Uint8Array(carry.length + value.length);
+    buf.set(carry);
+    buf.set(value, carry.length);
+
+    // Positions before scanFrom were already checked with the previous chunk
+    let i = Math.max(0, carry.length - 4);
+    while ((i = buf.indexOf(F, i)) !== -1 && i + 5 <= buf.length) {
+      if (buf[i+1] === 114 && buf[i+2] === 111 && buf[i+3] === 109 && buf[i+4] === 32) {
+        const abs = base + i;
+        if (abs === 0 ||
+            (buf[i-1] === NL && (buf[i-2] === NL || (buf[i-2] === CR && buf[i-3] === NL)))) {
+          offsets.push(abs);
+        }
+      }
+      i++;
+    }
+
+    const keep = Math.min(7, buf.length);
+    carry = buf.slice(buf.length - keep);
+    base += buf.length - keep;
+
+    if (onProgress && base - lastReport > 64 * 1024 * 1024) {
+      lastReport = base;
+      onProgress(base);
+    }
+  }
+  return offsets;
+}
+
+// Build a File for the message between [start, end), minus its separator
+// line. Headers are peeked to skip messages Thunderbird has marked deleted
+// but not yet compacted away, and to give the file a stable, readable name
+// (used for the EML archive and as the fallback id when Message-ID is missing).
+async function mboxMessageFile(mboxFile, start, end) {
+  const headBytes = new Uint8Array(await mboxFile.slice(start, Math.min(end, start + 16384)).arrayBuffer());
+  const nl = headBytes.indexOf(10);
+  if (nl === -1) return null;
+  const bodyStart = start + nl + 1;
+  if (bodyStart >= end) return null;
+
+  const head = new TextDecoder('utf-8').decode(headBytes.subarray(nl + 1));
+  const headerEnd = head.search(/\r?\n\r?\n/);
+  const headers = parseHeaders(headerEnd === -1 ? head : head.slice(0, headerEnd));
+
+  const status = parseInt(headers['x-mozilla-status'] || '0', 16);
+  if (status & MOZ_STATUS_EXPUNGED) return { expunged: true };
+
+  const subject = decodeEncodedWord(headers['subject'] || '(no subject)').replace(/[\r\n]+/g, ' ').trim();
+  const d = new Date(headers['date'] || '');
+  const when = isNaN(d) ? '' : ` - ${localDateKey(d)} ${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  const name = `${subject.slice(0, 120)}${when}.eml`;
+
+  return { file: new File([mboxFile.slice(bodyStart, end)], name, { type: 'message/rfc822' }) };
+}
+
 function toggleImportLog() {
   const log = document.getElementById('ipb-log');
   const btn = document.getElementById('ipb-toggle-btn');
-  const visible = log.style.display !== 'none';
-  log.style.display = visible ? 'none' : '';
+  // Hidden by the stylesheet initially, so check the computed style — the
+  // inline style is empty until the first toggle.
+  const visible = getComputedStyle(log).display !== 'none';
+  log.style.display = visible ? 'none' : 'block';
   btn.textContent = visible ? '▲ Log' : '▼ Log';
   // when log is shown, adjust bottom padding
   document.getElementById('email-list-panel').style.paddingBottom =
@@ -341,7 +501,9 @@ async function processFilesForImport(fileArr) {
       }
 
       // Generate stable ID
-      const id = parsed.messageId || `${file.name}-${parsed.date || Date.now()}`;
+      // Without a Date, fall back to a content hash rather than the clock so
+      // re-importing the same message (e.g. a Thunderbird re-scan) is a no-op.
+      const id = parsed.messageId || `${file.name}-${parsed.date || simpleHash(raw)}`;
 
       // Check for existing (full record or tombstone)
       const seen = await dbGet('seenIds', id);

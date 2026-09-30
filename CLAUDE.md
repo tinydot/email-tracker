@@ -23,7 +23,7 @@ email-tracker/
     ├── api.js        ← data API: one function per UI operation, IndexedDB (v1) or server (v2)
     ├── parser.js     ← EML parser (MIME, encodings, signature/quote stripping)
     ├── detection.js  ← system/automated email detection patterns
-    ├── import.js     ← import pipeline, EML archiving, reimport
+    ├── import.js     ← import pipeline, EML archiving, reimport, Thunderbird mbox import
     ├── threading.js  ← msgId/emailId indexes + memoized thread root/depth caches
     ├── state.js      ← global state variables + showPanel
     ├── smart-views/  ← smart views (split into focused modules)
@@ -133,6 +133,8 @@ emailGroups      // email groups for smart view rules
 - *A known subset* (links sub-view, detection backfill): `apiForEachBody(ids, fn)` (v1: `dbGetMany` — one transaction, callback per record, nothing accumulated; v2: batched `POST /api/bodies`).
 - *The whole store* (search, maintenance): `dbIterate('bodies', fn, mode)` — a cursor pass; in `'readwrite'` mode a record returned by `fn` is written back in place. `fn` must be synchronous or the transaction closes underneath it.
 - *Writes*: `apiPutBody(id, text)` (an empty string deletes the record); `apiDeleteEmail` / `apiDiscardAutomated` remove bodies with their emails.
+
+**Thunderbird import** (`handleThunderbirdFiles` in js/import.js) reads a Thunderbird profile's mbox files directly — each folder is one mbox with a sibling `.msf`. The folder comes from `<input webkitdirectory>`, *not* `showDirectoryPicker`: Chrome's File System Access blocklist refuses everything under `~/Library`, where macOS profiles live. `scanMboxOffsets` streams the file recording only separator offsets ("From " at file start or after a blank line), and each message becomes a `File` over a lazy `Blob.slice`, so `processFilesForImport` runs unchanged (dedup by Message-ID, EML archiving, attachments) without the mbox ever being read whole. Messages flagged expunged in `X-Mozilla-Status` and folders matching `MBOX_SKIP_FOLDERS` (Trash, Junk, Drafts…) are skipped. The fallback id for a message with neither Message-ID nor Date is `name-<content hash>`, so a re-scan is a no-op.
 
 **Backups stream in both directions** — neither the export nor the restore ever holds the document whole.
 
