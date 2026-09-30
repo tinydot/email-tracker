@@ -1,0 +1,22 @@
+[project]
+name = "email-tracker"
+version = "2.0.0.dev0"
+description = "Server-side core for email-tracker v2: owns email.db and serves the browser UI"
+requires-python = ">=3.11"
+# The store, importer and threading are stdlib-only so life-mcp (or a cron job)
+# can use them without pulling in the server's dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+# The v2 server (python -m email_tracker serve).
+server = ["fastapi>=0.110", "uvicorn>=0.29"]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["email_tracker"]

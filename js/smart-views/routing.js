@@ -66,14 +66,10 @@ function searchEmails(val) {
   }, 150);
 }
 
-// One streaming pass over the `bodies` store, collecting the ids whose text
-// contains `term`. Only ids are retained — bodies are released as we go.
+// The ids whose body contains `term`: one streaming pass over the `bodies`
+// store in v1, a server-side scan in v2. Only ids are retained.
 async function scanBodiesFor(term) {
-  const ids = new Set();
-  await dbIterate('bodies', rec => {
-    if (rec.text && rec.text.toLowerCase().includes(term)) ids.add(rec.id);
-  });
-  return ids;
+  return apiSearchBodies(term);
 }
 
 // Keeps the active search result honest after a body is edited in place,

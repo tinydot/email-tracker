@@ -1,3 +1,14 @@
 /.claude
 insights.json
 *.json
+
+# v2 server — the corpus is work email and this repo is public
+*.db
+*.db-wal
+*.db-shm
+*.eml
+emails-export/
+.env
+.venv/
+__pycache__/
+.pytest_cache/

@@ -44,7 +44,7 @@ async function showSvAttachments() {
   container.innerHTML = '<div style="padding:20px; color:var(--muted); font-size:12px;">Loading attachments…</div>';
 
   const emailIds = new Set(filteredEmails.map(e => e.id));
-  const allAtts = await dbGetAll('attachments');
+  const allAtts = await apiListAttachments();
   const atts = allAtts.filter(a => emailIds.has(a.emailId) && !a.isBlacklisted);
 
   const emailMap = new Map(filteredEmails.map(e => [e.id, e]));
@@ -205,7 +205,7 @@ async function showSvLinks() {
   // only the extracted URLs are retained.
   const byUrl = new Map();
   const ids = filteredEmails.map(e => e.id);
-  await dbGetMany('bodies', ids, rec => {
+  await apiForEachBody(ids, rec => {
     const email = emailIdIndex.get(rec.id);
     if (!email) return;
     const urls = extractLinksFromText(rec.text);

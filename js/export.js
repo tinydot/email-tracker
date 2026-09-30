@@ -84,6 +84,13 @@ async function buildBackupBlob() {
 }
 
 async function exportData() {
+  if (V2_SERVER) {
+    // The server streams the same schemaVersion-3 document straight from email.db
+    const a = document.createElement('a');
+    a.href = '/api/export';
+    a.click();
+    return;
+  }
   const { blob } = await buildBackupBlob();
 
   const url  = URL.createObjectURL(blob);
@@ -99,6 +106,8 @@ async function importData(input) {
   if (!file) return;
   input.value = '';
 
+  if (V2_SERVER) return importDataToServer(file);
+
   let result;
   try {
     result = await applyBackupStream(file.stream());
@@ -109,6 +118,47 @@ async function importData(input) {
   if (result.totalRecords === 0) return; // toast already shown by applyBackupStream
   toast(result.parts.length ? result.parts.join(', ') : 'Nothing new to import',
         result.anyAdded ? 'ok' : '');
+}
+
+// v2: the server applies the backup (email_tracker/backup_json.py, the same
+// skip-if-existing semantics as applyBackupStream) straight off the upload.
+async function importDataToServer(file) {
+  let res;
+  try {
+    res = await _api('POST', '/api/import-backup', file);
+  } catch (err) {
+    return; // _api has already shown the error
+  }
+  if (res.error) toast(res.error, 'err');
+  if (!res.totalRecords) { if (!res.error) toast('Nothing to import', 'err'); return; }
+
+  const seen = new Set(res.storesSeen);
+  if (seen.has('settings')) {
+    await loadCustomPatterns();
+    await loadCustomQuotePatterns();
+    await loadCustomSignaturePatterns();
+    await loadSignatureRanges();
+    await loadAttachTextLimit();
+  }
+  if (seen.has('emailGroups')) await loadEmailGroups();
+  if (seen.has('smartViews') || seen.has('settings') || seen.has('emailGroups')) await loadSmartViews();
+  await loadEmailList();
+  await updateHeaderStats();
+  showPanel('list');
+
+  const a = res.added;
+  const plural = (n, word) => `${n} ${word}${n !== 1 ? 's' : ''}`;
+  const parts = [];
+  if (a.emails)          parts.push(plural(a.emails, 'email'));
+  if (res.emailsSkipped) parts.push(`${res.emailsSkipped} skipped`);
+  if (a.attachments)     parts.push(plural(a.attachments, 'attachment'));
+  if (a.smartViews)      parts.push(plural(a.smartViews, 'smart view'));
+  if (a.emailGroups)     parts.push(plural(a.emailGroups, 'email group'));
+  if (a.addressBook)     parts.push(plural(a.addressBook, 'contact'));
+  if (a.tags)            parts.push(plural(a.tags, 'tag'));
+  if (a.seenIds)         parts.push(plural(a.seenIds, 'tombstone'));
+  if (!res.error) toast(parts.length ? parts.join(', ') : 'Nothing new to import',
+                        Object.values(a).some(Boolean) ? 'ok' : '');
 }
 
 // ── Reading a backup back in ──────────────────────────────
@@ -386,6 +436,7 @@ async function applyBackupStream(stream) {
 }
 
 async function clearDB() {
+  if (V2_SERVER) return; // not offered in v2 — restore a snapshot instead
   if (!confirm('Clear all data? This cannot be undone.')) return;
   await dbClear('emails');
   await dbClear('bodies');
@@ -411,19 +462,11 @@ async function discardAutomatedEmails() {
   }
   if (!confirm(`Discard ${automated.length} automated email(s)?\n\nTheir IDs will be remembered to prevent reimporting, but all content will be deleted. This cannot be undone.`)) return;
 
-  for (const email of automated) {
-    await dbPut('seenIds', { id: email.id });
-    await dbDelete('emails', email.id);
-    await deleteBody(email.id);
-    await dbDelete('msgIndex', email.messageId);
-    // Remove associated attachments
-    const atts = await dbGetByIndex('attachments', 'emailId', email.id);
-    for (const att of atts) await dbDelete('attachments', att.id);
-  }
+  const discarded = new Set(await apiDiscardAutomated(automated));
 
-  allEmails = allEmails.filter(e => !e.isSystemEmail);
-  if (selectedEmail?.isSystemEmail) closeDetail();
+  allEmails = allEmails.filter(e => !discarded.has(e.id));
+  if (selectedEmail && discarded.has(selectedEmail.id)) closeDetail();
   await updateHeaderStats(); // rebuilds indexes + thread cache, updates nav counts
   applyFilters();
-  toast(`Discarded ${automated.length} automated email(s)`, 'ok');
+  toast(`Discarded ${discarded.size} automated email(s)`, 'ok');
 }

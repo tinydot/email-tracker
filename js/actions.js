@@ -12,7 +12,7 @@ async function toggleAutomated(id) {
     email.isSystemEmail = true;
     email.manualSystemOverride = false;
   }
-  await dbPut('emails', email);
+  await apiSaveEmail(email);
   openDetail(email);
   applyFilters();
   updateNavCounts();
@@ -33,7 +33,7 @@ async function addTag(id, tagName) {
   if (!email.tags.includes(clean)) {
     email.tags.push(clean);
     renderDetailTags(email); // update UI immediately; tags not shown in list rows
-    await dbPut('emails', email);
+    await apiSaveEmail(email);
   }
 }
 
@@ -42,7 +42,7 @@ async function removeTag(id, tag) {
   if (!email) return;
   email.tags = (email.tags || []).filter(t => t !== tag);
   renderDetailTags(email); // update UI immediately
-  await dbPut('emails', email);
+  await apiSaveEmail(email);
 }
 
 // Exclude a tag: removes it AND marks it so auto-tag/bulk won't reapply
@@ -52,7 +52,7 @@ async function excludeTag(id, tag) {
   email.tags = (email.tags || []).filter(t => t !== tag);
   if (!email.tagExclusions) email.tagExclusions = [];
   if (!email.tagExclusions.includes(tag)) email.tagExclusions.push(tag);
-  await dbPut('emails', email);
+  await apiSaveEmail(email);
   renderDetailTags(email);
   renderEmailList();
 }
@@ -62,16 +62,13 @@ async function unexcludeTag(id, tag) {
   const email = emailIdIndex.get(id);
   if (!email) return;
   email.tagExclusions = (email.tagExclusions || []).filter(t => t !== tag);
-  await dbPut('emails', email);
+  await apiSaveEmail(email);
   renderDetailTags(email);
 }
 
 async function deleteEmail(id) {
   if (!confirm('Delete this email?')) return;
-  await dbDelete('emails', id);
-  await deleteBody(id);
-  const atts = await dbGetByIndex('attachments', 'emailId', id);
-  for (const a of atts) await dbDelete('attachments', a.id);
+  await apiDeleteEmail(id);
   allEmails = allEmails.filter(e => e.id !== id);
   closeDetail();
   await updateHeaderStats(); // rebuilds msgId index + thread cache from updated allEmails

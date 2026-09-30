@@ -171,7 +171,7 @@ function selectEmail(id) {
   if (email.status === 'unread') {
     email.status = 'read';
     if (newRow) newRow.classList.remove('unread');
-    dbPut('emails', email);
+    apiSaveEmail(email);
     updateHeaderStatsFast();
   }
 }
@@ -242,7 +242,7 @@ async function truncSave() {
   const match = _truncMatches[_truncCurrent];
   const truncated = truncateAtLine(_truncOrigBody, match.lineIndex);
   selectedEmailBody = truncated;
-  await putBody(email.id, truncated);
+  await apiPutBody(email.id, truncated);
   updateSearchMatchForBody(email.id, truncated);
   _truncOrigBody = truncated;
   _resetTruncControls('Saved');
@@ -253,7 +253,7 @@ async function truncSaveFull() {
   const email = selectedEmail;
   if (!email || _truncOrigBody === null) return;
   selectedEmailBody = _truncOrigBody;
-  await putBody(email.id, _truncOrigBody);
+  await apiPutBody(email.id, _truncOrigBody);
   updateSearchMatchForBody(email.id, _truncOrigBody);
   _resetTruncControls('Saved');
   toast('Full body saved');
@@ -308,7 +308,7 @@ async function saveBodyEdit() {
 
   const newText = ta.value;
   selectedEmailBody = newText;
-  await putBody(selectedEmail.id, newText);
+  await apiPutBody(selectedEmail.id, newText);
   updateSearchMatchForBody(selectedEmail.id, newText);
 
   const bodyTextEl = document.getElementById('det-body-text');
@@ -442,7 +442,7 @@ function openDetail(email) {
   truncCtrl.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 8px 0;font-size:11px;';
   truncCtrl.innerHTML = `
     <button class="btn" id="trunc-find-btn" onclick="truncFindMatches()" style="padding:2px 8px;font-size:11px;" title="Scan body for reply/quote markers and show truncation options">✂ Truncation</button>
-    <button class="btn" onclick="reimportEmlBody('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Pick the original .eml file to reimport its full body text">↺ Reimport EML</button>
+    <button class="btn" data-v1-only onclick="reimportEmlBody('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Pick the original .eml file to reimport its full body text">↺ Reimport EML</button>
     <button class="btn" onclick="openOriginalEml('${email.id}')" style="padding:2px 8px;font-size:11px;" title="Download the original .eml file to open in your email client">⬇ Open Original</button>
     <button class="btn" id="body-edit-btn" onclick="editBodyText()" style="padding:2px 8px;font-size:11px;" title="Manually edit the body text">✏ Edit Body</button>
     <span id="trunc-status" style="color:var(--muted);"></span>
@@ -470,7 +470,7 @@ function openDetail(email) {
     _loadedBodyId     = null;
     bodyTextEl.textContent = 'Loading…';
     const bodyIdAtLoad = email.id;
-    getBody(bodyIdAtLoad).then(text => {
+    apiGetBody(bodyIdAtLoad).then(text => {
       if (!selectedEmail || selectedEmail.id !== bodyIdAtLoad) return;
       selectedEmailBody = text;
       _loadedBodyId     = bodyIdAtLoad;
@@ -488,7 +488,7 @@ function openDetail(email) {
     attPanel.style.display = '';
     attPanel.innerHTML = `<div class="detail-attach-title">Attachments (loading…)</div>`;
     const emailIdAtLoad = email.id;
-    dbGetByIndex('attachments', 'emailId', email.id).then(async atts => {
+    apiEmailAttachments(email.id).then(async atts => {
       // Only update if the same email is still open
       if (!selectedEmail || selectedEmail.id !== emailIdAtLoad) return;
 
@@ -506,13 +506,13 @@ function openDetail(email) {
           const status = a.extractionStatus;
           if (!status || status === 'failed') {
             const lbl = status === 'failed' ? '↺' : '⇩T';
-            extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="${status === 'failed' ? 'Retry extract' : 'Extract text'}">${lbl}</button>`;
+            extractBtn = `<button id="extract-btn-${a.id}" class="btn" data-v1-only onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="${status === 'failed' ? 'Retry extract' : 'Extract text'}">${lbl}</button>`;
           } else if (status === 'done') {
             if (a.extractedText) {
-              extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Toggle extracted text">T✓</button><button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
+              extractBtn = `<button class="btn" onclick="toggleAttachText('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Toggle extracted text">T✓</button><button id="extract-btn-${a.id}" class="btn" data-v1-only onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
               textPreview = `<div id="att-text-${a.id}" style="display:none; margin:2px 0 4px 0; padding:8px 10px; background:var(--surface); border:1px solid var(--border2); border-radius:4px; font-size:11px; line-height:1.55; color:var(--text); white-space:pre-wrap; max-height:300px; overflow-y:auto;">${escHtml(a.extractedText)}</div>`;
             } else {
-              extractBtn = `<button id="extract-btn-${a.id}" class="btn" onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
+              extractBtn = `<button id="extract-btn-${a.id}" class="btn" data-v1-only onclick="extractTextFromEml('${a.id}')" style="padding:2px 6px; font-size:10px;" title="Re-extract">↺</button>`;
             }
           } else if (status === 'unsupported') {
             // No retry button — retrying a format we have no extractor for
@@ -672,10 +672,8 @@ function updateModalNavButtons() {
 }
 
 async function toggleAttachmentBlacklist(attId) {
-  const att = await dbGet('attachments', attId);
+  const att = await apiToggleAttachmentBlacklist(attId);
   if (!att) return;
-  att.isBlacklisted = !att.isBlacklisted;
-  await dbPut('attachments', att);
   // Re-render the attachment panel for the current email
   if (selectedEmail) openDetail(selectedEmail);
 }

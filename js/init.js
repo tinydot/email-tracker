@@ -3,10 +3,10 @@
 // ═══════════════════════════════════════════════════════
 
 async function init() {
-  db = await openDB();
+  await apiInit();
   setupDropZone();
 
-  // Load settings + emails in parallel — these are independent IndexedDB reads
+  // Load settings + emails in parallel — these are independent reads
   const [, , , , , , , emails] = await Promise.all([
     loadCustomPatterns(),
     loadCustomQuotePatterns(),
@@ -15,9 +15,10 @@ async function init() {
     loadEmailGroups(),
     loadAttachTextLimit(),
     loadSmartViews(),
-    dbGetAll('emails'),
-    restoreDirHandles(), // reconnect persisted storage folder handles
-    loadGDriveSettings(), // Google Drive backup config
+    apiLoadEmails(),
+    // Folder handles and Drive backup are browser-only (v1); v2's server owns storage
+    V2_SERVER ? null : restoreDirHandles(), // reconnect persisted storage folder handles
+    V2_SERVER ? null : loadGDriveSettings(), // Google Drive backup config
   ]);
   if (emails.length > 0) {
     allEmails = emails;

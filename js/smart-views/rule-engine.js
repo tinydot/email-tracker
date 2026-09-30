@@ -263,10 +263,10 @@ function applySmartViewRules(email, sv) {
 // --- DB loaders ---
 
 async function loadSmartViews() {
-  smartViews = await dbGetAll('smartViews');
+  smartViews = await apiListDocs('smartViews');
   renderSmartViewsSidebar();
 }
 
 async function loadEmailGroups() {
-  emailGroups = await dbGetAll('emailGroups');
+  emailGroups = await apiListDocs('emailGroups');
 }
