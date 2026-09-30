@@ -196,3 +196,25 @@ def test_migration_normalizes_old_addresses(tmp_path):
     s.close()
     assert sqlite3.connect(db).execute("SELECT count(*) FROM pragma_table_info('emails') "
                                        "WHERE name = 'needs_my_reply'").fetchone()[0] == 1
+
+
+def test_automated_mail_keeps_no_original(ing):
+    assert ingest(ing, eml(mid="auto@x", frm="noreply@bentley.com")) == ["added"]
+    e = ing.store.get_email("auto@x")
+    assert e["isSystemEmail"] is True and "emlArchivePath" not in e
+    assert not (ing.archive_dir / "bentley.com").exists()
+    # re-importing it doesn't archive it either
+    assert ingest(ing, eml(mid="auto@x", frm="noreply@bentley.com")) == ["existing"]
+    assert "emlArchivePath" not in ing.store.get_email("auto@x")
+
+
+def test_purge_automated_originals(ing):
+    ingest(ing, eml(mid="p@x"), eml(mid="q@x", frm="bob@corp.com"))
+    p_path = ing.archived_path(ing.store.get_email("p@x")["emlArchivePath"])
+    q_path = ing.archived_path(ing.store.get_email("q@x")["emlArchivePath"])
+    ing.store.patch_email("p@x", {"isSystemEmail": True})
+    r = ing.purge_automated_originals()
+    assert r == {"emails": 1, "files": 1, "bytesFreed": len(eml(mid="p@x"))}
+    assert not p_path.exists() and q_path.exists()
+    assert "emlArchivePath" not in ing.store.get_email("p@x")
+    assert ing.purge_automated_originals()["files"] == 0

@@ -157,6 +157,7 @@ def create_app(cfg: Config, store: EmailStore | None = None) -> FastAPI:
 
     @app.post("/api/emails/discard-automated")
     def discard_automated() -> dict:            # export.js discardAutomatedEmails
+        ingestor.purge_automated_originals()    # their originals go with them
         ids = store.discard_automated()
         return {"discarded": ids}
 
@@ -384,6 +385,10 @@ def create_app(cfg: Config, store: EmailStore | None = None) -> FastAPI:
         except FileNotFoundError as e:
             raise HTTPException(404, str(e))
 
+    @app.post("/api/maintenance/purge-automated-originals")
+    def purge_automated_originals() -> dict:
+        return ingestor.purge_automated_originals()
+
     @app.post("/api/maintenance/rerun-truncation")
     def rerun_truncation() -> dict:
         return {"fixed": maintenance.rerun_truncation(store)}
@@ -394,7 +399,10 @@ def create_app(cfg: Config, store: EmailStore | None = None) -> FastAPI:
 
     @app.post("/api/maintenance/rerun-detection")
     def rerun_detection() -> dict:
-        return {"fixed": maintenance.rerun_detection(store)}
+        fixed = maintenance.rerun_detection(store)
+        if fixed:
+            ingestor.purge_automated_originals()  # newly flagged mail: originals aren't kept
+        return {"fixed": fixed}
 
     @app.get("/api/health")
     def health() -> dict:

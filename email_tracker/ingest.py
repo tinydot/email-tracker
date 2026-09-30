@@ -109,6 +109,31 @@ class Ingestor:
             n += 1
         return f"{folder.name}/{name}"
 
+    def purge_automated_originals(self) -> dict:
+        """Delete the archived originals of automated emails (they aren't kept
+        any more) and clear their paths. A file another, non-automated email
+        still points at is left alone. Returns counts."""
+        store = self.store
+        with store.tx() as con:
+            rows = con.execute("SELECT id, eml_archive_path FROM emails WHERE is_system_email = 1 "
+                               "AND eml_archive_path IS NOT NULL").fetchall()
+            keep = {r[0] for r in con.execute(
+                "SELECT eml_archive_path FROM emails WHERE COALESCE(is_system_email, 0) = 0 "
+                "AND eml_archive_path IS NOT NULL")}
+            con.executemany("UPDATE emails SET eml_archive_path = NULL WHERE id = ?", [(r["id"],) for r in rows])
+        files = freed = 0
+        for rel in {r["eml_archive_path"] for r in rows} - keep:
+            path = self.archived_path(rel)
+            if path is None:
+                continue
+            freed += path.stat().st_size if path.stat().st_nlink == 1 else 0
+            path.unlink()
+            files += 1
+        for d in self.archive_dir.glob("*") if self.archive_dir.is_dir() else []:
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+        return {"emails": len(rows), "files": files, "bytesFreed": freed}
+
     def archived_path(self, rel: str | None) -> Path | None:
         if not rel:
             return None
@@ -153,14 +178,18 @@ class Batch:
             self.store.lock.release()
 
     def known(self, eid: str) -> str | None:
-        """'tombstoned' / 'archived' (present with its raw file) / 'present' / None."""
+        """'tombstoned'; 'settled' (present, and either its original is archived
+        or it's automated mail, whose originals aren't kept); 'present' (a
+        person's email still missing its original); or None (new)."""
         con = self._con or self.store._r()
         if con.execute("SELECT 1 FROM seen_ids WHERE id = ?", (eid,)).fetchone():
             return "tombstoned"
-        r = con.execute("SELECT eml_archive_path FROM emails WHERE id = ?", (eid,)).fetchone()
+        r = con.execute("SELECT eml_archive_path, is_system_email FROM emails WHERE id = ?", (eid,)).fetchone()
         if not r:
             return None
-        return "archived" if self.ing.archived_path(r["eml_archive_path"]) else "present"
+        if r["is_system_email"] or self.ing.archived_path(r["eml_archive_path"]):
+            return "settled"
+        return "present"
 
     def add(self, raw: bytes, file_name: str, source: Path | None = None) -> str:
         """Ingest one message; returns 'added' / 'existing' / 'archived' /
@@ -190,7 +219,7 @@ class Batch:
             if state == "tombstoned":
                 res.tombstoned += 1
                 return "tombstoned"
-            if state == "archived":
+            if state == "settled":
                 res.existing += 1
                 return "existing"
             if state == "present":
@@ -204,7 +233,7 @@ class Batch:
         if state == "tombstoned":
             res.tombstoned += 1
             return "tombstoned"
-        if state == "archived":
+        if state == "settled":
             res.existing += 1
             return "existing"
         if state == "present":
@@ -214,15 +243,17 @@ class Batch:
             return "archived"
 
         body = clean_body(parsed.raw_text_body, self.clean_rules)
-        rel = self.ing.archive(raw, parsed.from_addr, file_name, source)
+        automated = is_system_email(parsed.headers, parsed.from_addr, parsed.subject, body, self.detect_rules)
+        # Automated mail (ProjectWise, monitoring alerts…) is recorded but its
+        # original isn't kept — it's most of the volume and none of the value.
+        rel = None if automated else self.ing.archive(raw, parsed.from_addr, file_name, source)
         now = _now()
         record = {
             "id": eid, "messageId": parsed.message_id, "inReplyTo": parsed.in_reply_to,
             "references": parsed.references, "subject": parsed.subject,
             "fromAddr": parsed.from_addr, "fromName": parsed.from_name,
             "toAddrs": parsed.to, "ccAddrs": parsed.cc, "date": parsed.date,
-            "isSystemEmail": is_system_email(parsed.headers, parsed.from_addr, parsed.subject, body,
-                                             self.detect_rules),
+            "isSystemEmail": automated,
             "status": "unread", "tags": [], "hasAttachments": bool(parsed.attachments),
             "attachmentCount": len(parsed.attachments), "importedAt": now,
             "fileName": file_name, "emlArchivePath": rel,

@@ -214,7 +214,7 @@ def _one(batch: Batch, res: ScanResult, mm, start: int, end: int, folder: MboxFo
         if known == "tombstoned":
             batch.result.tombstoned += 1
             return
-        if known == "archived":
+        if known == "settled":
             batch.result.existing += 1
             return
     subject = _raw_header(head.get("subject", "")) or "message"
