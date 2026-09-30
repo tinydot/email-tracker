@@ -1,15 +1,14 @@
-"""python -m email_tracker [serve | ingest PATH… | ingest-thunderbird | import-backup FILE | rederive | backup | install-backup-job]"""
+"""python -m email_tracker [serve | ingest PATH… | ingest-thunderbird | import-backup FILE | rederive |
+                           backup | install-backup-job | install-server-job]"""
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
 
-from . import config
+from . import config, launchd
 
 
 def _store(cfg: config.Config):
@@ -91,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("backup", help="snapshot the live database now (VACUUM INTO) and prune old ones")
     j = sub.add_parser("install-backup-job", help="install the nightly backup as a macOS LaunchAgent")
     j.add_argument("--print", action="store_true", help="show the plist instead of installing it")
+    k = sub.add_parser("install-server-job", help="run the server at login (macOS LaunchAgent, KeepAlive)")
+    k.add_argument("--print", action="store_true", help="show the plist instead of installing it")
     args = p.parse_args(argv)
     cfg = config.load()
 
@@ -127,12 +128,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.print:
             print(plist)
             return 0
-        dest = Path(f"~/Library/LaunchAgents/{backup.LABEL}.plist").expanduser()
-        dest.write_text(plist)
-        domain = f"gui/{os.getuid()}"
-        subprocess.run(["launchctl", "bootout", f"{domain}/{backup.LABEL}"], capture_output=True)
-        subprocess.run(["launchctl", "bootstrap", domain, str(dest)], check=True)
+        dest = launchd.install(backup.LABEL, plist)
         print(f"Installed {dest}: nightly at 02:45 (runs on wake if missed); log {log}")
+        return 0
+
+    if args.cmd == "install-server-job":
+        uv = shutil.which("uv")
+        if not uv:
+            sys.exit("uv not found on PATH; the job runs `uv run`.")
+        log = Path("~/Library/Logs/email-tracker-server.log").expanduser()
+        plist = launchd.server_plist(uv, config.REPO_ROOT, log)
+        if args.print:
+            print(plist)
+            return 0
+        dest = launchd.install(launchd.SERVER_LABEL, plist)
+        print(f"Installed {dest}: http://127.0.0.1:{cfg.port} at login, restarted if it exits; log {log}")
         return 0
 
     import uvicorn

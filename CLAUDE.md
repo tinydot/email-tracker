@@ -258,6 +258,10 @@ uv run python -m email_tracker ingest-thunderbird [--profile DIR]        # Thund
 uv run python -m email_tracker rederive                              # recompute threads + needs_my_reply
 uv run python -m email_tracker backup                                # VACUUM INTO snapshot + prune
 uv run python -m email_tracker install-backup-job                    # nightly LaunchAgent (02:45)
+uv run python -m email_tracker install-server-job                    # server at login, KeepAlive
+# Both jobs run from the checkout you install them from — use the dedicated
+# worktree .claude/worktrees/server-job (detached; update it to origin/main
+# after a merge, then re-run install-server-job or `launchctl kickstart -k`).
 uv run --extra server --group dev pytest tests/
 uv run --extra server --with playwright python tests/e2e_v2.py      # system Chrome, throwaway DB
 ```
