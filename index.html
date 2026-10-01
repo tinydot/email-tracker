@@ -41,6 +41,9 @@
         <button class="nav-item" data-view="attachments" onclick="switchView('attachments')">
           📎 Has Attachments <span class="nav-count" id="n-attach">0</span>
         </button>
+        <button class="nav-item" data-view="needsreply" data-v2-only onclick="switchView('needsreply')" title="Threads whose newest message is waiting on your reply">
+          ↩ Needs Reply <span class="nav-count" id="n-needsreply">0</span>
+        </button>
         <button class="nav-item" data-view="automated" onclick="switchView('automated')">
           🤖 Automated <span class="nav-count" id="n-automated">0</span>
         </button>
@@ -59,7 +62,7 @@
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Actions</div>
-        <button class="nav-item" data-v1-only onclick="showImport()">⬆ Import EMLs</button>
+        <button class="nav-item" onclick="showImport()">⬆ Import EMLs</button>
         <button class="nav-item" onclick="exportData()">⬇ Export JSON</button>
         <input type="file" id="json-import-input" accept=".json" style="display:none" onchange="importData(this)">
         <button class="nav-item" onclick="document.getElementById('json-import-input').click()">⬆ Import JSON</button>
@@ -76,7 +79,27 @@
           <span class="import-icon">📬</span>
           <h2>Import EML Files</h2>
           <p data-v1-only>Connect your storage folders, then choose the folder to import. Emails are parsed locally — nothing leaves your device.</p>
-          <p data-v2-only>This is the v2 server. Importing .eml files here isn't built yet. For now, load a v1 backup with <b>Import JSON</b> in the sidebar, or run <code>python -m email_tracker import-backup &lt;file&gt;</code>.</p>
+          <p data-v2-only>The server parses and stores the mail, and keeps each original. Anything already imported is skipped, so re-run either source any time.</p>
+
+          <div class="conn-list" data-v2-only>
+            <div class="conn-row">
+              <span class="conn-num">1</span>
+              <div class="conn-info">
+                <div class="conn-name">📥 Import an .eml folder</div>
+                <div class="conn-detail">Uploads every .eml file in the folder and its subfolders</div>
+              </div>
+              <button class="btn btn-primary conn-btn" onclick="document.getElementById('srv-dir-input').click()">Choose &amp; Import</button>
+              <input type="file" id="srv-dir-input" webkitdirectory hidden onchange="serverIngestFiles(this.files); this.value=''">
+            </div>
+            <div class="conn-row">
+              <span class="conn-num">2</span>
+              <div class="conn-info">
+                <div class="conn-name">🦅 Scan Thunderbird</div>
+                <div class="conn-detail" id="srv-tb-detail">Reads the profile's mail folders on the server</div>
+              </div>
+              <button class="btn conn-btn" id="srv-tb-btn" onclick="serverScanThunderbird()">Scan</button>
+            </div>
+          </div>
 
           <div class="conn-list" data-v1-only>
             <div class="conn-row">
@@ -108,9 +131,9 @@
             </div>
           </div>
 
-          <div class="import-divider" data-v1-only><span>or</span></div>
+          <div class="import-divider"><span>or</span></div>
 
-          <div class="drop-zone" id="drop-zone" data-v1-only>
+          <div class="drop-zone" id="drop-zone">
             <input type="file" id="file-input" accept=".eml" multiple onchange="handleFiles(this.files)">
             <div class="drop-zone-text">
               <strong>Click to select</strong> or drag & drop .eml files<br>
@@ -132,7 +155,7 @@
             <option value="from">From A–Z</option>
             <option value="subject">Subject A–Z</option>
           </select>
-          <button class="btn btn-primary" data-v1-only onclick="showImport()">+ Import</button>
+          <button class="btn btn-primary" onclick="showImport()">+ Import</button>
         </div>
         <div class="email-list-header">
           <div class="col-flag"></div>
@@ -201,6 +224,7 @@
 <script src="js/parser.js"></script>
 <script src="js/detection.js"></script>
 <script src="js/import.js"></script>
+<script src="js/server-import.js"></script>
 <script src="js/threading.js"></script>
 <script src="js/state.js"></script>
 <script src="js/smart-views/rule-engine.js"></script>

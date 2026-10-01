@@ -263,7 +263,7 @@ def apply_backup(store: EmailStore, chunks: Iterable[str], batch_size: int = 200
     else:
         flush()
     if res.added["emails"]:
-        store.rethread()
+        store.rederive()
     return res
 
 

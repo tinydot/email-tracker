@@ -148,7 +148,8 @@ async function rerunSignatureStripping() {
   if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
 
   // Streamed over the bodies store — one cursor pass, updates written in place
-  const fixed = await dbIterate('bodies', rec => {
+  // (v2: the same pass on the server, email_tracker/maintenance.py)
+  const fixed = V2_SERVER ? await apiMaintenance('rerun-signatures') : await dbIterate('bodies', rec => {
     if (!rec.text) return;
     const stripped = cleanSignatures(rec.text);
     if (stripped && stripped !== rec.text) { rec.text = stripped; return rec; }
@@ -390,7 +391,7 @@ function showSettings() {
     <div style="padding:20px;">
       <h2 style="margin:0 0 20px 0; font-size:18px;">⚙ Settings</h2>
 
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+      <div data-v1-only style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
           <input type="checkbox" id="setting-nested" ${extractNestedAttachments ? 'checked' : ''}
                  onchange="toggleNestedAttachments(this.checked)"
@@ -403,7 +404,7 @@ function showSettings() {
         </div>
       </div>
 
-      <div style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
+      <div data-v1-only style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px;">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
           <input type="checkbox" id="setting-organize-eml" ${organizeEmlFiles ? 'checked' : ''}
                  onchange="toggleOrganizeEml(this.checked)"
@@ -453,7 +454,7 @@ function showSettings() {
             Re-run truncation on all existing emails in the library using the current patterns above.
             Only emails whose body contains a matching pattern will be updated.
           </div>
-          <button id="btn-rerun-truncation" class="btn" data-v1-only onclick="rerunTruncation()">Re-run truncation</button>
+          <button id="btn-rerun-truncation" class="btn" onclick="rerunTruncation()">Re-run truncation</button>
         </div>
       </div>
 
@@ -480,7 +481,7 @@ function showSettings() {
           <div style="color:var(--muted); font-size:12px; margin-bottom:8px;">
             Re-run signature stripping on all existing emails using the current patterns and ranges above.
           </div>
-          <button id="btn-rerun-signatures" class="btn" data-v1-only onclick="rerunSignatureStripping()">Re-run signature stripping</button>
+          <button id="btn-rerun-signatures" class="btn" onclick="rerunSignatureStripping()">Re-run signature stripping</button>
         </div>
       </div>
 
@@ -645,7 +646,7 @@ async function rerunTruncation() {
   const btn = document.getElementById('btn-rerun-truncation');
   if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
 
-  const fixed = await dbIterate('bodies', rec => {
+  const fixed = V2_SERVER ? await apiMaintenance('rerun-truncation') : await dbIterate('bodies', rec => {
     if (!rec.text) return;
     const matches = findTruncationMatches(rec.text);
     if (matches.length) { rec.text = truncateAtLine(rec.text, matches[0].lineIndex); return rec; }

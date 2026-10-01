@@ -170,3 +170,94 @@ def test_rejects_foreign_origin_host_and_form_posts(client):
     assert r.status_code == 415
     r = client.get("/api/emails", headers={"Host": "evil.example"})
     assert r.status_code == 400
+
+
+# ── Phase 2: ingest, originals, maintenance ──────────────────────────────────
+
+RFC822 = {"Content-Type": "message/rfc822"}
+
+
+@pytest.fixture
+def v2(tmp_path):
+    from email_tracker.store import EmailStore
+    s = EmailStore(tmp_path / "e.db", my_addresses=["me@work.example"])
+    cfg = Config(db_path=s.path, my_addresses=["me@work.example"])
+    cfg.thunderbird_profile = tmp_path / "prof"
+    with TestClient(create_app(cfg, s), base_url="http://127.0.0.1") as c:
+        c.store = s
+        yield c
+    s.close()
+
+
+def test_upload_eml_then_finish(v2):
+    from tests.mail import eml, multipart
+    r = v2.post("/api/ingest/eml", params={"name": "a.eml"}, content=multipart(), headers=RFC822).json()
+    assert r["status"] == "added" and r["id"] == "mp@x"
+    r = v2.post("/api/ingest/eml", params={"name": "a.eml"}, content=multipart(), headers=RFC822).json()
+    assert r["status"] == "existing"
+    # I replied to Zoë, and she wrote back: the thread is waiting on me
+    v2.post("/api/ingest/eml", content=eml(mid="me@x", irt="mp@x", frm="me@work.example", to="zoe@corp.com",
+                                           date="Tue, 03 Mar 2026 09:00:00 +0000"), headers=RFC822)
+    v2.post("/api/ingest/eml", content=eml(mid="r@x", irt="me@x", frm="zoe@corp.com",
+                                           date="Wed, 04 Mar 2026 09:00:00 +0000"), headers=RFC822)
+    assert v2.store.meta("derive_pending") == "1"
+    v2.post("/api/ingest/finish")
+    assert v2.store.meta("derive_pending") == "0"
+    by = {e["id"]: e for e in v2.get("/api/emails").json()}
+    assert by["r@x"]["threadId"] == "mp@x"
+    assert by["r@x"]["needsMyReply"] is True
+    assert not by["mp@x"].get("needsMyReply")
+
+
+def test_upload_rejects_plain_text_type(v2):
+    from tests.mail import eml
+    assert v2.post("/api/ingest/eml", content=eml(), headers={"Content-Type": "text/plain"}).status_code == 415
+
+
+def test_original_and_reparse(v2):
+    from tests.mail import multipart
+    v2.post("/api/ingest/eml", params={"name": "plan.eml"}, content=multipart(), headers=RFC822)
+    r = v2.get(f"/api/emails/{u('mp@x')}/eml")
+    assert r.status_code == 200 and r.content == multipart()
+    assert "plan.eml" in r.headers["content-disposition"]
+    rp = v2.post(f"/api/emails/{u('mp@x')}/reparse").json()
+    assert "On Mon, Bob wrote:" in rp["rawTextBody"] and rp["attachmentsAdded"] == 0
+
+
+def test_original_missing_is_404(client):
+    # v1-imported emails have no archived original until their .eml is re-ingested
+    assert client.get(f"/api/emails/{u('root@x')}/eml").status_code == 404
+    assert client.post(f"/api/emails/{u('root@x')}/reparse").status_code == 404
+
+
+def test_thunderbird_job(v2, tmp_path):
+    from tests.mail import eml, mbox
+    acct = tmp_path / "prof" / "ImapMail" / "acct"
+    acct.mkdir(parents=True)
+    (acct / "INBOX").write_bytes(mbox((eml(mid="tb1@x"), 0), (eml(mid="tb2@x"), 0)))
+    (acct / "INBOX.msf").write_bytes(b"")
+    assert v2.get("/api/ingest/thunderbird").json()["profile"].endswith("prof")
+    job = v2.post("/api/ingest/thunderbird").json()
+    assert job["status"] in ("running", "done")
+    import time
+    for _ in range(100):
+        job = v2.get("/api/ingest/job/thunderbird").json()
+        if job["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert job["status"] == "done" and job["result"]["added"] == 2
+
+
+def test_maintenance_reruns(client, loaded):
+    loaded.put_body("r1@x", "Keep this\nOn Tue, Bob wrote:\nold")
+    client.put("/api/settings/customSignaturePatterns",
+               json={"key": "customSignaturePatterns", "patterns": ["^Cheers"]})
+    loaded.put_body("r2@x", "Thanks\nCheers\nZed")
+    assert client.post("/api/maintenance/rerun-truncation").json()["fixed"] == 1
+    assert loaded.get_body("r1@x") == "Keep this"
+    assert client.post("/api/maintenance/rerun-signatures").json()["fixed"] == 1
+    assert loaded.get_body("r2@x") == "Thanks"
+    client.put("/api/settings/customAutomationPatterns",
+               json={"key": "customAutomationPatterns", "senders": ["^a@corp"], "subjects": [], "body": []})
+    n = client.post("/api/maintenance/rerun-detection").json()["fixed"]
+    assert n >= 1 and loaded.get_email("root@x")["isSystemEmail"] is True

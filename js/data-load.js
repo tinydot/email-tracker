@@ -43,7 +43,13 @@ async function backfillSystemEmailFlag() {
 async function rerunAutomatedDetection() {
   const btn = document.getElementById('btn-rerun-detection');
   if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
-  const flagged = await backfillSystemEmailFlag();
+  let flagged;
+  if (V2_SERVER) {  // server-side, same rule (email_tracker/maintenance.py)
+    flagged = await apiMaintenance('rerun-detection');
+    if (flagged) await loadEmailList();
+  } else {
+    flagged = await backfillSystemEmailFlag();
+  }
   updateNavCounts();
   applyFilters();
   if (btn) { btn.disabled = false; btn.textContent = 'Re-run detection'; }
@@ -53,7 +59,8 @@ async function rerunAutomatedDetection() {
 async function loadEmailList() {
   allEmails = await apiLoadEmails();
   rebuildMsgIdIndex();   // must precede buildThreadCache (thread walks use msgIdIndex)
-  await backfillSystemEmailFlag(); // resolves ids through emailIdIndex
+  // v2 detects automated mail at ingest, with the real headers
+  if (!V2_SERVER) await backfillSystemEmailFlag(); // resolves ids through emailIdIndex
   buildThreadCache();
   await buildAttachmentNameIndex();
   // Bodies may have changed underneath us (import, restore, maintenance):
@@ -138,9 +145,10 @@ async function changeEmlArchiveFolder() {
 }
 
 function updateNavCounts() {
-  let unread = 0, threadRoots = 0, attach = 0, automated = 0;
+  let unread = 0, threadRoots = 0, attach = 0, automated = 0, needsReply = 0;
   for (const e of allEmails) {
     if (e.status === 'unread') unread++;
+    if (e.needsMyReply) needsReply++;
     if (!e.inReplyTo && hasReplies(e)) threadRoots++;
     if (e.hasAttachments) attach++;
     if (e.isSystemEmail) automated++;
@@ -150,6 +158,7 @@ function updateNavCounts() {
   document.getElementById('n-threads').textContent   = threadRoots;
   document.getElementById('n-attach').textContent    = attach;
   document.getElementById('n-automated').textContent = automated;
+  document.getElementById('n-needsreply').textContent = needsReply;
 
   // Refresh smart view counts in sidebar
   renderSmartViewsSidebar();

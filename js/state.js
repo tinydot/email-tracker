@@ -25,6 +25,7 @@ const VIEW_LABELS = {
   unread:       'Unread',
   threads:      'Threads',
   attachments:  'Has Attachments',
+  needsreply:   'Needs Reply',
   automated:    'Automated / System',
   addressbook:  'Address Book',
 };

@@ -11,8 +11,9 @@
 // db.js calls the call site made before, so v1 behaviour is unchanged. Every
 // function is async in both modes, so call sites only ever `await`.
 //
-// Elements marked data-v1-only are hidden in v2 (features that still need the
-// browser-side import pipeline, Google Drive, Clear DB); data-v2-only the reverse.
+// Elements marked data-v1-only are hidden in v2 (the browser-side import
+// pipeline and its archive folder, Google Drive, Clear DB); data-v2-only the
+// reverse (server import, the Needs Reply view).
 
 const V2_SERVER = window.EMAIL_V2_SERVER === true;
 document.documentElement.classList.toggle('v2-server', V2_SERVER);
@@ -206,3 +207,28 @@ async function apiDeleteContact(email) {
 async function apiMaintenance(job) {
   return (await _api('POST', `/api/maintenance/${job}`)).fixed;
 }
+
+// ── Server ingest and archived originals (v2 only) ──────────
+// v1 imports in the browser (import.js); these are what v2 does instead.
+
+async function apiIngestEml(file) {
+  const resp = await fetch('/api/ingest/eml?name=' + _enc(file.name), {
+    method: 'POST', headers: { 'Content-Type': 'message/rfc822' }, body: file,
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = (await resp.json()).detail || ''; } catch {}
+    throw new Error(`Server ${resp.status}${detail ? ': ' + detail : ''}`);
+  }
+  return resp.json();
+}
+
+async function apiIngestFinish()      { return _api('POST', '/api/ingest/finish'); }
+async function apiThunderbirdInfo()   { return _api('GET', '/api/ingest/thunderbird'); }
+async function apiThunderbirdScan()   { return _api('POST', '/api/ingest/thunderbird'); }
+async function apiJob(name)           { return _api('GET', `/api/ingest/job/${_enc(name)}`); }
+
+// Re-read an email's archived original: { rawTextBody, attachmentsAdded, email }.
+async function apiReparse(id)         { return _api('POST', `/api/emails/${_enc(id)}/reparse`); }
+
+function apiOriginalUrl(id)           { return `/api/emails/${_enc(id)}/eml`; }

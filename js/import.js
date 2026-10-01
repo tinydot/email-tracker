@@ -211,6 +211,7 @@ async function setupEmlArchiveFolder() {
 
 async function handleFiles(files) {
   if (!files.length) return;
+  if (V2_SERVER) return serverIngestFiles(files);  // the server parses and stores (server-import.js)
   // Storage folders are connected via the checklist in the import panel —
   // no blocking prompts here; the import log notes what isn't connected.
   await processFilesForImport(Array.from(files));
@@ -746,6 +747,7 @@ async function _resolveEmlFile(email) {
 async function reimportEmlBody(emailId) {
   const email = emailIdIndex.get(emailId);
   if (!email) return;
+  if (V2_SERVER) return reimportEmlBodyFromServer(email);
 
   try {
     const resolved = await _resolveEmlFile(email);
@@ -860,9 +862,38 @@ async function reimportEmlBody(emailId) {
   }
 }
 
+// v2: the server re-parses its archived original and records any attachments
+// the first import missed; the body is held unsaved exactly as below.
+async function reimportEmlBodyFromServer(email) {
+  let r;
+  try { r = await apiReparse(email.id); } catch { return; } // _api has shown the error
+  if (selectedEmail?.id === email.id) {
+    selectedEmailBody = r.rawTextBody || '';
+    _loadedBodyId     = email.id;
+    const bodyEl = document.getElementById('det-body-text');
+    if (bodyEl) bodyEl.textContent = selectedEmailBody || '(no plain text body)';
+    const saveFullBtn = document.getElementById('trunc-save-full-btn');
+    if (saveFullBtn) saveFullBtn.style.display = '';
+    truncFindMatches();
+  }
+  if (r.attachmentsAdded) {
+    email.hasAttachments  = r.email.hasAttachments;
+    email.attachmentCount = r.email.attachmentCount;
+    if (selectedEmail?.id === email.id) openDetail(email);
+  }
+  const attMsg = r.attachmentsAdded ? `, ${r.attachmentsAdded} attachment${r.attachmentsAdded > 1 ? 's' : ''} recorded` : '';
+  toast(`Body reloaded from the original${attMsg} — pick truncation or Save Full`, 'ok');
+}
+
 async function openOriginalEml(emailId) {
   const email = emailIdIndex.get(emailId);
   if (!email) return;
+  if (V2_SERVER) {  // served from the server's archive — no folder picker
+    const a = document.createElement('a');
+    a.href = apiOriginalUrl(emailId);
+    a.click();
+    return;
+  }
   try {
     const resolved = await _resolveEmlFile(email);
     if (!resolved) return;

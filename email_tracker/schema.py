@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS emails (
   imported_at            TEXT,
   file_name              TEXT,
   eml_archive_path       TEXT,
-  extra                  TEXT
+  extra                  TEXT,
+  needs_my_reply         INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_emails_message_id ON emails(message_id);
 CREATE INDEX IF NOT EXISTS idx_emails_thread_id  ON emails(thread_id);
@@ -144,7 +145,10 @@ EMAIL_FIELDS: list[tuple[str, str, str]] = [
     ("emlArchivePath", "eml_archive_path", "text"),
 ]
 # Derived server-side; an incoming value is ignored, the outgoing one is real.
-EMAIL_DERIVED = {"threadId": "thread_id"}
+EMAIL_DERIVED: list[tuple[str, str, str]] = [
+    ("threadId", "thread_id", "text"),
+    ("needsMyReply", "needs_my_reply", "bool"),
+]
 # Never persisted: v1 bodies travel inline in backups only; _lc is the UI's cache slot.
 EMAIL_DROPPED = {"textBody", "_lc"}
 
@@ -211,7 +215,7 @@ def to_row(record: dict, fields: list[tuple[str, str, str]],
 
 
 def from_row(row: Any, fields: list[tuple[str, str, str]],
-             derived: dict[str, str] | None = None,
+             derived: list[tuple[str, str, str]] | None = None,
              omit: set[str] = frozenset()) -> dict:
     """Map a row (sqlite3.Row) back to the v1 record shape."""
     rec: dict[str, Any] = {}
@@ -222,9 +226,9 @@ def from_row(row: Any, fields: list[tuple[str, str, str]],
         v = _decode(kind, row[col])
         if v is not None:
             rec[key] = v
-    for key, col in (derived or {}).items():
+    for key, col, kind in derived or []:
         if col in keys and row[col] is not None:
-            rec[key] = row[col]
+            rec[key] = _decode(kind, row[col])
     if "extra" in keys and row["extra"]:
         for k, v in json.loads(row["extra"]).items():
             rec.setdefault(k, v)

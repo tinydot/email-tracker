@@ -22,6 +22,7 @@ from typing import Any
 from . import schema
 from .schema import (ADDRESS_FIELDS, ATTACHMENT_FIELDS, ATTACHMENT_HEAVY, EMAIL_DERIVED,
                      EMAIL_DROPPED, EMAIL_FIELDS, TAG_FIELDS, from_row, to_row)
+from .parse import normalize_address
 from .threading_ids import compute_thread_ids
 
 # Fields the UI may change on an email. Everything else is set at ingest.
@@ -35,6 +36,10 @@ DOC_TABLES = {"smartViews": ("smart_views", "id"),
 _BLANK_RUNS = re.compile(r"(\n[ \t]*){2,}")      # applyBackupStream's collapse
 _BLANK_LINES = re.compile(r"\n([ \t]*\n)+")      # normalizeLineBreaks'
 _HIGH_BYTE = re.compile(r"[\x80-\xff]")
+# Subjects that never ask for a reply (needs_my_reply).
+_NOT_A_REQUEST = re.compile(r"^\s*(accepted|declined|tentative|canceled|cancelled|"
+                            r"automatic reply|auto-?reply|out of office)\b", re.I)
+DIRECT_MAX_TO = 3
 
 
 class NotFound(KeyError):
@@ -64,9 +69,27 @@ def _unicode_lower(s: Any) -> Any:
     return s.lower() if isinstance(s, str) else s
 
 
+def normalize_addresses(rec: dict) -> dict:
+    """Bare, lowercase, de-duplicated addresses (v1 sometimes kept '<x@y>')."""
+    out = dict(rec)
+    if isinstance(out.get("fromAddr"), str):
+        out["fromAddr"] = normalize_address(out["fromAddr"])
+    for k in ("toAddrs", "ccAddrs"):
+        if isinstance(out.get(k), list):
+            seen: list[str] = []
+            for a in out[k]:
+                a = normalize_address(a) if isinstance(a, str) else ""
+                if a and a not in seen:
+                    seen.append(a)
+            out[k] = seen
+    return out
+
+
 class EmailStore:
-    def __init__(self, path: Path | str):
+    def __init__(self, path: Path | str, my_addresses: Iterable[str] = ()):
         self.path = Path(path)
+        # The owner's addresses: needs_my_reply keys on them (config my_addresses).
+        self.my_addresses = {normalize_address(a) for a in my_addresses if a}
         if str(path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
@@ -83,6 +106,8 @@ class EmailStore:
                 self.set_meta("schema_version", str(schema.SCHEMA_VERSION))
             elif int(cur) > schema.SCHEMA_VERSION:
                 raise RuntimeError(f"{self.path} has schema v{cur}; this code knows v{schema.SCHEMA_VERSION}")
+            elif int(cur) < 2:
+                self._migrate_v2()
 
         self._local = threading.local()
         self._readers: list[sqlite3.Connection] = []
@@ -101,6 +126,27 @@ class EmailStore:
             with self.lock:
                 self._readers.append(con)
         return con
+
+    def _migrate_v2(self) -> None:
+        """v2 (Phase 2): the needs_my_reply column, and addresses normalised to
+        the bare lowercase form the Python parser produces."""
+        with self.tx() as con:
+            cols = {r["name"] for r in con.execute("PRAGMA table_info(emails)")}
+            if "needs_my_reply" not in cols:
+                con.execute("ALTER TABLE emails ADD COLUMN needs_my_reply INTEGER")
+            for r in con.execute("SELECT id, from_addr, to_addrs, cc_addrs FROM emails").fetchall():
+                rec = {"fromAddr": r["from_addr"],
+                       "toAddrs": json.loads(r["to_addrs"]) if r["to_addrs"] else None,
+                       "ccAddrs": json.loads(r["cc_addrs"]) if r["cc_addrs"] else None}
+                new = normalize_addresses(rec)
+                if new != rec:
+                    con.execute("UPDATE emails SET from_addr = ?, to_addrs = ?, cc_addrs = ? WHERE id = ?",
+                                (new["fromAddr"],
+                                 None if new["toAddrs"] is None else json.dumps(new["toAddrs"], ensure_ascii=False),
+                                 None if new["ccAddrs"] is None else json.dumps(new["ccAddrs"], ensure_ascii=False),
+                                 r["id"]))
+            self.set_meta("schema_version", "2")
+            self.set_meta("derive_pending", "1")
 
     def close(self) -> None:
         for con in self._readers:
@@ -156,6 +202,8 @@ class EmailStore:
                 sets = ", ".join(f"{c} = ?" for c in cols)
                 con.execute(f"UPDATE emails SET {sets} WHERE id = ?",
                             [row[c] for c in cols] + [email_id])
+                if "isSystemEmail" in changes:  # automated mail never needs a reply
+                    self._needs_reply(con)
         return self.get_email(email_id)
 
     def _delete_emails(self, con: sqlite3.Connection, ids: list[str], tombstone: bool) -> None:
@@ -176,7 +224,7 @@ class EmailStore:
             if not con.execute("SELECT 1 FROM emails WHERE id = ?", (email_id,)).fetchone():
                 raise NotFound(email_id)
             self._delete_emails(con, [email_id], tombstone=False)
-            self._rethread(con)
+            self._rederive(con)
 
     def discard_automated(self) -> list[str]:
         """Delete every automated email the user hasn't unflagged, remembering
@@ -186,7 +234,7 @@ class EmailStore:
                 "SELECT id FROM emails WHERE is_system_email = 1 "
                 "AND COALESCE(manual_system_override, 0) = 0")]
             self._delete_emails(con, ids, tombstone=True)
-            self._rethread(con)
+            self._rederive(con)
         return ids
 
     def is_tombstoned(self, email_id: str) -> bool:
@@ -355,9 +403,70 @@ class EmailStore:
         con.executemany("UPDATE emails SET thread_id = ? WHERE id = ?", changed)
         return len(changed)
 
-    def rethread(self) -> int:
+    def _needs_reply(self, con: sqlite3.Connection) -> int:
+        """Flag threads that are waiting on me. The newest message of a thread
+        is flagged when all of these hold:
+
+        - it isn't from me, isn't automated, and has me in To (not just Cc);
+        - it isn't a calendar response or auto-reply (Accepted:, Canceled:, …);
+        - it's a conversation I'm in — I've written in the thread — or a
+          direct note: at most ``DIRECT_MAX_TO`` To recipients, from someone
+          I've emailed before.
+
+        The last rule is what keeps out broadcast reports and meeting blasts
+        that merely list me (on the 2026-09 corpus: 1,385 → 385 threads). Only
+        the newest message carries the flag, so the list shows a thread once.
+        """
+        me = self.my_addresses
+        rows = con.execute("SELECT seq, id, thread_id, date, subject, from_addr, to_addrs, cc_addrs, "
+                           "is_system_email, needs_my_reply FROM emails").fetchall()
+        flagged: set[str] = set()
+        if me:
+            newest: dict[str, sqlite3.Row] = {}
+            i_wrote: set[str] = set()
+            correspondents: set[str] = set()
+            for r in rows:
+                key = r["thread_id"] or r["id"]
+                cur = newest.get(key)
+                if cur is None or ((r["date"] or ""), r["seq"]) > ((cur["date"] or ""), cur["seq"]):
+                    newest[key] = r
+                if normalize_address(r["from_addr"] or "") in me:
+                    i_wrote.add(key)
+                    for col in ("to_addrs", "cc_addrs"):
+                        for a in json.loads(r[col]) if r[col] else []:
+                            if isinstance(a, str):
+                                correspondents.add(normalize_address(a))
+            for key, r in newest.items():
+                sender = normalize_address(r["from_addr"] or "")
+                if r["is_system_email"] or sender in me or _NOT_A_REQUEST.match(r["subject"] or ""):
+                    continue
+                to = [normalize_address(a) for a in (json.loads(r["to_addrs"]) if r["to_addrs"] else [])
+                      if isinstance(a, str)]
+                if not me.intersection(to):
+                    continue
+                if key in i_wrote or (len(to) <= DIRECT_MAX_TO and sender in correspondents):
+                    flagged.add(r["id"])
+        changed = [(1 if r["id"] in flagged else 0, r["id"]) for r in rows
+                   if (r["needs_my_reply"] or 0) != (1 if r["id"] in flagged else 0)]
+        con.executemany("UPDATE emails SET needs_my_reply = ? WHERE id = ?", changed)
+        return len(flagged)
+
+    def _rederive(self, con: sqlite3.Connection) -> None:
+        """Everything derived from the corpus as a whole: threads, then
+        needs_my_reply (which reads them)."""
+        self._rethread(con)
+        self._needs_reply(con)
+        con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('derive_pending', '0')")
+
+    def rederive(self) -> None:
         with self.tx() as con:
-            return self._rethread(con)
+            self._rederive(con)
+
+    def rederive_if_pending(self) -> bool:
+        if self.meta("derive_pending") == "1":
+            self.rederive()
+            return True
+        return False
 
     _FTS_SELECT = ("SELECT e.seq, COALESCE(e.subject, ''), COALESCE(e.from_name, ''), "
                    "COALESCE(e.from_addr, ''), COALESCE(b.text, '') "
@@ -392,7 +501,8 @@ class EmailStore:
                 continue
             if con.execute("SELECT 1 FROM seen_ids WHERE id = ?", (eid,)).fetchone():
                 continue
-            row = to_row(rec, EMAIL_FIELDS, skip=EMAIL_DROPPED | set(EMAIL_DERIVED))
+            row = to_row(normalize_addresses(rec), EMAIL_FIELDS,
+                         skip=EMAIL_DROPPED | {k for k, _, _ in EMAIL_DERIVED})
             if con.execute(sql, [row[c] for c in cols]).rowcount:
                 added.append(eid)
         return added

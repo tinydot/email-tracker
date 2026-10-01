@@ -104,6 +104,7 @@ function applyFilters() {
         case 'threads':     if (e.inReplyTo || !hasReplies(e)) continue; break;
         case 'attachments': if (!e.hasAttachments)             continue; break;
         case 'automated':   if (!e.isSystemEmail)              continue; break;
+        case 'needsreply':  if (!e.needsMyReply)               continue; break;  // set by the v2 server
       }
     }
 
